@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhotoMinder — 照片管理</title>
+    <link rel="stylesheet" href="/src/styles.css">
+    <style>
+      body {
+        /* 原生 SF 字体族：桌面应用里系统字体最不抢戏，让照片主导画面 */
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        /* 由 styles.css 的主题变量驱动（深色 / 浅色自动切换） */
+        background-color: var(--bg-primary);
+        overflow: hidden; /* Prevent body scroll, handle in app */
+      }
+      /* 滚动条样式统一由 styles.css 的全局规则提供（随主题变量变色），此处不再覆盖 */
+      
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fadeIn {
+        animation: fadeIn 0.2s ease-out forwards;
+      }
+      
+      /* App layout styles */
+      .app-container {
+        display: flex;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+      }
+      
+      .main-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        overflow: hidden;
+      }
+    </style>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+</body>
+</html>

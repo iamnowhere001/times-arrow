@@ -1,0 +1,6 @@
+{
+  "name": "PhotoMinder",
+  "version": "0.3.0",
+  "description": "A sophisticated macOS-style photo management tool for the web. Organize, batch rename, and analyze your local images with Gemini AI.",
+  "requestFramePermissions": []
+}

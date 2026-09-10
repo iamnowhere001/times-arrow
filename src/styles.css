@@ -1,0 +1,764 @@
+/* Tailwind 工具层：内容扫描见 tailwind.config.js */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* macOS Sonoma/Ventura 风格现代化样式 */
+
+/* ------------------------------------------------------------------
+   配色系统：暗房（Darkroom）
+   中性色是石墨（带一点暖调，而不是纯灰黑），主色是暗房里唯一能开的
+   那盏灯 —— 安全灯琥珀。照片本身承载全部色彩，界面只负责安静退后。
+   变量名沿用历史命名（accent-blue 现在装的是琥珀主色），只改值不改名，
+   这样 13 个组件里的引用无需重命名即可整体跟随。
+   ------------------------------------------------------------------ */
+
+:root {
+  /* 承载面：暖石墨，从底到高逐级抬升 */
+  --bg-primary: #0c0b0a;
+  --bg-secondary: #131211;
+  --bg-tertiary: #1b1917;
+  --bg-elevated: rgba(24, 22, 19, 0.86);
+  --bg-glass: rgba(255, 246, 232, 0.05);
+  --bg-glass-hover: rgba(255, 246, 232, 0.08);
+  --bg-glass-active: rgba(255, 246, 232, 0.12);
+
+  /* 文字：暖白，避免纯白在暖黑上发青 */
+  --text-primary: rgba(250, 247, 242, 0.94);
+  --text-secondary: rgba(250, 247, 242, 0.62);
+  --text-tertiary: rgba(250, 247, 242, 0.42);
+  --text-quaternary: rgba(250, 247, 242, 0.28);
+  --text-accent: #e8a33d;
+
+  /* 浮层 / 输入 / 表格等承载面 */
+  --bg-overlay: rgba(6, 6, 5, 0.62);
+  --bg-input: rgba(0, 0, 0, 0.26);
+  --bg-card: rgba(255, 246, 232, 0.04);
+  --bg-table-header: rgba(19, 18, 16, 0.86);
+  --bg-modal: rgba(22, 20, 18, 0.97);
+  --bg-tooltip: rgba(38, 35, 30, 0.98);
+  --border-input: rgba(255, 246, 232, 0.16);
+
+  /* 主色：安全灯琥珀。*-rgb 为通道值，供组件里 rgba(var(...), α) 使用 */
+  --accent-blue: #e8a33d;
+  --accent-blue-hover: #f2b75e;
+  --accent-blue-deep: #b87a22;
+  --accent-blue-rgb: 232, 163, 61;
+
+  /* 次级：淡金，用于标签与信息类小字 */
+  --accent-cyan: #e3b871;
+  --accent-cyan-rgb: 227, 184, 113;
+
+  /* 三级：青铜，仅用于渐变收尾，压住琥珀的高饱和 */
+  --accent-purple: #b4833c;
+  --accent-purple-hover: #c99a55;
+  --accent-purple-deep: #8a5f22;
+  --accent-purple-rgb: 180, 131, 60;
+
+  /* 语义色：保留可辨识的红/绿/橙，但降饱和以贴合暖色底 */
+  --accent-pink: #e9585e;
+  --accent-pink-hover: #f1777c;
+  --accent-pink-deep: #c13b42;
+  --accent-pink-rgb: 233, 88, 94;
+
+  --accent-green: #63c08a;
+  --accent-green-rgb: 99, 192, 138;
+
+  --accent-orange: #f08a3c;
+  --accent-orange-rgb: 240, 138, 60;
+
+  --accent-yellow: #edc256;
+  --accent-yellow-rgb: 237, 194, 86;
+
+  /* 实心主色块上的文字：暗色主题里琥珀偏亮 → 用墨色；
+     浅色主题里主色偏深 → 翻成白色。两套都由这一个变量承接。 */
+  --accent-contrast: #1a1409;
+  --accent-contrast-soft: rgba(26, 20, 9, 0.16);
+
+  --border-subtle: rgba(255, 246, 232, 0.07);
+  --border-default: rgba(255, 246, 232, 0.12);
+  --border-hover: rgba(255, 246, 232, 0.2);
+
+  /* 阴影统一压向暖黑，取消彩色光晕，只保留主色的细描边 + 近距离柔光 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-xl: 0 20px 56px rgba(0, 0, 0, 0.55);
+  --shadow-glow-blue: 0 6px 20px rgba(232, 163, 61, 0.18);
+  --shadow-glow-purple: 0 0 24px rgba(180, 131, 60, 0.2);
+  --shadow-glow-cyan: 0 0 24px rgba(227, 184, 113, 0.18);
+  --shadow-inner: inset 0 1px 0 rgba(255, 246, 232, 0.05);
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* 降低饱和度补偿，玻璃不再「奶」 */
+  --blur-glass: blur(18px) saturate(140%);
+  --blur-medium: blur(12px) saturate(130%);
+  --blur-sm: blur(8px) saturate(130%);
+
+  --transition-fast: 150ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --transition-normal: 250ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --transition-slow: 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --transition-bounce: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --scroll-thumb: rgba(255, 246, 232, 0.14);
+  --scroll-thumb-hover: rgba(255, 246, 232, 0.26);
+}
+
+.light-theme {
+  /* 相纸：暖白而非中性灰，压印质感来自纸本身，不靠蓝调 */
+  --bg-primary: #f5f3ef;
+  --bg-secondary: #edeae4;
+  --bg-tertiary: #e1ddd5;
+  --bg-elevated: rgba(255, 255, 255, 0.9);
+  --bg-glass: rgba(26, 22, 17, 0.04);
+  --bg-glass-hover: rgba(26, 22, 17, 0.065);
+  --bg-glass-active: rgba(26, 22, 17, 0.095);
+  --bg-overlay: rgba(26, 22, 17, 0.44);
+  --bg-input: rgba(26, 22, 17, 0.05);
+  --bg-card: rgba(255, 255, 255, 0.72);
+  --bg-table-header: rgba(240, 237, 231, 0.85);
+  --bg-modal: rgba(253, 252, 250, 0.97);
+  --bg-tooltip: rgba(255, 255, 255, 0.98);
+
+  --text-primary: rgba(26, 22, 17, 0.92);
+  --text-secondary: rgba(26, 22, 17, 0.6);
+  --text-tertiary: rgba(26, 22, 17, 0.42);
+  --text-quaternary: rgba(26, 22, 17, 0.28);
+  --text-accent: #9a5c14;
+
+  /* 浅色下主色必须压深，才能在相纸上留住对比度（白字压深琥珀 ≈ 4.7:1） */
+  --accent-blue: #a66315;
+  --accent-blue-hover: #b9741f;
+  --accent-blue-deep: #8a5010;
+  --accent-blue-rgb: 166, 99, 21;
+
+  --accent-cyan: #8a6a2a;
+  --accent-cyan-rgb: 138, 106, 42;
+
+  --accent-purple: #8c5a2b;
+  --accent-purple-hover: #a06c38;
+  --accent-purple-deep: #6f4520;
+  --accent-purple-rgb: 140, 90, 43;
+
+  --accent-pink: #c63a44;
+  --accent-pink-hover: #d64f58;
+  --accent-pink-deep: #a32b34;
+  --accent-pink-rgb: 198, 58, 68;
+
+  --accent-green: #2f8a54;
+  --accent-green-rgb: 47, 138, 84;
+
+  --accent-orange: #c56a12;
+  --accent-orange-rgb: 197, 106, 18;
+
+  --accent-yellow: #c99a10;
+  --accent-yellow-rgb: 201, 154, 16;
+
+  --accent-contrast: #ffffff;
+  --accent-contrast-soft: rgba(255, 255, 255, 0.22);
+
+  --border-subtle: rgba(26, 22, 17, 0.07);
+  --border-default: rgba(26, 22, 17, 0.11);
+  --border-hover: rgba(26, 22, 17, 0.17);
+  --border-input: rgba(26, 22, 17, 0.13);
+
+  --shadow-sm: 0 1px 2px rgba(26, 22, 17, 0.06), 0 2px 8px rgba(26, 22, 17, 0.06);
+  --shadow-md: 0 4px 16px rgba(26, 22, 17, 0.09);
+  --shadow-lg: 0 12px 32px rgba(26, 22, 17, 0.12);
+  --shadow-xl: 0 20px 56px rgba(26, 22, 17, 0.16);
+  --shadow-2xl: 0 25px 60px rgba(26, 22, 17, 0.2);
+  --shadow-glow-blue: 0 6px 18px rgba(166, 99, 21, 0.14);
+  --shadow-glow-purple: 0 0 20px rgba(140, 90, 43, 0.16);
+  --shadow-glow-cyan: 0 0 20px rgba(138, 106, 42, 0.16);
+  --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+  --scroll-thumb: rgba(26, 22, 17, 0.18);
+  --scroll-thumb-hover: rgba(26, 22, 17, 0.32);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  line-height: 1.5;
+}
+
+.app-container {
+  background: linear-gradient(145deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-tertiary) 100%);
+  position: relative;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* 环境光：暗房里唯一的一盏安全灯，从画面上方洒下来。
+   刻意只留这一处光晕 —— 原先「青 + 紫 + 蓝」三处彩色渐变正是界面
+   显得廉价的主要原因，收敛成单一暖色后，视线才会回到照片上。 */
+.app-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 420px;
+  background: radial-gradient(ellipse 70% 55% at 50% -15%,
+              rgba(var(--accent-blue-rgb), 0.14) 0%,
+              rgba(var(--accent-blue-rgb), 0.04) 45%,
+              transparent 72%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 浅色下纸张本身已经够亮，环境光再压一档，免得发灰 */
+.light-theme::before {
+  opacity: 0.45;
+}
+
+.main-content {
+  background: transparent;
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.photo-card {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: all var(--transition-slow);
+  background: var(--bg-glass);
+  backdrop-filter: var(--blur-glass);
+  border: 1px solid var(--border-subtle);
+}
+
+.photo-card:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: var(--shadow-lg), var(--shadow-glow-blue);
+  border-color: var(--border-default);
+}
+
+.apple-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 13px;
+  transition: all var(--transition-normal);
+  border: none;
+  cursor: pointer;
+  backdrop-filter: var(--blur-medium);
+}
+
+.apple-button-primary {
+  background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-blue-deep) 100%);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.apple-button-primary:hover {
+  background: linear-gradient(135deg, var(--accent-blue-hover) 0%, var(--accent-blue) 100%);
+  transform: scale(1.02);
+  box-shadow: var(--shadow-md);
+}
+
+.apple-button-secondary {
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+}
+
+.apple-button-secondary:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-hover);
+}
+
+.toolbar {
+  background: var(--bg-elevated);
+  backdrop-filter: var(--blur-glass);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03), var(--shadow-sm);
+}
+
+.sidebar {
+  background: var(--bg-elevated);
+  backdrop-filter: var(--blur-glass);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.details-pane {
+  background: var(--bg-elevated);
+  backdrop-filter: var(--blur-glass);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.photo-grid {
+  gap: 16px;
+  padding: 16px;
+}
+
+.photo-item {
+  background: var(--bg-glass);
+  backdrop-filter: var(--blur-glass);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  transition: all var(--transition-slow);
+}
+
+.photo-item:hover {
+  box-shadow: var(--shadow-lg), var(--shadow-glow-blue);
+  border-color: var(--accent-blue);
+  transform: translateY(-3px);
+}
+
+.modal {
+  background: var(--bg-modal);
+  backdrop-filter: blur(24px) saturate(180%);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl), 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  border: 1px solid var(--border-default);
+}
+
+.group-header {
+  background: var(--bg-glass);
+  backdrop-filter: var(--blur-medium);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.selected-item {
+  border: 2px solid var(--accent-blue);
+  box-shadow: var(--shadow-glow-blue);
+  background: rgba(var(--accent-blue-rgb), 0.1);
+}
+
+.apple-checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border-default);
+  transition: all var(--transition-fast);
+  accent-color: var(--accent-blue);
+}
+
+.apple-checkbox:checked {
+  background-color: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+.progress-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-glass-hover);
+}
+
+.progress-bar-fill {
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+  border-radius: 2px;
+  transition: width var(--transition-normal);
+  box-shadow: var(--shadow-glow-blue);
+}
+
+.fade-in {
+  animation: fadeIn var(--transition-normal) ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+   0% { background-position: -200% 0; }
+   100% { background-position: 200% 0; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* 扫描阶段的「不确定进度」滑动条 */
+@keyframes loadingSlide {
+  0% { left: -33%; }
+  100% { left: 100%; }
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 15px rgba(var(--accent-blue-rgb), 0.3); }
+  50% { box-shadow: 0 0 25px rgba(var(--accent-blue-rgb), 0.5); }
+}
+
+.hover-scale {
+  transition: transform var(--transition-normal);
+}
+
+.hover-scale:hover {
+  transform: scale(1.03);
+}
+
+.hover-lift {
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.divider {
+  background: var(--border-subtle);
+  height: 1px;
+}
+
+.tag {
+  background: rgba(var(--accent-cyan-rgb), 0.15);
+  color: var(--accent-cyan);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(var(--accent-cyan-rgb), 0.25);
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-indicator-success {
+  background: var(--accent-green);
+  box-shadow: 0 0 8px var(--accent-green);
+}
+
+.status-indicator-warning {
+  background: var(--accent-orange);
+  box-shadow: 0 0 8px var(--accent-orange);
+}
+
+.status-indicator-error {
+  background: var(--accent-pink);
+  box-shadow: 0 0 8px var(--accent-pink);
+}
+
+.text-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.text-subtitle {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.text-caption {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.shadow-sm { box-shadow: var(--shadow-sm); }
+.shadow-md { box-shadow: var(--shadow-md); }
+.shadow-lg { box-shadow: var(--shadow-lg); }
+.shadow-xl { box-shadow: var(--shadow-xl); }
+
+.rounded-xs { border-radius: var(--radius-xs); }
+.rounded-sm { border-radius: var(--radius-sm); }
+.rounded-md { border-radius: var(--radius-md); }
+.rounded-lg { border-radius: var(--radius-lg); }
+.rounded-xl { border-radius: var(--radius-xl); }
+.rounded-2xl { border-radius: var(--radius-2xl); }
+.rounded-full { border-radius: var(--radius-full); }
+
+.margin-xs { margin: 4px; }
+.margin-sm { margin: 8px; }
+.margin-md { margin: 16px; }
+.margin-lg { margin: 24px; }
+
+.padding-xs { padding: 4px; }
+.padding-sm { padding: 8px; }
+.padding-md { padding: 16px; }
+.padding-lg { padding: 24px; }
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::selection {
+  background: rgba(var(--accent-cyan-rgb), 0.3);
+  color: var(--text-primary);
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-glass-hover);
+  border-radius: 4px;
+  height: 4px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(var(--accent-blue-rgb), 0.4);
+  transition: transform var(--transition-fast);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--bg-glass) 25%,
+    var(--bg-glass-hover) 50%,
+    var(--bg-glass) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: var(--blur-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.glass-button {
+  background: var(--bg-glass);
+  backdrop-filter: var(--blur-medium);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-normal);
+}
+
+.glass-button:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-hover);
+}
+
+.glass-button:active {
+  background: var(--bg-glass-active);
+  transform: scale(0.98);
+}
+
+.focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--accent-blue-rgb), 0.4);
+}
+
+.tooltip {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-default);
+}
+
+.glass-input {
+  background: var(--bg-input);
+  backdrop-filter: var(--blur-sm);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(var(--accent-blue-rgb), 0.2);
+}
+
+.glass-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* ---------- 交互体验优化补充 ---------- */
+
+/* 键盘可达性：所有可交互元素统一焦点环，随主题变量变色 */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+button:focus-visible,
+[role='button']:focus-visible,
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline-offset: 1px;
+}
+
+/* 键盘键位提示（快捷键提示条） */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-default);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  box-shadow: 0 1px 0 var(--border-subtle) inset;
+  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
+}
+
+/* 静态位置出现（非进场动画）的浮动胶囊 */
+.date-capsule {
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+/* 滑块轨道：浅色主题下白色轨道不可见，需随主题切换 */
+.light-theme input[type="range"] {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+/* 主题切换：只在切换的那一瞬间（.theme-transition 挂载 240ms）启用颜色过渡。
+   刻意不加 !important —— 这样 prefers-reduced-motion 的全局降级仍然压得住它。 */
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition-property: background-color, border-color, color, fill, box-shadow;
+  transition-duration: 240ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 尊重系统的「减少动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
