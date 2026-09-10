@@ -1026,54 +1026,113 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
 
   /* ============ 空状态：把“下一步能做什么”直接放在眼前 ============ */
   if (photos.length === 0) {
+    const isWelcome = Boolean(onOpenDirectory || onAddImages);
+    // 空库欢迎页的能力要点：纯本地 / 拖放导入 / 图片视频，帮助新用户建立预期。
+    const welcomePoints = [
+      {
+        icon: (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        ),
+        label: '纯本地处理',
+      },
+      {
+        icon: (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+        ),
+        label: '拖入文件夹',
+      },
+      {
+        icon: (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="2" y="3" width="20" height="18" rx="2"></rect>
+            <path d="M9 17L4 12l5-5m6 10l5-5-5-5"></path>
+          </svg>
+        ),
+        label: '图片 & 视频',
+      },
+    ];
+
     return (
       <div
-        className="flex-1 flex flex-col items-center justify-center text-[var(--text-tertiary)] p-12 min-h-0 overflow-y-auto"
+        className="flex-1 flex flex-col items-center justify-center text-[var(--text-tertiary)] p-12 min-h-0 overflow-y-auto text-center"
         onContextMenu={(e) => onContextMenu && onContextMenu(e)}
       >
-        <div className="w-32 h-32 mb-8 rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.08)] border border-[rgba(var(--accent-blue-rgb),0.15)] flex items-center justify-center shadow-xl shadow-[rgba(var(--accent-blue-rgb),0.08)]">
-          <svg className="w-14 h-14 text-[var(--accent-blue)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-          </svg>
-        </div>
-        <p className="text-xl font-semibold text-[var(--text-secondary)] mb-3">{emptyTitle}</p>
-        <p className="text-sm text-[var(--text-tertiary)] text-center max-w-sm leading-relaxed">{emptyDescription}</p>
-
-        {(onOpenDirectory || onAddImages || onShowAll || onClearSearch) && (
-          <div className="mt-8 flex items-center gap-3 animate-fadeIn">
-            {onShowAll && (
-              <button
-                onClick={onShowAll}
-                className="px-5 py-2.5 rounded-xl text-sm font-medium bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] border border-[var(--border-default)] text-[var(--text-primary)] transition-all duration-200 active:scale-[0.98]"
-              >
-                {showAllLabel}
-              </button>
+        {isWelcome ? (
+          /* 空库欢迎页：光晕 + 图标 + 能力要点 + 交错入场，第一印象更专业 */
+          <>
+            <div className="relative mb-8 animate-fadeInUp">
+              <div className="absolute inset-0 -m-10 rounded-full bg-[radial-gradient(circle,rgba(var(--accent-blue-rgb),0.16)_0%,rgba(var(--accent-blue-rgb),0.05)_45%,transparent_72%)] blur-2xl" aria-hidden="true"></div>
+              <div className="relative w-24 h-24 rounded-3xl bg-[linear-gradient(135deg,rgba(var(--accent-blue-rgb),0.2),rgba(var(--accent-blue-rgb),0.05))] border border-[rgba(var(--accent-blue-rgb),0.3)] flex items-center justify-center shadow-xl shadow-[rgba(var(--accent-blue-rgb),0.18)] backdrop-blur">
+                <svg className="w-12 h-12 text-[var(--accent-blue)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+              </div>
+            </div>
+            <p className="text-xl font-semibold text-[var(--text-primary)] mb-2 animate-fadeInUp" style={{ animationDelay: '60ms' }}>{emptyTitle}</p>
+            <p className="text-sm text-[var(--text-tertiary)] max-w-sm leading-relaxed mb-8 animate-fadeInUp" style={{ animationDelay: '120ms' }}>{emptyDescription}</p>
+            <div className="flex flex-wrap items-center justify-center gap-3 mb-10 animate-fadeInUp" style={{ animationDelay: '180ms' }}>
+              {welcomePoints.map((p) => (
+                <div key={p.label} className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-glass)] text-[var(--text-secondary)] backdrop-blur">
+                  <span className="text-[var(--accent-cyan)]">{p.icon}</span>
+                  <span className="text-xs font-medium">{p.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 animate-fadeInUp" style={{ animationDelay: '240ms' }}>
+              {onAddImages && (
+                <button
+                  onClick={onAddImages}
+                  className="px-5 py-2.5 rounded-xl text-sm font-medium bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] border border-[var(--border-default)] text-[var(--text-primary)] transition-all duration-200 active:scale-[0.98]"
+                >
+                  添加图片
+                </button>
+              )}
+              {onOpenDirectory && (
+                <button
+                  onClick={onOpenDirectory}
+                  className="px-5 py-2.5 rounded-xl text-sm font-semibold text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.25)] transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
+                >
+                  打开文件夹
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          /* 其它空态（搜索 / 筛选 / 隐藏）：保持轻量，仅图标 + 文案 + 单入口 */
+          <>
+            <div className="w-32 h-32 mb-8 rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.08)] border border-[rgba(var(--accent-blue-rgb),0.15)] flex items-center justify-center shadow-xl shadow-[rgba(var(--accent-blue-rgb),0.08)] animate-fadeInUp">
+              <svg className="w-14 h-14 text-[var(--accent-blue)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+              </svg>
+            </div>
+            <p className="text-xl font-semibold text-[var(--text-secondary)] mb-3 animate-fadeInUp" style={{ animationDelay: '60ms' }}>{emptyTitle}</p>
+            <p className="text-sm text-[var(--text-tertiary)] text-center max-w-sm leading-relaxed animate-fadeInUp" style={{ animationDelay: '120ms' }}>{emptyDescription}</p>
+            {(onShowAll || onClearSearch) && (
+              <div className="mt-8 flex items-center gap-3 animate-fadeInUp" style={{ animationDelay: '180ms' }}>
+                {onShowAll && (
+                  <button
+                    onClick={onShowAll}
+                    className="px-5 py-2.5 rounded-xl text-sm font-medium bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] border border-[var(--border-default)] text-[var(--text-primary)] transition-all duration-200 active:scale-[0.98]"
+                  >
+                    {showAllLabel}
+                  </button>
+                )}
+                {onClearSearch && (
+                  <button
+                    onClick={onClearSearch}
+                    className="px-5 py-2.5 rounded-xl text-sm font-medium bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] border border-[var(--border-default)] text-[var(--text-primary)] transition-all duration-200 active:scale-[0.98]"
+                  >
+                    清除搜索
+                  </button>
+                )}
+              </div>
             )}
-            {onClearSearch && (
-              <button
-                onClick={onClearSearch}
-                className="px-5 py-2.5 rounded-xl text-sm font-medium bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] border border-[var(--border-default)] text-[var(--text-primary)] transition-all duration-200 active:scale-[0.98]"
-              >
-                清除搜索
-              </button>
-            )}
-            {onAddImages && (
-              <button
-                onClick={onAddImages}
-                className="px-5 py-2.5 rounded-xl text-sm font-medium bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] border border-[var(--border-default)] text-[var(--text-primary)] transition-all duration-200 active:scale-[0.98]"
-              >
-                添加图片
-              </button>
-            )}
-            {onOpenDirectory && (
-              <button
-                onClick={onOpenDirectory}
-                className="px-5 py-2.5 rounded-xl text-sm font-semibold text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.25)] transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
-              >
-                打开文件夹
-              </button>
-            )}
-          </div>
+          </>
         )}
       </div>
     );

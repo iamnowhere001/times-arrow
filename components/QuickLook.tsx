@@ -366,7 +366,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
              className="absolute left-0 inset-y-0 w-24 z-20 flex items-center justify-start pl-4 group cursor-pointer hover:bg-gradient-to-r hover:from-[rgba(0,0,0,0.4)] hover:to-transparent transition-all"
              onClick={(e) => { e.stopPropagation(); onPrev(); }}
           >
-             <button className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-0 group-hover:opacity-100 transform -translate-x-4 group-hover:translate-x-0 transition-all duration-300 shadow-lg" title="上一张（←）" aria-label="上一张">
+             <button className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform -translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg" title="上一张（←）" aria-label="上一张">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
              </button>
           </div>
@@ -377,7 +377,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
              className="absolute right-0 inset-y-0 w-24 z-20 flex items-center justify-end pr-4 group cursor-pointer hover:bg-gradient-to-l hover:from-[rgba(0,0,0,0.4)] hover:to-transparent transition-all"
              onClick={(e) => { e.stopPropagation(); onNext(); }}
           >
-             <button className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-0 group-hover:opacity-100 transform translate-x-4 group-hover:translate-x-0 transition-all duration-300 shadow-lg" title="下一张（→）" aria-label="下一张">
+             <button className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg" title="下一张（→）" aria-label="下一张">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
              </button>
           </div>
@@ -436,7 +436,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
              <>
                <button
                  onClick={toggleFavorite}
-                 className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
+                 className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all active:scale-90 ${
                    photo.isFavorite
                      ? 'text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.15)]'
                      : 'text-[rgba(255,255,255,0.8)] hover:text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.12)]'
@@ -452,10 +452,10 @@ const QuickLook: React.FC<QuickLookProps> = ({
            {/* 缩放 / 旋转 / 幻灯片 / 重置：仅对图片有意义 */}
            {!isVideo && (<>
            <div className="flex items-center">
-             <button onClick={() => handleZoom(-0.25)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-colors" title="缩小（-）">
+             <button onClick={() => handleZoom(-0.25)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="缩小（-）">
                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
              </button>
-             <button onClick={() => handleZoom(0.25)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-colors" title="放大（+）">
+             <button onClick={() => handleZoom(0.25)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="放大（+）">
                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
              </button>
            </div>
@@ -463,10 +463,10 @@ const QuickLook: React.FC<QuickLookProps> = ({
            <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1"></div>
 
            <div className="flex items-center">
-             <button onClick={() => handleRotate(-90)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-colors" title="向左旋转（⇧R）">
+             <button onClick={() => handleRotate(-90)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="向左旋转（⇧R）">
                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
              </button>
-             <button onClick={() => handleRotate(90)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-colors" title="向右旋转（R）">
+             <button onClick={() => handleRotate(90)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="向右旋转（R）">
                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path></svg>
              </button>
            </div>
@@ -476,7 +476,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
            {/* 幻灯片播放 / 暂停 */}
            <button
              onClick={() => setIsSlideshow(prev => !prev)}
-             className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
+             className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all active:scale-90 ${
                isSlideshow
                  ? 'text-[var(--accent-cyan)] bg-[rgba(var(--accent-cyan-rgb),0.15)]'
                  : 'text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)]'
@@ -494,7 +494,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
 
            <button
              onClick={() => { setScale(1); setRotation(0); setPosition({x:0, y:0}); }}
-             className="px-4 h-10 text-xs font-semibold uppercase tracking-wider text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-colors"
+             className="px-4 h-10 text-xs font-semibold uppercase tracking-wider text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90"
              title="重置缩放与旋转（0）"
            >
              重置

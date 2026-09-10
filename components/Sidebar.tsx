@@ -2,7 +2,7 @@
 import React from 'react';
 import { MediaFilter, SmartAlbum } from '../types';
 
-type Theme = 'dark' | 'light';
+type Theme = 'dark' | 'light' | 'system';
 
 interface SidebarProps {
   counts: {
@@ -32,19 +32,14 @@ interface SidebarProps {
   mediaFilter: MediaFilter;
   /** 选择图库分类（分类 + 媒体类型同时落地，避免出现「收藏夹里的视频」这类组合） */
   onSelectNav: (category: string, filter: MediaFilter) => void;
-  /** 已打开的文件夹名；为空表示还没导入过文件夹 */
-  currentFolder: string | null;
-  /** 文件夹完整路径，用于展示来源 */
-  currentDirectory: string | null;
-  onSelectFolder: () => void;
   /** 最近打开过的目录（新在前），用于一键重新打开 */
   recentDirectories: string[];
   onSelectRecentFolder: (path: string) => void;
   isOpen: boolean;
   /** 当前外观模式 */
-  theme: Theme;
-  /** 明亮 / 暗黑之间切换 */
-  onToggleTheme: () => void;
+  themeMode: Theme;
+  /** 选择外观模式（明亮 / 暗黑 / 跟随系统） */
+  onThemeModeChange: (mode: Theme) => void;
 }
 
 const PhotosIcon = () => (
@@ -132,14 +127,6 @@ const TrashIcon = () => (
   </svg>
 );
 
-const FolderIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-);
-
-const FolderOpenIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
-);
-
 const SunIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="5"></circle>
@@ -160,15 +147,16 @@ const MoonIcon = () => (
   </svg>
 );
 
-/** 长路径压缩为「…/祖父目录/父目录/目录」，保留足够定位信息，完整路径留给 title */
-const compactPath = (path: string): string => {
-  const parts = path.split('/').filter(Boolean);
-  if (parts.length <= 4) return path;
-  return `…/${parts.slice(-3).join('/')}`;
-};
+const MonitorIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+    <line x1="8" y1="21" x2="16" y2="21"></line>
+    <line x1="12" y1="17" x2="12" y2="21"></line>
+  </svg>
+);
 
 /**
- * 左栏：图库导航 + 媒体类型 + 文件夹来源 + 底部规模与外观设置。
+ * 左栏：图库导航 + 媒体类型 + 最近打开 + 底部规模与外观设置。
  * 「图库」承载分类入口，「媒体类型」承载仿 macOS 照片的智能分类
  * （视频 / 自拍 / 实况照片 / 截屏），两组共用同一套选中语义与筛选状态。
  * 底部只承载「全局信息」（库规模、外观），选中态归顶部情境条，避免同一信息说两遍。
@@ -184,17 +172,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   onSelectAlbum,
   onDeleteAlbum,
   onRequestSaveAlbum,
-  currentFolder,
-  currentDirectory,
-  onSelectFolder,
   recentDirectories,
   onSelectRecentFolder,
   isOpen,
-  theme,
-  onToggleTheme,
+  themeMode,
+  onThemeModeChange,
 }) => {
-  /** 最近打开：最多展示 5 条，当前已打开的目录不重复出现 */
-  const recentList = recentDirectories.filter(dir => dir !== currentDirectory).slice(0, 5);
+  /** 最近打开：最多展示 5 条 */
+  const recentList = recentDirectories.slice(0, 5);
   type NavItem = {
     id: string;
     label: string;
@@ -354,35 +339,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className="pt-4 border-t border-[var(--border-subtle)]">
-          <h2 className="px-2.5 text-[11px] font-semibold text-[var(--text-quaternary)] tracking-wider mb-2.5 transition-colors">文件夹</h2>
-          <button
-            type="button"
-            onClick={onSelectFolder}
-            title={currentDirectory || '打开文件夹'}
-            className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all duration-200 ${
-              currentFolder
-                ? 'border-[var(--border-subtle)] bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] hover:border-[var(--border-hover)]'
-                : 'border-dashed border-[var(--border-default)] bg-transparent hover:bg-[var(--bg-glass-hover)] hover:border-[var(--border-hover)]'
-            }`}
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="shrink-0 text-[var(--accent-cyan)]">
-                {currentFolder ? <FolderIcon /> : <FolderOpenIcon />}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className={`text-[13px] font-medium truncate ${currentFolder ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
-                  {currentFolder ?? '打开文件夹'}
-                </p>
-                <p className="text-[11px] text-[var(--text-quaternary)] truncate">
-                  {currentDirectory ? compactPath(currentDirectory) : '导入整个文件夹中的图片与视频'}
-                </p>
-              </div>
-            </div>
-          </button>
-
           {recentList.length > 0 && (
             <>
-              <h2 className="px-2.5 mt-3 mb-1.5 text-[11px] font-semibold text-[var(--text-quaternary)] tracking-wider transition-colors">
+              <h2 className="px-2.5 mb-1.5 text-[11px] font-semibold text-[var(--text-quaternary)] tracking-wider transition-colors">
                 最近打开
               </h2>
               <ul className="space-y-0.5">
@@ -408,33 +367,36 @@ const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       <div className="px-3 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-glass)] backdrop-blur-sm space-y-2.5">
-        <div className="flex items-center justify-between px-2.5 py-1.5">
-          <span className="text-[11px] font-medium text-[var(--text-tertiary)]">共 {counts.all} 项</span>
-          <span className="text-[11px] text-[var(--text-quaternary)]">本地处理</span>
-        </div>
-
-        {/* 外观：全局偏好，跟随左栏收展，不占用顶栏的视图控制位 */}
+        {/* 外观：全局偏好，跟随左栏收展，不占用顶栏的视图控制位。
+            三态分段：「跟随系统」实时响应 OS 深浅色，明亮 / 暗黑为显式覆盖。 */}
         <div className="flex items-center gap-1 p-0.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
           {([
+            { id: 'system', label: '跟随系统', icon: <MonitorIcon /> },
             { id: 'light', label: '明亮', icon: <SunIcon /> },
             { id: 'dark', label: '暗黑', icon: <MoonIcon /> },
           ] as const).map((option) => {
-            const active = theme === option.id;
+            const active = themeMode === option.id;
             return (
               <button
                 key={option.id}
                 type="button"
-                onClick={() => { if (!active) onToggleTheme(); }}
+                onClick={() => { if (!active) onThemeModeChange(option.id); }}
                 aria-pressed={active}
-                title={active ? `当前为${option.label}模式` : `切换到${option.label}模式`}
-                className={`flex-1 flex items-center justify-center gap-1.5 h-7 rounded-[10px] text-[12px] font-medium transition-all duration-200 ${
+                title={
+                  active
+                    ? `当前为${option.label}模式`
+                    : option.id === 'system'
+                      ? '跟随系统深色 / 浅色偏好'
+                      : `切换到${option.label}模式`
+                }
+                className={`flex-1 flex items-center justify-center gap-1 h-7 rounded-[10px] text-[12px] font-medium transition-all duration-200 min-w-0 ${
                   active
                     ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-md shadow-[rgba(var(--accent-blue-rgb),0.3)]'
                     : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
                 }`}
               >
                 <span className="shrink-0">{option.icon}</span>
-                <span>{option.label}</span>
+                <span className="truncate">{option.label}</span>
               </button>
             );
           })}

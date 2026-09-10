@@ -65,9 +65,11 @@ import ErrorBoundary from './components/ErrorBoundary';
 import ActiveFiltersBar from './components/ActiveFiltersBar';
 import AdjustDateModal, { type DateAdjustment } from './components/AdjustDateModal';
 import SaveAlbumModal from './components/SaveAlbumModal';
+import ShortcutsOverlay from './components/ShortcutsOverlay';
 import { logger } from './logger';
 
-type Theme = 'dark' | 'light';
+/** 外观模式：明亮 / 暗黑 / 跟随系统（后两者可实时响应 OS 深浅色偏好） */
+type Theme = 'dark' | 'light' | 'system';
 
 /** 主内容区的顶层视图：图库 / 重复图片检测（整页视图，而非弹窗） */
 type MainView = 'library' | 'duplicates';
@@ -169,6 +171,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const photosRef = useRef<Photo[]>([]);
   const [isAdjustDateModalOpen, setIsAdjustDateModalOpen] = useState(false);
   const [isSaveAlbumModalOpen, setIsSaveAlbumModalOpen] = useState(false);
+  // 快捷键总览层（? 唤出，Esc 关闭）
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   /** 图库封面路径；null 表示未设置 */
   const coverRef = useRef<string | null>(null);
   /** AI 分析结果缓存（路径 → 描述 / 标签），持久化在独立的 ai-cache.json */
@@ -186,13 +190,38 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const [isDetailsPaneOpen, setIsDetailsPaneOpen] = useState(true); // Control details pane visibility
   // 左栏承载分类导航（含图片 / 视频筛选）与文件夹来源，默认展开
   const [isLeftPaneOpen, setIsLeftPaneOpen] = useState(true); // Control sidebar visibility
-  const [theme, setTheme] = useState<Theme>('dark'); // Theme state
+  // 外观模式：明亮 / 暗黑 / 跟随系统，默认跟随系统
+  const [theme, setTheme] = useState<Theme>('system');
+  // 系统当前深浅色（仅 theme === 'system' 时生效）：用 matchMedia 监听，Electron 与浏览器通用
+  const [systemDark, setSystemDark] = useState<boolean>(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches
+      : false
+  );
+  // 解析出的实际主题：跟随系统时取系统偏好，否则取用户显式选择
+  const resolvedTheme: 'dark' | 'light' = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
+  const isLight = resolvedTheme === 'light';
   // 主题切换过渡的卸载计时器：连续切换时只保留最后一次
   const themeTransitionTimerRef = useRef<number | null>(null);
+  const isFirstThemeApply = useRef(true);
 
-  const toggleTheme = () => {
-    // 切换的那一瞬间才挂上全局颜色过渡，播完立刻摘掉：
-    // 常驻 transition 会拖慢所有 hover / 按下的响应
+  // 监听系统深浅色偏好变化，跟随系统时实时切换
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    setSystemDark(mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // 主题真正变化的那一刻才挂上全局颜色过渡，播完立刻摘掉：
+  // 常驻 transition 会拖慢所有 hover / 按下的响应；首次渲染不播，避免开局幻跳
+  useEffect(() => {
+    if (isFirstThemeApply.current) {
+      isFirstThemeApply.current = false;
+      return;
+    }
     if (themeTransitionTimerRef.current !== null) {
       window.clearTimeout(themeTransitionTimerRef.current);
     }
@@ -201,13 +230,10 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       document.documentElement.classList.remove('theme-transition');
       themeTransitionTimerRef.current = null;
     }, 240);
-
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-  };
+  }, [resolvedTheme]);
   
   // New state for UI Feedback & File System
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
-  const [directoryPath, setDirectoryPath] = useState<string | null>(null);
   // Toast 队列：支持多条同时展示，错误级常驻
   const [toasts, setToasts] = useState<ToastData[]>([]);
   const toastIdRef = useRef(0);
@@ -345,7 +371,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       // 视图偏好：决定「重启后打开看到什么样」
       const prefs = config.preferences;
       if (prefs) {
-        if (prefs.theme === 'light' || prefs.theme === 'dark') setTheme(prefs.theme);
+        if (prefs.theme === 'light' || prefs.theme === 'dark' || prefs.theme === 'system') setTheme(prefs.theme);
         if (prefs.viewMode === 'grid' || prefs.viewMode === 'list') setViewMode(prefs.viewMode);
         if (prefs.sortKey) {
           setSortConfig({
@@ -1005,7 +1031,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       }
 
       setCurrentFolder(dirName);
-      setDirectoryPath(dirPath);
       pushRecentDirectory(dirPath);
       showToast(`文件夹 "${dirName}" 已加载 ${added} 个项目`, 'success');
     } catch (err) {
@@ -2120,6 +2145,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   // 弹层打开或焦点在输入框内时全部让行。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // 快捷键总览已打开：Esc 或再按 ? 关闭，并吞掉其余按键，避免背后交互被误触
+      if (isShortcutsOpen) {
+        if (e.key === 'Escape' || e.key === '?') {
+          e.preventDefault();
+          setIsShortcutsOpen(false);
+        }
+        return;
+      }
       // 重复检测页：Esc 返回图库（预览层打开时让行给它）
       if (isDuplicateDetectorOpen) {
         if (e.key === 'Escape' && !quickLookPhoto) {
@@ -2134,6 +2167,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       const isTextInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
 
       const cmd = e.metaKey || e.ctrlKey;
+
+      // ?（⇧/）：唤出快捷键总览。放在输入框守卫之后，确保在搜索框内打「？」不会被误触发
+      if (!isTextInput && e.key === '?') {
+        e.preventDefault();
+        setIsShortcutsOpen(true);
+        return;
+      }
 
       // ⌘F：聚焦搜索框（输入框内也允许接管）
       if (cmd && !e.shiftKey && (e.key === 'f' || e.key === 'F')) {
@@ -2189,6 +2229,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     quickLookPhoto, isRenameModalOpen, isDeleteModalOpen, isDuplicateDetectorOpen, isExportModalOpen,
+    isShortcutsOpen,
     contextMenu, visiblePhotos, selectedIds,
     handleSelectAllVisible, handleFavoriteSelected, handleArrowNavigation, handleExitDuplicates,
   ]);
@@ -2445,7 +2486,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           : MEDIA_FILTER_LABELS[mediaFilter];
 
   return (
-    <div className={`app-container flex h-screen ${theme === 'light' ? 'light-theme' : ''}`}
+    <div className={`app-container flex h-screen ${isLight ? 'light-theme' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -2475,14 +2516,11 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         onSelectAlbum={handleSelectAlbum}
         onDeleteAlbum={handleDeleteAlbum}
         onRequestSaveAlbum={() => setIsSaveAlbumModalOpen(true)}
-        currentFolder={currentFolder}
-        currentDirectory={directoryPath}
-        onSelectFolder={handleOpenDirectory}
         recentDirectories={recentDirectories}
         onSelectRecentFolder={handleSelectRecentFolder}
         isOpen={isLeftPaneOpen}
-        theme={theme}
-        onToggleTheme={toggleTheme}
+        themeMode={theme}
+        onThemeModeChange={setTheme}
       />
       {/* Loading Overlay for Large File Operations */}
       {loading && (
@@ -2616,6 +2654,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onResetFilters={resetFilters}
           filterOptions={filterOptions}
           hasVideos={counts.videos > 0}
+          onOpenShortcuts={() => setIsShortcutsOpen(true)}
         />
         <ActiveFiltersBar
           filters={filters}
@@ -2817,6 +2856,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onSave={handleSaveAlbum}
         />
       )}
+      {/* 快捷键总览层 */}
+      {isShortcutsOpen && <ShortcutsOverlay onClose={() => setIsShortcutsOpen(false)} />}
       {/* QuickLook Component */}
       {quickLookPhoto && (
         <QuickLook

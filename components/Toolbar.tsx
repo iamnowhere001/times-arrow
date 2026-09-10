@@ -36,6 +36,8 @@ interface ToolbarProps {
   filterOptions: { cameras: string[]; formats: string[]; tags: string[] };
   /** 库中是否含视频：决定筛选面板是否展示时长条件 */
   hasVideos: boolean;
+  /** 打开快捷键总览层（? 唤出） */
+  onOpenShortcuts: () => void;
 }
 
 const FolderIcon = () => (
@@ -126,6 +128,15 @@ const ResizeIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
     <polyline points="20 15 20 20 15 20"></polyline>
     <line x1="4" y1="4" x2="10" y2="10"></line>
     <line x1="20" y1="20" x2="14" y2="14"></line>
+  </svg>
+);
+
+/** 问号帮助：唤起快捷键总览层 */
+const HelpIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"></circle>
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+    <line x1="12" y1="17" x2="12.01" y2="17"></line>
   </svg>
 );
 
@@ -256,6 +267,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onResetFilters,
   filterOptions,
   hasVideos,
+  onOpenShortcuts,
 }) => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const advancedFilterCount = countAdvancedFilters(filters);
@@ -439,6 +451,15 @@ const Toolbar: React.FC<ToolbarProps> = ({
             icon={<PanelIcon />}
             title={isDetailsPaneOpen ? '收起详情面板' : '展开详情面板'}
             active={isDetailsPaneOpen}
+          />
+
+          <div className="w-px h-5 bg-[var(--border-default)] mx-1"></div>
+
+          <ToolButton
+            onClick={onOpenShortcuts}
+            icon={<HelpIcon />}
+            title="快捷键（?）"
+            hoverColor="var(--accent-cyan)"
           />
         </div>
       </div>
