@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Photo } from '../types';
-import { isVideoPhoto } from '../utils';
-import { reportVideoMetaFromElement, videoMetaKeyOf } from '../videoMeta';
+import { Photo } from '@/types';
+import { isVideoPhoto } from '@/utils';
+import { reportVideoMetaFromElement, videoMetaKeyOf } from '@/lib/media/videoMeta';
 
 interface QuickLookProps {
   photo: Photo;

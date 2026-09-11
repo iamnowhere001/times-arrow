@@ -1,5 +1,5 @@
 import React from 'react';
-import { PhotoFilters } from '../types';
+import { PhotoFilters } from '@/types';
 import {
   DATE_PRESET_OPTIONS,
   DURATION_FILTER_OPTIONS,
@@ -12,7 +12,7 @@ import {
   startOfDayFromInput,
   toDateInputValue,
   toggleInList,
-} from '../filters';
+} from '@/lib/filter/filters';
 
 interface FilterPanelProps {
   filters: PhotoFilters;
@@ -148,7 +148,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             value={toDateInputValue(filters.dateFrom)}
             max={toDateInputValue(filters.dateTo) || undefined}
             onChange={e => onChange({ dateFrom: startOfDayFromInput(e.target.value) })}
-            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
+            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
             aria-label="起始日期"
           />
           <span className="text-xs text-[var(--text-quaternary)] shrink-0">至</span>
@@ -157,7 +157,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             value={toDateInputValue(filters.dateTo)}
             min={toDateInputValue(filters.dateFrom) || undefined}
             onChange={e => onChange({ dateTo: endOfDayFromInput(e.target.value) })}
-            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
+            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
             aria-label="结束日期"
           />
         </div>

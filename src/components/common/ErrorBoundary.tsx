@@ -1,5 +1,5 @@
 import React from 'react';
-import { logger } from '../logger';
+import { logger } from '@/lib/logger';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;

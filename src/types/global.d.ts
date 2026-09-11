@@ -90,7 +90,7 @@ declare global {
       getMetadata: (filePath: string) => Promise<{
         dimensions?: { width: number; height: number };
         dateTaken?: number;
-        exif?: import('./types').ExifData;
+        exif?: import('@/types').ExifData;
         error?: string;
       }>;
       /** 批量计算感知哈希（主进程执行，返回与入参等长的数组） */
@@ -103,15 +103,20 @@ declare global {
       getFilePath: (file: File) => string;
 
       /** 读取用户配置（收藏 / 隐藏 / 标签 / 拍摄时间修正 / 智能相簿） */
-      loadConfig: () => Promise<import('./types').PersistedConfig>;
+      loadConfig: () => Promise<import('@/types').PersistedConfig>;
       /** 合并写入配置片段 */
-      saveConfig: (patch: Partial<import('./types').PersistedConfig>) => Promise<boolean>;
+      saveConfig: (patch: Partial<import('@/types').PersistedConfig>) => Promise<boolean>;
       /** 读取 AI 分析结果缓存 */
-      loadAiCache: () => Promise<import('./types').PersistedAiCache>;
+      loadAiCache: () => Promise<import('@/types').PersistedAiCache>;
       /** 整体写入 AI 分析结果缓存（由渲染进程维护条数上限） */
       saveAiCache: (
-        entries: Record<string, import('./types').AiCacheEntry>
+        entries: Record<string, import('@/types').AiCacheEntry>
       ) => Promise<boolean>;
+      /** AI 图片分析（主进程代理 DeepSeek，API Key 不出主进程） */
+      analyzeImage: (payload: { base64: string; mimeType: string }) => Promise<{
+        result?: { description?: string; tags?: string[] } | null;
+        error?: string;
+      }>;
 
       /** 注册 ⌘O 菜单导入事件；返回取消订阅函数 */
       onImportPaths: (callback: (picked: PickedPaths) => void) => () => void;

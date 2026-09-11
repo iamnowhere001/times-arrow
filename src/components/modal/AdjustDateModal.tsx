@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Photo } from '../types';
-import { formatDate } from '../utils';
+import { Photo } from '@/types';
+import { formatDate } from '@/utils';
 
 export type AdjustMode = 'shift' | 'set';
 
@@ -144,7 +144,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
           const next = parseInt(e.target.value, 10);
           setValue(Number.isFinite(next) ? next : 0);
         }}
-        className="w-full px-3 py-2 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
+        className="w-full px-3 py-2 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
       />
     </div>
   );
@@ -176,7 +176,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
                 onClick={() => setMode(value)}
                 className={`py-2 text-sm font-medium rounded-lg transition-all ${
                   mode === value
-                    ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-sm'
+                    ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-xs'
                     : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-glass)]'
                 }`}
               >
@@ -203,7 +203,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
                   type="datetime-local"
                   value={targetValue}
                   onChange={e => setTargetValue(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
+                  className="w-full px-3 py-2 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
                 />
               </div>
 
@@ -212,7 +212,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
                   type="checkbox"
                   checked={keepRelative}
                   onChange={e => setKeepRelative(e.target.checked)}
-                  className="rounded border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] accent-[var(--accent-blue)] cursor-pointer"
+                  className="rounded-sm border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] accent-[var(--accent-blue)] cursor-pointer"
                 />
                 <span className="text-sm text-[var(--text-secondary)]">保持原有时间间隔</span>
               </label>

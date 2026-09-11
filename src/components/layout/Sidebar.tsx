@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { MediaFilter, SmartAlbum } from '../types';
+import { MediaFilter, SmartAlbum } from '@/types';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -413,7 +413,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </nav>
 
-      <div className="px-3 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-glass)] backdrop-blur-sm space-y-2.5">
+      <div className="px-3 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-glass)] backdrop-blur-xs space-y-2.5">
         {/* 外观：全局偏好，跟随左栏收展，不占用顶栏的视图控制位。
             三态分段：「跟随系统」实时响应 OS 深浅色，明亮 / 暗黑为显式覆盖。 */}
         <div className="flex items-center gap-1 p-0.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">

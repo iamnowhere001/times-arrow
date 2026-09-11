@@ -12,7 +12,7 @@
  * - 主进程检测到内存压力时通过 IPC 广播，渲染进程据此统一释放。
  */
 
-import { logger } from './logger';
+import { logger } from '@/lib/logger';
 
 /**
  * volatile：缩略图地址 / 日期分组文案之类，丢了最多重新算一次，优先释放。

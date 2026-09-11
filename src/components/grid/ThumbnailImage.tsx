@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Photo } from '../types';
-import { isVideoPhoto } from '../utils';
+import { Photo } from '@/types';
+import { isVideoPhoto } from '@/utils';
 import {
   BASE_THUMB_SIZE,
   cacheThumbUrl,
@@ -8,12 +8,12 @@ import {
   quantizeThumbSize,
   resolveThumbnail,
   withThumbSlot,
-} from '../thumbCache';
-import { reportVideoMetaFromElement, videoMetaKeyOf } from '../videoMeta';
+} from '@/lib/cache/thumbCache';
+import { reportVideoMetaFromElement, videoMetaKeyOf } from '@/lib/media/videoMeta';
 
 /** 缓存实现已下沉到 thumbCache（与感知哈希共用），这里保持原有导出不变 */
-export { BASE_THUMB_SIZE, quantizeThumbSize } from '../thumbCache';
-export { clearThumbnailCache } from '../thumbCache';
+export { BASE_THUMB_SIZE, quantizeThumbSize } from '@/lib/cache/thumbCache';
+export { clearThumbnailCache } from '@/lib/cache/thumbCache';
 
 /**
  * 磁盘缩略图的「按需解析」层。

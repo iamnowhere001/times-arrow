@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
-import { Photo, type DuplicateScope } from '../types';
-import { formatBytes, hammingDistance, photoOriginalTime, type DuplicateScanProgress } from '../utils';
-import { useThumbnailSrc } from './ThumbnailImage';
+import { Photo, type DuplicateScope } from '@/types';
+import { formatBytes, hammingDistance, photoOriginalTime, type DuplicateScanProgress } from '@/utils';
+import { useThumbnailSrc } from '@/components/grid/ThumbnailImage';
 
 const getFolderPath = (path: string): string => {
   if (!path) return '';
@@ -172,7 +172,7 @@ const DuplicatePhotoCard = memo(function DuplicatePhotoCard({
           onToggle(photo);
         }
       }}
-      className={`group relative rounded-lg overflow-hidden border-2 cursor-pointer outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] ${
+      className={`group relative rounded-lg overflow-hidden border-2 cursor-pointer outline-hidden transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] ${
         marked
           ? 'border-[var(--accent-pink)]'
           : photo.isRecommended
@@ -214,7 +214,7 @@ const DuplicatePhotoCard = memo(function DuplicatePhotoCard({
         </span>
 
         {photo.isRecommended && !marked && (
-          <div className="absolute top-1.5 right-1.5 bg-[var(--accent-green)] text-[var(--accent-contrast)] text-[10px] font-medium px-1.5 py-0.5 rounded-full shadow-sm">
+          <div className="absolute top-1.5 right-1.5 bg-[var(--accent-green)] text-[var(--accent-contrast)] text-[10px] font-medium px-1.5 py-0.5 rounded-full shadow-xs">
             原图 · 建议保留
           </div>
         )}
@@ -223,7 +223,7 @@ const DuplicatePhotoCard = memo(function DuplicatePhotoCard({
             也只有 <100% 时百分比才值得占一个角标 */}
         {!photo.isRecommended && similarity !== null && (
           <div
-            className="absolute top-1.5 right-1.5 bg-[rgba(0,0,0,0.55)] text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full shadow-sm backdrop-blur-sm"
+            className="absolute top-1.5 right-1.5 bg-[rgba(0,0,0,0.55)] text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full shadow-xs backdrop-blur-xs"
             title={similarity === 100 ? '与保留项哈希完全一致' : '与「建议保留」项的感知哈希相似度'}
           >
             {similarity === 100 ? '完全相同' : `相似 ${similarity}%`}
@@ -612,11 +612,11 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                   {duplicateGroups.length > 0 && (
                     <div className="hidden xl:flex items-center gap-3 text-xs text-[var(--text-tertiary)] ml-2 pl-3 border-l border-[var(--border-subtle)]">
                       <span className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-[var(--accent-green)]" />
+                        <span className="w-2.5 h-2.5 rounded-xs bg-[var(--accent-green)]" />
                         原图（最早）
                       </span>
                       <span className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-[var(--accent-pink)]" />
+                        <span className="w-2.5 h-2.5 rounded-xs bg-[var(--accent-pink)]" />
                         待移至回收站
                       </span>
                     </div>
@@ -896,7 +896,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                       onClick={() => onScopeChange(value)}
                       className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
                         scope === value
-                          ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-sm'
+                          ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-xs'
                           : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-glass)]'
                       }`}
                     >

@@ -8,8 +8,8 @@
  * 这些结果是「重算代价高但可以丢」的数据：丢掉只是需要重新分析一次，不会损坏任何文件。
  */
 
-import { AiCacheEntry, PersistedAiCache } from './types';
-import { logger } from './logger';
+import { AiCacheEntry, PersistedAiCache } from '@/types';
+import { logger } from '@/lib/logger';
 
 /** 最多保留多少条 AI 结果（约几百 KB） */
 export const AI_CACHE_LIMIT = 2000;

@@ -6,9 +6,9 @@
  * 保证「面板里看到的」就是「列表里筛选出的」。
  */
 
-import { DurationFilter, MediaFilter, Photo, PhotoFilters, SizeFilter } from './types';
-import { extOfName, isVideoPhoto } from './utils';
-import { isSelfiePhoto, isScreenshotPhoto } from './mediaTypes';
+import { DurationFilter, MediaFilter, Photo, PhotoFilters, SizeFilter } from '@/types';
+import { extOfName, isVideoPhoto } from '@/utils';
+import { isSelfiePhoto, isScreenshotPhoto } from '@/lib/media/mediaTypes';
 
 /** 空筛选（默认视图：全部媒体、不限定任何条件） */
 export const EMPTY_FILTERS: PhotoFilters = {

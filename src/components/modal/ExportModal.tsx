@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Photo } from '../types';
-import { logger } from '../logger';
+import { Photo } from '@/types';
+import { logger } from '@/lib/logger';
 
 export type ExportFormat = 'original' | 'image/jpeg' | 'image/png' | 'image/webp';
 

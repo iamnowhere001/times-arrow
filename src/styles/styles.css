@@ -1,7 +1,58 @@
-/* Tailwind 工具层：内容扫描见 tailwind.config.js */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4 工具层（CSS-first 配置）。
+   主题令牌集中定义在下方 @theme 中，不再使用 tailwind.config.js。 */
+@import "tailwindcss";
+
+/* 显式声明内容源（渲染层 + 入口），避免扫描主进程等无关文件 */
+@source "../../index.html";
+@source "../main.tsx";
+@source "../App.tsx";
+@source "../components";
+@source "../hooks";
+@source "../services";
+
+@theme {
+  /* 暗房色板：中性石墨 + 相纸白 + 安全灯琥珀
+     与下方 :root 的 CSS 变量保持一致，改色时两处同步。 */
+  --color-ink-900: #0c0b0a;
+  --color-ink-800: #131211;
+  --color-ink-700: #1b1917;
+  --color-ink-600: #262320;
+  --color-paper: #f5f3ef;
+  --color-safelight: #e8a33d;
+  --color-safelight-hover: #f2b75e;
+  --color-safelight-deep: #b87a22;
+  --color-safelight-soft: rgba(232, 163, 61, 0.28);
+  /* 语义色（暗色主题取值），状态类 UI 统一从这里取 */
+  --color-signal-danger: #e9585e;
+  --color-signal-success: #63c08a;
+  --color-signal-warning: #f08a3c;
+
+  /* 摄影参数与计数统一使用等宽数字，保证纵向对齐 */
+  --font-numeric: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* 与 macOS 一致的「快出慢入」缓动 */
+  --ease-smooth: cubic-bezier(0.19, 1, 0.22, 1);
+  /* 出场（元素进入视线的落位曲线）：快启动、长尾收束 */
+  --ease-entrance: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* 与下方 @keyframes fadeIn 保持一致，让 animate-fadeIn 真正产出 CSS */
+  --animate-fadeIn: fadeIn 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fadeInUp: fadeInUp 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-scaleIn: scaleIn 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+}
 
 /* 无原生标题栏（macOS hiddenInset）时：标记可拖动窗口的区域；
    其中的按钮 / 输入框等交互元素必须显式声明为 no-drag */
@@ -111,7 +162,12 @@
   /* 降低饱和度补偿，玻璃不再「奶」 */
   --blur-glass: blur(18px) saturate(140%);
   --blur-medium: blur(12px) saturate(130%);
-  --blur-sm: blur(8px) saturate(130%);
+  /* 【Tailwind v4 命名冲突】不可命名为 --blur-sm：
+     --blur-* 是 v4 的主题令牌命名空间，blur-sm / backdrop-blur-sm 工具类会生成
+     blur(var(--blur-sm))。这里若覆盖成完整滤镜值，会得到
+     blur(blur(8px) saturate(130%)) —— 非法值，导致整条 backdrop-filter 失效。
+     故改名为 --blur-soft。 */
+  --blur-soft: blur(8px) saturate(130%);
 
   --transition-fast: 150ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --transition-normal: 250ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
@@ -194,25 +250,28 @@
   --scroll-thumb-hover: rgba(26, 22, 17, 0.32);
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+/* 【Tailwind v4 层叠层】基础规则必须位于 @layer base。
+   v4 把预检 / 工具类分别放进 @layer base 和 @layer utilities，
+   而未分层（unlayered）样式的优先级高于任何 @layer —— 层级比较优先于特异性。
+   原先裸写的 `* { margin: 0; padding: 0 }` 因此压掉了 utilities 里所有
+   p-* / m-* / px-* / pl-* / space-* 间距类，这正是升级后间距集体失效的根因。
+   同样的归零已由 v4 预检在 base 层提供（含 box-sizing 与 border: 0 solid），
+   故此处不再重复声明。 */
+@layer base {
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+  }
 
-html, body, #root {
-  height: 100%;
-  overflow: hidden;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow: hidden;
-  line-height: 1.5;
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+    line-height: 1.5;
+  }
 }
 
 .app-container {
@@ -684,7 +743,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .glass-input {
   background: var(--bg-input);
-  backdrop-filter: var(--blur-sm);
+  backdrop-filter: var(--blur-soft);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 10px 14px;

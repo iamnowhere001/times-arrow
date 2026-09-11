@@ -1,8 +1,8 @@
 
 import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect, forwardRef, useImperativeHandle } from 'react';
-import { Photo, ViewMode, SortConfig, SortKey, SortDirection } from '../types';
-import { formatBytes, formatDate, formatVideoDuration, isVideoPhoto } from '../utils';
-import { useThumbnailSrc, useVideoPoster, ThumbImage } from './ThumbnailImage';
+import { Photo, ViewMode, SortConfig, SortKey, SortDirection } from '@/types';
+import { formatBytes, formatDate, formatVideoDuration, isVideoPhoto } from '@/utils';
+import { useThumbnailSrc, useVideoPoster, ThumbImage } from '@/components/grid/ThumbnailImage';
 
 /**
  * 把时间戳格式化为「今天 / 昨天 / 具体日期」，用于滚动日期胶囊。
@@ -752,7 +752,7 @@ const ImageCard = React.memo(({
               e.stopPropagation();
               onSelect(photo.id, true);
             }}
-            className={`flex items-center justify-center w-6 h-6 rounded-full border-2 backdrop-blur-md cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent-blue-rgb),0.6)] hover:scale-110 active:scale-90 ${
+            className={`flex items-center justify-center w-6 h-6 rounded-full border-2 backdrop-blur-md cursor-pointer transition-all duration-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent-blue-rgb),0.6)] hover:scale-110 active:scale-90 ${
               isSelected
                 ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)] text-[var(--accent-contrast)] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.45)]'
                 : 'border-[rgba(255,255,255,0.85)] bg-[rgba(0,0,0,0.35)] text-transparent hover:bg-[rgba(0,0,0,0.55)] hover:border-white'
@@ -825,7 +825,7 @@ const ImageCard = React.memo(({
         )}
 
         {loadError && (
-          <div className="absolute inset-0 bg-[rgba(var(--accent-pink-rgb),0.05)] backdrop-blur-sm flex flex-col items-center justify-center p-4">
+          <div className="absolute inset-0 bg-[rgba(var(--accent-pink-rgb),0.05)] backdrop-blur-xs flex flex-col items-center justify-center p-4">
             <svg className="w-12 h-12 text-[rgba(var(--accent-pink-rgb),0.4)] mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -890,7 +890,7 @@ const ImageCard = React.memo(({
 
         {/* 时长角标：贴在左下角，位于文件名浮层之上 */}
         {isVideo && durationLabel && !loadError && (
-          <div className="absolute bottom-1.5 left-1.5 z-[7] px-1.5 py-0.5 rounded-md bg-[rgba(0,0,0,0.6)] text-white text-[10px] font-medium tabular-nums backdrop-blur-md shadow-sm">
+          <div className="absolute bottom-1.5 left-1.5 z-[7] px-1.5 py-0.5 rounded-md bg-[rgba(0,0,0,0.6)] text-white text-[10px] font-medium tabular-nums backdrop-blur-md shadow-xs">
             {durationLabel}
           </div>
         )}
@@ -1258,7 +1258,7 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
           <>
             <div className="relative mb-8 animate-fadeInUp">
               <div className="absolute inset-0 -m-10 rounded-full bg-[radial-gradient(circle,rgba(var(--accent-blue-rgb),0.16)_0%,rgba(var(--accent-blue-rgb),0.05)_45%,transparent_72%)] blur-2xl" aria-hidden="true"></div>
-              <div className="relative w-24 h-24 rounded-3xl bg-[linear-gradient(135deg,rgba(var(--accent-blue-rgb),0.2),rgba(var(--accent-blue-rgb),0.05))] border border-[rgba(var(--accent-blue-rgb),0.3)] flex items-center justify-center shadow-xl shadow-[rgba(var(--accent-blue-rgb),0.18)] backdrop-blur">
+              <div className="relative w-24 h-24 rounded-3xl bg-[linear-gradient(135deg,rgba(var(--accent-blue-rgb),0.2),rgba(var(--accent-blue-rgb),0.05))] border border-[rgba(var(--accent-blue-rgb),0.3)] flex items-center justify-center shadow-xl shadow-[rgba(var(--accent-blue-rgb),0.18)] backdrop-blur-sm">
                 <svg className="w-12 h-12 text-[var(--accent-blue)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                 </svg>
@@ -1268,7 +1268,7 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
             <p className="text-sm text-[var(--text-tertiary)] max-w-sm leading-relaxed mb-8 animate-fadeInUp" style={{ animationDelay: '120ms' }}>{emptyDescription}</p>
             <div className="flex flex-wrap items-center justify-center gap-3 mb-10 animate-fadeInUp" style={{ animationDelay: '180ms' }}>
               {welcomePoints.map((p) => (
-                <div key={p.label} className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-glass)] text-[var(--text-secondary)] backdrop-blur">
+                <div key={p.label} className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-glass)] text-[var(--text-secondary)] backdrop-blur-sm">
                   <span className="text-[var(--accent-cyan)]">{p.icon}</span>
                   <span className="text-xs font-medium">{p.label}</span>
                 </div>
@@ -1452,7 +1452,7 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
                 step="0.1"
                 value={scale}
                 onChange={(e) => onScaleChange(parseFloat(e.target.value))}
-                className="w-16 2xl:w-20 appearance-none cursor-pointer accent-[var(--accent-blue)] focus:outline-none"
+                className="w-16 2xl:w-20 appearance-none cursor-pointer accent-[var(--accent-blue)] focus:outline-hidden"
                 aria-label="网格大小"
               />
               <span className="text-[11px] font-mono text-[var(--text-tertiary)] w-8 text-right">{Math.round(scale * 100)}%</span>
@@ -1465,7 +1465,7 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
                   onClick={() => onSort(opt.key)}
                   className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
                     sortConfig.key === opt.key
-                      ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-sm'
+                      ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-xs'
                       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)]'
                   }`}
                 >

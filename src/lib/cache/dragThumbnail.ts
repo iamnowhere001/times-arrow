@@ -7,8 +7,8 @@
  * 缓存值是 base64 dataURL，体积远大于 pm:// 地址，因此必须限量并支持统一清理。
  */
 
-import { createLruCache } from './cacheManager';
-import { logger } from './logger';
+import { createLruCache } from '@/lib/cache/cacheManager';
+import { logger } from '@/lib/logger';
 
 const dragThumbCache = createLruCache<string, Map<number, string>>('dragThumbnail', 120, 'volatile');
 

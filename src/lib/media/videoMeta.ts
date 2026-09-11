@@ -10,7 +10,7 @@
  * - 缓存命中的视频（例如重启后）无需再次探测即可显示时长。
  */
 
-import { Photo, VideoMetaRecord } from './types';
+import { Photo, VideoMetaRecord } from '@/types';
 
 export type VideoMeta = VideoMetaRecord;
 

@@ -9,23 +9,23 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { DuplicateScope, Photo } from '../types';
+import { DuplicateScope, Photo } from '@/types';
 import {
   findDuplicatePhotos,
   isDuplicateScanAbort,
   isVideoPhoto,
   markRecommended,
   type DuplicateScanProgress,
-} from '../utils';
+} from '@/utils';
 import {
   DUPLICATE_SIMILARITY_DEFAULT,
   similarityToDistance,
-} from '../components/DuplicateDetector';
-import { releaseMemory } from '../cacheManager';
-import { savePersistedConfig } from '../persistence';
-import { logger } from '../logger';
-import { movePhotosToTrash } from '../fileOperations';
-import { ToastAction, type ToastType } from '../components/Toast';
+} from '@/components/duplicate/DuplicateDetector';
+import { releaseMemory } from '@/lib/cache/cacheManager';
+import { savePersistedConfig } from '@/lib/persistence/persistence';
+import { logger } from '@/lib/logger';
+import { movePhotosToTrash } from '@/lib/fs/fileOperations';
+import { ToastAction, type ToastType } from '@/components/common/Toast';
 
 export interface UseDuplicateDetectionParams {
   photos: Photo[];

@@ -5,8 +5,8 @@
  * 分组。抽成模块后行为完全不变，但可以被独立阅读、复用与测试。
  */
 
-import { Photo, SortConfig } from './types';
-import { createLruCache } from './cacheManager';
+import { Photo, SortConfig } from '@/types';
+import { createLruCache } from '@/lib/cache/cacheManager';
 
 /**
  * 日期分组 key 缓存。

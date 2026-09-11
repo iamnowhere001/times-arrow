@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { PhotoFilters } from '../types';
-import { buildFilterChips, isFilterActive } from '../filters';
+import { PhotoFilters } from '@/types';
+import { buildFilterChips, isFilterActive } from '@/lib/filter/filters';
 
 interface SaveAlbumModalProps {
   isOpen: boolean;
@@ -81,7 +81,7 @@ const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({ isOpen, filters, onClos
                 }
               }}
               placeholder="例如：2024 旅行"
-              className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
+              className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
             />
           </div>
 

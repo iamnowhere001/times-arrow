@@ -9,8 +9,8 @@
  * 命中不了的条目只是「不归类」，不会影响导入、浏览与管理。
  */
 
-import { Photo } from './types';
-import { extOfName, isVideoPhoto } from './utils';
+import { Photo } from '@/types';
+import { extOfName, isVideoPhoto } from '@/utils';
 
 /** 文件名中明确指代截屏的关键词（中英 + 常见截图工具） */
 const SCREENSHOT_NAME = /(screenshot|screen[\s_-]?shot|snipaste|截屏|截图|屏幕快照)/i;

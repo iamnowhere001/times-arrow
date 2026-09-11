@@ -1,7 +1,7 @@
 
-import { MediaKind, Photo, RepairNameOptions } from './types';
-import { createLruCache } from './cacheManager';
-import { BASE_THUMB_SIZE, cachedThumbUrl } from './thumbCache';
+import { MediaKind, Photo, RepairNameOptions } from '@/types';
+import { createLruCache } from '@/lib/cache/cacheManager';
+import { BASE_THUMB_SIZE, cachedThumbUrl } from '@/lib/cache/thumbCache';
 
 // ---------------------------------------------------------------------------
 // 媒体类型判定（与主进程 main.js 的 IMAGE_EXTENSIONS / VIDEO_EXTENSIONS 保持一致）

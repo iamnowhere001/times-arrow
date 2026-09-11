@@ -40,7 +40,63 @@ const unlink = promisify(fs.unlink);
 const readdir = promisify(fs.readdir);
 const stat = promisify(fs.stat);
 const crypto = require('crypto');
-const logger = require('./logger.cjs');
+const logger = require('./lib/logger.cjs');
+
+// ---------------------------------------------------------------------------
+// 环境变量：主进程不经过 Vite，需要自行加载 .env。
+// AI 密钥只保留在主进程（不再注入渲染进程 bundle），避免进入前端产物。
+// 优先级：已存在的 process.env > 应用根 .env.local / .env > 当前工作目录 > userData/ai.env
+// ---------------------------------------------------------------------------
+function loadEnvFile(filePath) {
+  let content;
+  try {
+    content = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return;
+  }
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!match) continue;
+
+    const key = match[1];
+    if (process.env[key] !== undefined) continue; // 真实环境变量优先
+    let value = match[2].trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+
+function loadEnvFiles() {
+  const appPath = app.getAppPath();
+  const candidates = [
+    path.join(appPath, '.env.local'),
+    path.join(appPath, '.env'),
+    path.join(process.cwd(), '.env.local'),
+    path.join(process.cwd(), '.env'),
+    path.join(app.getPath('userData'), 'ai.env'),
+  ];
+
+  const seen = new Set();
+  for (const file of candidates) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+    loadEnvFile(file);
+  }
+}
+
+try {
+  loadEnvFiles();
+} catch (error) {
+  logger.warn('Failed to load env files:', error.message);
+}
 
 let mainWindow;
 
@@ -93,6 +149,13 @@ const VIDEO_EXTENSIONS = new Set([
 
 const MAX_SCAN_DEPTH = 12;
 const THUMB_CACHE_LIMIT = 20000;
+
+/**
+ * 缩略图渲染管线版本。
+ * 改变像素处理方式（例如 EXIF 方向校正、缩放算法）时必须自增：
+ * 旧版本的落盘缓存 key 不再匹配，会被自然淘汰并按需重新生成。
+ */
+const THUMB_RENDER_VERSION = 2;
 
 const isHeicFile = (filePath) => {
   const ext = path.extname(filePath).toLowerCase();
@@ -237,11 +300,103 @@ async function readHeicAsJpeg(filePath) {
   });
 }
 
+/**
+ * 读取 EXIF 原始方向值（1~8）。
+ * 只读文件头部（EXIF 集中在开头），解析失败 / 无标记时返回 1（正常）。
+ * HEIC 直接返回 1：libheif 解码时已经应用了 irot/imir 旋转，再按 EXIF 转一次会转错。
+ */
+async function readExifOrientation(filePath) {
+  if (isHeicFile(filePath)) return 1;
+  try {
+    const handle = await fs.promises.open(filePath, 'r');
+    try {
+      const { size } = await handle.stat();
+      const chunk = Buffer.alloc(Math.min(256 * 1024, size));
+      await handle.read(chunk, 0, chunk.length, 0);
+      // eslint-disable-next-line global-require
+      const ExifReader = require('exifreader');
+      const tags = ExifReader.load(chunk) || {};
+      const value = Number(tags.Orientation?.value);
+      return value >= 1 && value <= 8 ? value : 1;
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * 把 EXIF 方向「烙」进像素。
+ *
+ * nativeImage 不提供旋转 API，且 toJPEG() 会丢弃 EXIF —— 若不在这里纠正，
+ * 竖拍人像在网格里就会横过来（右侧大图走原文件、由 Chromium 套用 EXIF，所以是正的，
+ * 两者会明显不一致）。这里按 EXIF 标准把 BGRA 位图重排到正确朝向。
+ *
+ * 方向语义（sx/sy 为源坐标，width/height 为旋转前的尺寸）：
+ *   1 正常  2 水平镜像  3 旋转 180°  4 垂直镜像
+ *   5 转置   6 顺时针 90°  7 反转置  8 逆时针 90°
+ * 5~8 需要交换输出宽高。
+ */
+function applyExifOrientation(image, orientation) {
+  if (!orientation || orientation < 2 || orientation > 8) return image;
+
+  const { width, height } = image.getSize();
+  if (!width || !height) return image;
+
+  let bitmap;
+  try {
+    bitmap = image.toBitmap();
+  } catch {
+    return image;
+  }
+  if (!bitmap || bitmap.length < width * height * 4) return image;
+
+  const swapped = orientation >= 5;
+  const outWidth = swapped ? height : width;
+  const outHeight = swapped ? width : height;
+  const out = Buffer.allocUnsafe(width * height * 4);
+
+  for (let y = 0; y < outHeight; y += 1) {
+    const outRow = y * outWidth;
+    for (let x = 0; x < outWidth; x += 1) {
+      let sx;
+      let sy;
+      switch (orientation) {
+        case 2: sx = width - 1 - x; sy = y; break;
+        case 3: sx = width - 1 - x; sy = height - 1 - y; break;
+        case 4: sx = x; sy = height - 1 - y; break;
+        case 5: sx = y; sy = x; break;
+        case 6: sx = y; sy = height - 1 - x; break;
+        case 7: sx = width - 1 - y; sy = height - 1 - x; break;
+        case 8: sx = width - 1 - y; sy = x; break;
+        default: sx = x; sy = y; break;
+      }
+      const src = (sy * width + sx) * 4;
+      const dst = (outRow + x) * 4;
+      out[dst] = bitmap[src];
+      out[dst + 1] = bitmap[src + 1];
+      out[dst + 2] = bitmap[src + 2];
+      out[dst + 3] = bitmap[src + 3];
+    }
+  }
+
+  try {
+    const rotated = nativeImage.createFromBitmap(out, { width: outWidth, height: outHeight });
+    return rotated.isEmpty() ? image : rotated;
+  } catch {
+    // 平台位图格式不兼容时退回原图：宁可方向不对，也不要整张缩略图丢失
+    return image;
+  }
+}
+
 async function buildThumbBuffer(filePath, maxSize) {
   let image = nativeImage.createFromPath(filePath);
+  // 记录是否由 nativeImage 原生解码：只有这条路径才需要自行套用 EXIF 方向
+  const nativelyDecoded = !image.isEmpty();
 
   // HEIC/HEIF 等 nativeImage 无法直接解码的格式，先转成 JPEG（带缓存）
-  if (image.isEmpty() && isHeicFile(filePath)) {
+  if (!nativelyDecoded && isHeicFile(filePath)) {
     image = nativeImage.createFromBuffer(await readHeicAsJpeg(filePath));
   }
 
@@ -255,7 +410,7 @@ async function buildThumbBuffer(filePath, maxSize) {
   }
 
   const ratio = Math.min(1, maxSize / Math.max(width, height));
-  const resized =
+  let resized =
     ratio < 1
       ? image.resize({
           width: Math.max(1, Math.round(width * ratio)),
@@ -264,6 +419,11 @@ async function buildThumbBuffer(filePath, maxSize) {
         })
       : image;
 
+  // 先缩放再旋转：位图小、代价低，且最长边与方向无关，缩放比例不受影响
+  if (nativelyDecoded) {
+    resized = applyExifOrientation(resized, await readExifOrientation(filePath));
+  }
+
   return resized.toJPEG(80);
 }
 
@@ -271,7 +431,7 @@ async function buildThumbBuffer(filePath, maxSize) {
 function thumbCacheKey(filePath, stats, maxSize) {
   return crypto
     .createHash('sha1')
-    .update(`${filePath}|${stats.size}|${Math.floor(stats.mtimeMs)}|${maxSize}`)
+    .update(`${THUMB_RENDER_VERSION}|${filePath}|${stats.size}|${Math.floor(stats.mtimeMs)}|${maxSize}`)
     .digest('hex');
 }
 
@@ -531,9 +691,12 @@ function parseExifBuffer(buffer) {
 
     const latitude = toDecimalGps(tags.GPSLatitude, tags.GPSLatitudeRef?.value ?? tags.GPSLatitudeRef);
     const longitude = toDecimalGps(tags.GPSLongitude, tags.GPSLongitudeRef?.value ?? tags.GPSLongitudeRef);
+    const orientationValue = tags.Orientation ? Number(tags.Orientation.value) : undefined;
 
     return {
       dateTaken,
+      // 原始方向值（1~8）：调用方据此换算「用户实际看到的宽高」
+      orientationValue: orientationValue >= 1 && orientationValue <= 8 ? orientationValue : undefined,
       exif: {
         make: tags.Make?.description,
         model: tags.Model?.description,
@@ -542,7 +705,10 @@ function parseExifBuffer(buffer) {
         iso: tags.ISOSpeedRatings?.description,
         focalLength: tags.FocalLength?.description,
         lensModel: tags.LensModel?.description,
-        orientation: tags.Orientation ? ORIENTATION_LABELS[Number(tags.Orientation.value)] : undefined,
+        orientation:
+          orientationValue >= 1 && orientationValue <= 8
+            ? ORIENTATION_LABELS[orientationValue]
+            : undefined,
         colorSpace: tags.ColorSpace
           ? COLOR_SPACE_LABELS[Number(tags.ColorSpace.value)] ?? tags.ColorSpace.description
           : undefined,
@@ -689,6 +855,13 @@ async function readMetadata(filePath) {
     }
   }
 
+  // 竖拍照片的「文件存储宽高」与「用户实际看到的宽高」相差 90°。
+  // 这里统一换算成显示尺寸：网格 / 时间线的卡片比例才能与已校正方向的缩略图对齐。
+  const orientation = Number(meta.orientationValue);
+  if (dimensions && orientation >= 5 && orientation <= 8) {
+    dimensions = { width: dimensions.height, height: dimensions.width };
+  }
+
   return { dimensions, dateTaken: meta.dateTaken, exif: meta.exif };
 }
 
@@ -715,7 +888,7 @@ function createWindow() {
 
   // 加载React应用
   // 在开发模式下加载本地服务器，生产模式下加载build目录
-  const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '/dist/index.html')}`;
+  const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '../dist/index.html')}`;
   mainWindow.loadURL(startUrl);
 
   // 开发模式下打开开发者工具
@@ -1507,6 +1680,132 @@ ipcMain.handle('save-ai-cache', async (event, entries) => {
   } catch (error) {
     logger.warn('Failed to persist AI cache:', error.message);
     return false;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// AI 图片分析（DeepSeek 视觉模型）
+// 由主进程代理：渲染进程只发送 base64，API Key 不出主进程，
+// 同时规避渲染进程直连第三方接口时的 CORS 限制。
+// ---------------------------------------------------------------------------
+const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com';
+const DEEPSEEK_DEFAULT_MODEL = 'deepseek-flash';
+/** 单次分析超时（毫秒） */
+const AI_REQUEST_TIMEOUT = 60_000;
+
+/** Prompt 必须包含 "json" 字样与格式示例，否则 json_object 模式可能不生效 */
+const AI_PROMPT = [
+  'Analyze this image. Provide a concise description (max 2 sentences) and a list of 5 relevant tags.',
+  'Respond with a JSON object only, following exactly this shape:',
+  '{"description": "...", "tags": ["...", "...", "...", "...", "..."]}',
+].join('\n');
+
+/** 从模型返回文本中提取描述与标签；宽容处理 ```json 围栏与多余前后缀 */
+function parseAnalysisContent(content) {
+  let text = String(content ?? '').trim();
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
+  if (fenced) text = fenced[1].trim();
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    try {
+      parsed = JSON.parse(text.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+
+  const description =
+    typeof parsed?.description === 'string' && parsed.description.trim()
+      ? parsed.description.trim()
+      : undefined;
+  const tags = Array.isArray(parsed?.tags)
+    ? parsed.tags
+        .filter((tag) => typeof tag === 'string' && tag.trim())
+        .map((tag) => tag.trim())
+    : undefined;
+
+  if (!description && (!tags || tags.length === 0)) return null;
+  return { description, tags };
+}
+
+async function analyzeImageWithDeepSeek(base64, mimeType) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    throw new Error('未配置 DEEPSEEK_API_KEY（可在 .env.local 或系统环境变量中设置）');
+  }
+
+  const baseUrl = (process.env.DEEPSEEK_BASE_URL || DEEPSEEK_DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const model = process.env.DEEPSEEK_MODEL || DEEPSEEK_DEFAULT_MODEL;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT);
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: AI_PROMPT },
+              {
+                type: 'image_url',
+                image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'low' },
+              },
+            ],
+          },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: 512,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(`DeepSeek 请求失败（${response.status}）：${detail.slice(0, 300)}`);
+    }
+
+    const payload = await response.json();
+    const content = payload?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('DeepSeek 返回空内容');
+    return parseAnalysisContent(content);
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('DeepSeek 请求超时');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// 渲染进程提交 base64，主进程完成请求并返回「描述 + 标签」
+ipcMain.handle('ai-analyze', async (event, payload) => {
+  const base64 = payload?.base64;
+  const mimeType = payload?.mimeType;
+  if (!base64 || typeof base64 !== 'string') {
+    return { error: '缺少图片数据' };
+  }
+
+  try {
+    const result = await analyzeImageWithDeepSeek(
+      base64,
+      typeof mimeType === 'string' && mimeType ? mimeType : 'image/jpeg'
+    );
+    return { result };
+  } catch (error) {
+    logger.error('DeepSeek analysis failed:', error);
+    return { error: error.message };
   }
 });
 

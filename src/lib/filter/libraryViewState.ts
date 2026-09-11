@@ -6,8 +6,8 @@
  * 输出结果供 App 的空状态文案与网格标题直接使用。
  */
 
-import { MediaFilter } from './types';
-import { MEDIA_FILTER_LABELS } from './filters';
+import { MediaFilter } from '@/types';
+import { MEDIA_FILTER_LABELS } from '@/lib/filter/filters';
 
 export interface LibraryViewState {
   /** 图库完全没有内容 */

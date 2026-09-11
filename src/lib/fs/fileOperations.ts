@@ -5,7 +5,7 @@
  * 失败项由调用方用于重试。不读取任何组件状态，仅依赖主进程 IPC。
  */
 
-import { Photo } from './types';
+import { Photo } from '@/types';
 
 export interface TrashResult {
   /** 成功移入回收站的条目 id */

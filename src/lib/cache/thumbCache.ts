@@ -1,4 +1,4 @@
-import { createLruCache } from './cacheManager';
+import { createLruCache } from '@/lib/cache/cacheManager';
 
 /**
  * 磁盘缩略图的「按需解析」层（与 React 无关，供图片与感知哈希共用）。

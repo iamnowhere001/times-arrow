@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { AiCacheEntry, MediaFilter, PersistedConfig, Photo, PhotoFilters, SmartAlbum, SortConfig, ViewMode, RenameOptions, SortKey } from './types';
+import { AiCacheEntry, MediaFilter, PersistedConfig, Photo, PhotoFilters, SmartAlbum, SortConfig, ViewMode, RenameOptions, SortKey } from '@/types';
 import {
   isImageName,
   isVideoName,
@@ -12,21 +12,21 @@ import {
   formatDateForNaming,
   folderOfPath,
   repairFileName,
-} from './utils';
+} from '@/utils';
 import {
   installMemoryPressureListener,
   releaseMemory,
   startHeapWatch,
-} from './cacheManager';
-import { groupPhotos, sortPhotosByTimeline } from './photoGrouping';
-import { createThumbnail, clearDragThumbnailCache } from './dragThumbnail';
-import { joinPath, sanitizeFilename } from './pathUtils';
-import { deriveLibraryViewState } from './libraryViewState';
-import { buildContextMenuActions } from './contextMenuActions';
-import { movePhotosToTrash } from './fileOperations';
-import { useToasts } from './hooks/useToasts';
-import { useThemeMode } from './hooks/useThemeMode';
-import { useDuplicateDetection } from './hooks/useDuplicateDetection';
+} from '@/lib/cache/cacheManager';
+import { groupPhotos, sortPhotosByTimeline } from '@/lib/media/photoGrouping';
+import { createThumbnail, clearDragThumbnailCache } from '@/lib/cache/dragThumbnail';
+import { joinPath, sanitizeFilename } from '@/lib/fs/pathUtils';
+import { deriveLibraryViewState } from '@/lib/filter/libraryViewState';
+import { buildContextMenuActions } from '@/lib/contextMenuActions';
+import { movePhotosToTrash } from '@/lib/fs/fileOperations';
+import { useToasts } from '@/hooks/useToasts';
+import { useThemeMode } from '@/hooks/useThemeMode';
+import { useDuplicateDetection } from '@/hooks/useDuplicateDetection';
 import {
   MEDIA_FILTER_LABELS,
   applyPhotoFilters,
@@ -37,8 +37,8 @@ import {
   hasAdvancedFilters,
   matchesFilters,
   normalizeFilters,
-} from './filters';
-import { buildLivePhotoIds, isSelfiePhoto, isScreenshotPhoto } from './mediaTypes';
+} from '@/lib/filter/filters';
+import { buildLivePhotoIds, isSelfiePhoto, isScreenshotPhoto } from '@/lib/media/mediaTypes';
 import {
   getVideoMeta,
   rekeyVideoMeta,
@@ -46,33 +46,33 @@ import {
   snapshotVideoMeta,
   subscribeVideoMeta,
   videoMetaKeyOf,
-} from './videoMeta';
-import { loadPersistedConfig, savePersistedConfig } from './persistence';
-import { loadAiCache, saveAiCache } from './aiCache';
-import Sidebar from './components/Sidebar';
-import Toolbar from './components/Toolbar';
-import ImageGrid, { ImageGridHandle } from './components/ImageGrid';
-import DetailsPane from './components/DetailsPane';
-import RenameModal from './components/RenameModal';
-import DeleteConfirmModal from './components/DeleteConfirmModal';
-import QuickLook from './components/QuickLook';
-import Toast from './components/Toast';
-import ContextMenu, { ContextMenuItem } from './components/ContextMenu';
+} from '@/lib/media/videoMeta';
+import { loadPersistedConfig, savePersistedConfig } from '@/lib/persistence/persistence';
+import { loadAiCache, saveAiCache } from '@/lib/persistence/aiCache';
+import Sidebar from '@/components/layout/Sidebar';
+import Toolbar from '@/components/layout/Toolbar';
+import ImageGrid, { ImageGridHandle } from '@/components/grid/ImageGrid';
+import DetailsPane from '@/components/detail/DetailsPane';
+import RenameModal from '@/components/modal/RenameModal';
+import DeleteConfirmModal from '@/components/modal/DeleteConfirmModal';
+import QuickLook from '@/components/detail/QuickLook';
+import Toast from '@/components/common/Toast';
+import ContextMenu, { ContextMenuItem } from '@/components/common/ContextMenu';
 import DuplicateDetector, {
   DUPLICATE_SIMILARITY_MAX,
   DUPLICATE_SIMILARITY_MIN,
-} from './components/DuplicateDetector';
-import ExportModal from './components/ExportModal';
-import TimelineGallery from './components/TimelineGallery';
-import { clearThumbnailCache } from './components/ThumbnailImage';
-import ErrorBoundary from './components/ErrorBoundary';
-import DragOverlay from './components/DragOverlay';
-import LoadingOverlay from './components/LoadingOverlay';
-import ActiveFiltersBar from './components/ActiveFiltersBar';
-import AdjustDateModal, { type DateAdjustment } from './components/AdjustDateModal';
-import SaveAlbumModal from './components/SaveAlbumModal';
-import ShortcutsOverlay from './components/ShortcutsOverlay';
-import { logger } from './logger';
+} from '@/components/duplicate/DuplicateDetector';
+import ExportModal from '@/components/modal/ExportModal';
+import TimelineGallery from '@/components/timeline/TimelineGallery';
+import { clearThumbnailCache } from '@/components/grid/ThumbnailImage';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
+import DragOverlay from '@/components/common/DragOverlay';
+import LoadingOverlay from '@/components/common/LoadingOverlay';
+import ActiveFiltersBar from '@/components/layout/ActiveFiltersBar';
+import AdjustDateModal, { type DateAdjustment } from '@/components/modal/AdjustDateModal';
+import SaveAlbumModal from '@/components/modal/SaveAlbumModal';
+import ShortcutsOverlay from '@/components/common/ShortcutsOverlay';
+import { logger } from '@/lib/logger';
 
 /** 主内容区的顶层视图：图库 / 时光画廊 / 重复图片检测（整页视图，而非弹窗） */
 type MainView = 'library' | 'timeline' | 'duplicates';
@@ -233,6 +233,17 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const isDuplicateDetectorOpen = mainView === 'duplicates';
   /** 时光画廊是否在前台：工具栏 / 详情面板据此让行 */
   const isTimelineOpen = mainView === 'timeline';
+  /**
+   * 左栏（侧边栏）是否真正占据左侧空间。
+   *
+   * 时光画廊 / 相似检测都是自带导航的「整页视图」，且它们的照片集合与图库不是同一份
+   * （时光画廊按时间线排列全部照片、相似检测只看检测结果）。左栏的分类 / 相簿入口
+   * 全部指向图库的那份数据，留在整页视图里既会「两个条目同时高亮」，点下去也只会
+   * 悄悄改掉回到图库后看到的筛选，因此这两个视图不渲染左栏。
+   * 左栏缺席后，左上角红绿灯直接压在内容上，两个整页视图的顶栏要自行留出空间
+   * ——这就是把 false 传下去的含义（见各自的 `isLeftPaneOpen ? 'px-4' : 'pl-[78px] pr-4'`）。
+   */
+  const isLeftPaneVisible = mainView === 'library' && isLeftPaneOpen;
 
   // 主视图切换回调需保持稳定：Hook 内 effect 依赖它，避免每次渲染重建导致防抖被反复重置
   const enterDuplicatesView = useCallback(() => setMainView('duplicates'), []);
@@ -1241,7 +1252,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         return dateA - dateB;
       });
 
-      const updates = [];
+      const updates: Array<{ id: string; newName: string; newPath: string }> = [];
       // 只有同一个目录内才需要担心重名，不同文件夹下的同名文件互不影响
       const usedNames = new Set<string>();
       let renamedCount = 0;
@@ -2131,25 +2142,29 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     >
       {/* Drag and Drop Overlay */}
       <DragOverlay mounted={isDragOverlayMounted} active={isDragOverlayActive} />
-      <Sidebar
-        counts={counts}
-        activeCategory={activeCategory}
-        mediaFilter={mediaFilter}
-        onSelectNav={handleSelectNav}
-        albums={albums}
-        albumCounts={albumCounts}
-        activeAlbumId={activeAlbumId}
-        onSelectAlbum={handleSelectAlbum}
-        onDeleteAlbum={handleDeleteAlbum}
-        onRequestSaveAlbum={() => setIsSaveAlbumModalOpen(true)}
-        recentDirectories={recentDirectories}
-        onSelectRecentFolder={handleSelectRecentFolder}
-        onSelectTimeline={() => setMainView('timeline')}
-        isTimelineActive={isTimelineOpen}
-        isOpen={isLeftPaneOpen}
-        themeMode={theme}
-        onThemeModeChange={setTheme}
-      />
+      {/* 左栏只在图库视图出现：时光画廊 / 相似检测是自带导航的整页视图，
+          它们的照片集合与图库不同一份，保留左栏会同时高亮两个条目并误导点击 */}
+      {mainView === 'library' && (
+        <Sidebar
+          counts={counts}
+          activeCategory={activeCategory}
+          mediaFilter={mediaFilter}
+          onSelectNav={handleSelectNav}
+          albums={albums}
+          albumCounts={albumCounts}
+          activeAlbumId={activeAlbumId}
+          onSelectAlbum={handleSelectAlbum}
+          onDeleteAlbum={handleDeleteAlbum}
+          onRequestSaveAlbum={() => setIsSaveAlbumModalOpen(true)}
+          recentDirectories={recentDirectories}
+          onSelectRecentFolder={handleSelectRecentFolder}
+          onSelectTimeline={() => setMainView('timeline')}
+          isTimelineActive={isTimelineOpen}
+          isOpen={isLeftPaneOpen}
+          themeMode={theme}
+          onThemeModeChange={setTheme}
+        />
+      )}
       {/* Loading Overlay for Large File Operations */}
       {loading && (
         <LoadingOverlay
@@ -2160,7 +2175,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         />
       )}
       <div className="main-content flex-1 flex flex-col bg-transparent">
-        {/* 重复检测：整页接管主内容区，侧边栏与整窗外壳保持不变 */}
+        {/* 重复检测：整页接管主内容区；左栏在整页视图里不渲染（见 isLeftPaneVisible） */}
         {mainView === 'duplicates' ? (
           <ErrorBoundary
             label="重复检测"
@@ -2192,7 +2207,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               onSimilarityChange={setDuplicateSimilarity}
               scope={duplicateScope}
               onScopeChange={setDuplicateScope}
-              isLeftPaneOpen={isLeftPaneOpen}
+              isLeftPaneOpen={isLeftPaneVisible}
             />
           </ErrorBoundary>
         ) : mainView === 'timeline' ? (
@@ -2217,7 +2232,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               photos={timelinePhotos}
               onQuickLook={setQuickLookPhoto}
               onBack={() => setMainView('library')}
-              isLeftPaneOpen={isLeftPaneOpen}
+              isLeftPaneOpen={isLeftPaneVisible}
             />
           </ErrorBoundary>
         ) : (

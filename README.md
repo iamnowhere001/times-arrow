@@ -3,7 +3,7 @@
 > 基于本地的 macOS 风格照片 / 视频管理桌面应用。纯本地处理，所有文件操作（重命名、删除、导出）均直接作用于磁盘，不上传任何文件。
 > 状态：v0.4.0 · 个人自用、持续迭代中。
 
-PhotoMinder 让你像管理本地文件夹一样整理照片与视频：递归导入、批量重命名（含乱码修复）、重复照片检测与清理、EXIF 详情查看、格式转换导出，并用 Gemini AI 为照片生成描述与标签。整个过程全部在本地完成，没有云端同步、没有隐私泄漏风险。
+PhotoMinder 让你像管理本地文件夹一样整理照片与视频：递归导入、批量重命名（含乱码修复）、重复照片检测与清理、EXIF 详情查看、格式转换导出，并用 DeepSeek AI 为照片生成描述与标签。整个过程全部在本地完成，没有云端同步、没有隐私泄漏风险。
 
 ## 核心特性
 
@@ -89,7 +89,7 @@ PhotoMinder 让你像管理本地文件夹一样整理照片与视频：递归�
 - 就地重命名（Enter 提交 / Esc 取消）
 - 导出转换：JPEG / PNG / WebP，可调节质量，实时预览与体积估算；单张保存到「下载」
 - 视频：内嵌播放器预览，展示时长 / 分辨率 / 容器格式；无法在应用内解码时给出明确说明与「在访达中显示」兜底；图片专属的导出 / AI 区块自动隐藏
-- Gemini AI 分析：生成图片描述与标签（需配置 `GEMINI_API_KEY`；Electron 下走 IPC 读取磁盘文件，而非依赖内存中的 `File` 对象）
+- DeepSeek AI 分析：生成图片描述与标签（需配置 `DEEPSEEK_API_KEY`；主进程读盘并代理请求，渲染进程既不持有 `File` 对象也不接触密钥）
 
 **界面与体验**
 
@@ -107,83 +107,84 @@ PhotoMinder 让你像管理本地文件夹一样整理照片与视频：递归�
 
 | 分类 | 选型 |
 | --- | --- |
-| 桌面壳 | Electron 33（主进程 `main.js` + 预加载 `preload.js`） |
-| 前端 | React 18、TypeScript 5.8 |
-| 构建 | Vite 6 |
-| 样式 | Tailwind CSS（本地 PostCSS 构建）+ 自定义 CSS 变量 `src/styles.css` |
+| 桌面壳 | Electron 44（主进程 `electron/main.js` + 预加载 `electron/preload.js`） |
+| 前端 | React 19、TypeScript 7 |
+| 构建 | Vite 8（`@vitejs/plugin-react`） |
+| 样式 | Tailwind CSS 4（CSS-first `@theme`）+ 自定义 CSS 变量 `src/styles/styles.css` |
 | 元数据 | exifreader（主进程解析） |
 | 图片格式 | heic-convert（HEIC/HEIF → JPEG，带磁盘缓存） |
-| AI | @google/genai（Gemini 2.5 Flash） |
+| AI | DeepSeek（`deepseek-flash` 视觉模型，主进程代理，无第三方 SDK 依赖） |
 
 **关键设计**
 
 - **自定义 `pm://` 协议**：原图、原视频与磁盘缩略图通过流方式从主进程提供，渲染进程只持有 `pm://...` 地址，避免把整张图片以 base64 常驻内存（OOM 根因）；视频请求实现 HTTP Range 语义（`206 Partial Content`），支持边下边播与拖动进度条。
 - **主进程承担重活**：目录扫描（含取消）、文件头解析图片尺寸、EXIF/GPS 解析（`get-metadata` 一次读取，只读文件头前 512KB）、感知哈希计算（`get-image-hashes`）、HEIC 转换与缩略图生成，全部在主进程并发限流完成，渲染线程保持响应。
 - **磁盘缩略图缓存**：`ensureThumbnail` 生成一次即落盘（`userData/thumbnails`），命中即返回；每写入一批触发检查、`pruneThumbCache` 在超出上限后清理最久未访问项；视频首帧由渲染进程抓取后经 `cache-thumbnail` 回写，key 与图片缩略图一致。
-- **按需缩略图解析层**：`thumbCache.ts`（框架无关）+ `components/ThumbnailImage.tsx`（React 绑定）。卡片进入视口时才请求，配合并发上限 12、同 key 去重、`pm://` 地址与 `data:` 首帧分桶限量，并「先预加载解码再替换」避免闪烁。
+- **按需缩略图解析层**：`src/lib/cache/thumbCache.ts`（框架无关）+ `src/components/grid/ThumbnailImage.tsx`（React 绑定）。卡片进入视口时才请求，配合并发上限 12、同 key 去重、`pm://` 地址与 `data:` 首帧分桶限量，并「先预加载解码再替换」避免闪烁。
 - **滚动虚拟化**：网格 `VirtualGrid` 与列表行均只渲染视口内（含 overscan）元素，rAF 节流滚动事件。
-- **统一内存治理**：`cacheManager.ts` 提供真 LRU（命中刷新 + 逐项淘汰）、`volatile` / `sticky` 分级、`releaseMemory('soft' | 'hard')` 统一释放；主进程看门狗按 RSS 广播内存压力，渲染进程另有堆占用巡检兜底。
-- **统一日志器**：渲染进程 `logger.ts`、主进程 `logger.cjs`，调试日志仅在开发构建输出，打包后静默，避免磁盘完整路径进入发布产物。
+- **统一内存治理**：`src/lib/cache/cacheManager.ts` 提供真 LRU（命中刷新 + 逐项淘汰）、`volatile` / `sticky` 分级、`releaseMemory('soft' | 'hard')` 统一释放；主进程看门狗按 RSS 广播内存压力，渲染进程另有堆占用巡检兜底。
+- **统一日志器**：渲染进程 `src/lib/logger.ts`、主进程 `electron/lib/logger.cjs`，调试日志仅在开发构建输出，打包后静默，避免磁盘完整路径进入发布产物。
 
 ## 目录结构
 
 ```
 .
-├── main.js                 # Electron 主进程：窗口、菜单、文件系统/IPC、pm:// 协议、扫描/哈希/缩略图/EXIF
-├── logger.cjs              # 主进程轻量日志器（开发输出 / 打包静默）
-├── preload.js              # contextBridge 暴露 window.electronAPI
-├── App.tsx                 # 应用主组件与状态逻辑（大拆分见计划 X7，明确延后）
-├── logger.ts               # 渲染进程轻量日志器
-├── cacheManager.ts         # 统一缓存治理：真 LRU、volatile/sticky 分级、统一释放、内存压力监听
-├── thumbCache.ts           # 缩略图地址解析层：并发闸门、同 key 去重、pm:// 与 data: 分桶缓存
-├── components/             # UI 组件
-│   ├── Sidebar.tsx         #   图库导航（全部 / 图片 / 视频 / 收藏）+ 文件夹来源 + 主题
-│   ├── Toolbar.tsx         #   顶部工具栏（打开 / 添加 / 搜索 / 筛选 / 视图 / 缩放 / 检测 / 重置）
-│   ├── FilterPanel.tsx     #   筛选面板（收藏 / 媒体 / 标签 / 日期 / 相机 / 格式 / 大小 / 时长）
-│   ├── ActiveFiltersBar.tsx #  已启用条件条（逐条清除 / 清除全部 / 存为相簿）
-│   ├── ImageGrid.tsx       #   虚拟化网格 + 列表视图（内含 VirtualGrid、情境条）
-│   ├── ThumbnailImage.tsx  #   按需缩略图 + 视频首帧抓取（useThumbnailSrc / useVideoPoster / ThumbImage）
-│   ├── DetailsPane.tsx     #   详情、EXIF、单张导出、AI 分析、视频播放
-│   ├── QuickLook.tsx       #   大图 / 视频预览、缩放旋转、幻灯片、收藏
-│   ├── RenameModal.tsx     #   批量重命名（格式化 / 替换 / 拍摄时间 / 乱码修复）
-│   ├── ExportModal.tsx     #   批量导出（原格式 / JPEG / PNG / WebP、目标目录、可取消）
-│   ├── DuplicateDetector.tsx # 重复照片检测整页（阈值 / 范围 / 进度 / 分组 / 批量标记）
-│   ├── ErrorBoundary.tsx   #   错误边界（顶层 + 局部兜底）
-│   ├── AdjustDateModal.tsx #   调整日期与时间（平移 / 设为，支持保持相对间隔）
-│   ├── SaveAlbumModal.tsx  #   把当前筛选条件存为智能相簿
-│   ├── DeleteConfirmModal.tsx
-│   ├── ContextMenu.tsx
-│   └── Toast.tsx
-├── services/geminiService.ts # Gemini 图片分析（含 analyzeImageFromBase64）
-├── mediaTypes.ts           # 智能媒体类型识别：截屏 / 自拍 / 实况照片（本地启发式）
-├── videoMeta.ts            # 视频元数据中枢：播放器上报 → 缓存/广播 → 持久化
-├── persistence.ts          # 渲染进程侧配置持久化封装（收藏 / 隐藏 / 标签 / 时间修正 / 相簿 / 偏好）
-├── aiCache.ts              # AI 分析结果缓存（独立文件 + 条数上限淘汰）
-├── utils.ts                # 媒体类型判定、dHash、汉明距离、重复检测、UnionFind、乱码修复
-├── filters.ts              # 可组合筛选：条件匹配、搜索（含 AI 标签）、选项提取、条件条数据
-├── types.ts                # 类型定义
-├── global.d.ts             # window.electronAPI 类型声明
-├── .env.example            # 环境变量示例
-└── src/styles.css          # 主题变量与基础样式
+├── electron/                       # 主进程（Node / CommonJS）
+│   ├── main.js                     #   窗口、菜单、文件系统/IPC、pm:// 协议、扫描/哈希/缩略图/EXIF
+│   ├── preload.js                  #   contextBridge 暴露 window.electronAPI
+│   └── lib/logger.cjs              #   主进程轻量日志器（开发输出 / 打包静默）
+├── src/                            # 渲染进程（React / Vite）
+│   ├── main.tsx                    #   挂载入口（createRoot + ErrorBoundary）
+│   ├── App.tsx                     #   应用主组件与状态编排（大拆分见计划 X7，明确延后）
+│   ├── components/                 #   UI 组件（按功能域分组）
+│   │   ├── layout/                 #     Sidebar / Toolbar / ActiveFiltersBar
+│   │   ├── grid/                   #     ImageGrid / ThumbnailImage
+│   │   ├── timeline/               #     TimelineGallery
+│   │   ├── detail/                 #     DetailsPane / QuickLook
+│   │   ├── duplicate/              #     DuplicateDetector
+│   │   ├── filter/                 #     FilterPanel
+│   │   ├── modal/                  #     Rename / Export / AdjustDate / SaveAlbum / DeleteConfirm
+│   │   └── common/                 #     Toast / ErrorBoundary / LoadingOverlay / ContextMenu / DragOverlay / ShortcutsOverlay
+│   ├── hooks/                      #   useThemeMode / useToasts / useDuplicateDetection
+│   ├── services/                   #   aiService（DeepSeek 图片分析，经 IPC 走主进程代理）
+│   ├── lib/                        #   领域与基础设施逻辑
+│   │   ├── cache/                  #     cacheManager / thumbCache / dragThumbnail
+│   │   ├── media/                  #     mediaTypes / videoMeta / photoGrouping
+│   │   ├── filter/                 #     filters / libraryViewState
+│   │   ├── persistence/            #     persistence / aiCache
+│   │   ├── fs/                     #     fileOperations / pathUtils
+│   │   ├── contextMenuActions.ts   #     右键菜单项构造
+│   │   └── logger.ts               #     渲染进程轻量日志器
+│   ├── types/                      #   index.ts（领域类型）+ global.d.ts（window.electronAPI）
+│   ├── utils/index.ts              #   格式化 / dHash / 重复检测 / 乱码修复等通用工具
+│   └── styles/styles.css           #   主题变量与基础样式（Tailwind v4 CSS-first）
+├── build/                          # electron-builder 资源（图标 / afterPack 钩子）
+├── index.html                      # Vite 入口 HTML
+├── vite.config.mts                 # Vite 配置（React + Tailwind 插件、@ 别名）
+├── tsconfig.json                   # 解决方案配置（references）
+├── tsconfig.app.json               # 渲染进程 TS 配置（DOM 环境）
+├── tsconfig.node.json              # 主进程 TS 配置（Node 环境）
+├── .env.example                    # 环境变量示例
+└── package.json
 ```
 
 ## 快速开始
 
-**环境要求**：Node.js 18+ 、npm
+**环境要求**：Node.js 20.19+ 或 22.12+（Vite 8 / Electron 44 要求）、npm
 
 ```bash
 # 1. 安装依赖
 npm install
 
-# 2.（可选）配置 Gemini API Key，用于 AI 图片分析（详见 .env.example）
-cp .env.example .env.local   # 然后填入真实 GEMINI_API_KEY
+# 2.（可选）配置 DeepSeek API Key，用于 AI 图片分析（详见 .env.example）
+cp .env.example .env.local   # 然后填入真实 DEEPSEEK_API_KEY
 
 # 3. 启动
 npm run dev              # 仅 Web（Vite 开发服务器，默认 http://localhost:3000）
 npm run electron:dev     # Electron 桌面应用
 ```
 
-> `electron:dev` 通过 `ELECTRON_START_URL` 指定渲染进程地址（`http://localhost:3000`），与 `vite.config.ts` 的 `server.port`（3000）保持一致。
+> `electron:dev` 通过 `ELECTRON_START_URL` 指定渲染进程地址（`http://localhost:3000`），与 `vite.config.mts` 的 `server.port`（3000）保持一致。
 > 若自行修改端口，请同步更新两处，否则 Electron 窗口会白屏。
 
 **打包**
@@ -234,7 +235,9 @@ QuickLook 预览打开时生效：
 
 | 变量 | 说明 | 安全提示 |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | Gemini API Key，写入 `.env.local`（示例见 `.env.example`），由 `vite.config.ts` 注入 `process.env.API_KEY` 与 `process.env.GEMINI_API_KEY` | 当前会进入前端产物；个人本地使用可接受（加固方案见计划 X1，明确延后） |
+| `DEEPSEEK_API_KEY` | DeepSeek API Key，用于详情面板的 AI 图片描述与标签。写入 `.env.local`（示例见 `.env.example`），**仅由 Electron 主进程读取** | 密钥不会进入前端产物；打包后可通过系统环境变量或 `userData/ai.env` 配置 |
+| `DEEPSEEK_BASE_URL` | 可选，默认 `https://api.deepseek.com` | — |
+| `DEEPSEEK_MODEL` | 可选，默认 `deepseek-flash`（支持图像输入） | — |
 
 ## 已知限制
 

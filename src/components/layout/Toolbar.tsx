@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
-import { PhotoFilters, ViewMode } from '../types';
-import { countAdvancedFilters } from '../filters';
-import FilterPanel from './FilterPanel';
+import { PhotoFilters, ViewMode } from '@/types';
+import { countAdvancedFilters } from '@/lib/filter/filters';
+import FilterPanel from '@/components/filter/FilterPanel';
 
 interface ToolbarProps {
   /** 统一导入：图片 / 视频文件与文件夹都能批量选择 */
@@ -21,7 +21,7 @@ interface ToolbarProps {
   searchQuery: string;
   onSearchQueryChange: (query: string) => void;
   /** ⌘F 聚焦搜索框 */
-  searchInputRef: React.RefObject<HTMLInputElement>;
+  searchInputRef: React.RefObject<HTMLInputElement | null>;
   /** 可组合筛选条件（N3） */
   filters: PhotoFilters;
   onFiltersChange: (patch: Partial<PhotoFilters>) => void;
@@ -312,7 +312,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                   searchInputRef.current?.blur();
                 }
               }}
-              className="w-full h-9 pl-9 pr-9 xl:pr-16 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[13px] text-[var(--text-primary)] placeholder-[var(--text-quaternary)] outline-none transition-all duration-200 focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] hover:border-[var(--border-hover)]"
+              className="w-full h-9 pl-9 pr-9 xl:pr-16 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[13px] text-[var(--text-primary)] placeholder-[var(--text-quaternary)] outline-hidden transition-all duration-200 focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] hover:border-[var(--border-hover)]"
               placeholder="搜索照片、相机、格式…"
               aria-label="搜索照片"
             />

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Photo, RenameOptions } from '../types';
-import { folderOfPath, formatDateForNaming, repairFileName } from '../utils';
+import { Photo, RenameOptions } from '@/types';
+import { folderOfPath, formatDateForNaming, repairFileName } from '@/utils';
 
 interface RenameModalProps {
   isOpen: boolean;
@@ -257,7 +257,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                 onClick={() => setMode(value)}
                 className={`py-2 text-sm font-medium rounded-lg transition-all ${
                   mode === value
-                    ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-sm'
+                    ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-xs'
                     : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-glass)]'
                 }`}
               >
@@ -277,7 +277,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                     type="text"
                     value={prefix}
                     onChange={(e) => setPrefix(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-none transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
+                    className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-hidden transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
                     placeholder="照片_"
                   />
                 </div>
@@ -291,7 +291,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                       const next = parseInt(e.target.value, 10);
                       setStartNumber(Number.isFinite(next) && next >= 0 ? next : 0);
                     }}
-                    className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-none transition-all text-sm text-[var(--text-primary)]"
+                    className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-hidden transition-all text-sm text-[var(--text-primary)]"
                     min="0"
                   />
                 </div>
@@ -325,7 +325,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                     type="text"
                     value={datePrefix}
                     onChange={(e) => setDatePrefix(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-none transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
+                    className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-hidden transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
                     placeholder="photo_（可留空）"
                   />
                 </div>
@@ -335,7 +335,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                     type="text"
                     value={dateFormat}
                     onChange={(e) => setDateFormat(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-none transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
+                    className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-hidden transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
                     placeholder="yyyy-MM-dd_HHmmss"
                   />
                 </div>
@@ -410,7 +410,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                         id={rule.id}
                         checked={rule.checked}
                         onChange={(e) => rule.onChange(e.target.checked)}
-                        className="mt-0.5 rounded border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] focus:ring-[rgba(var(--accent-blue-rgb),0.5)] cursor-pointer accent-[var(--accent-blue)]"
+                        className="mt-0.5 rounded-sm border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] focus:ring-[rgba(var(--accent-blue-rgb),0.5)] cursor-pointer accent-[var(--accent-blue)]"
                       />
                       <span className="min-w-0">
                         <span className="block text-sm text-[var(--text-secondary)]">{rule.title}</span>
@@ -429,7 +429,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                       type="text"
                       value={datePrefix}
                       onChange={(e) => setDatePrefix(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-none transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
+                      className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-hidden transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
                       placeholder="photo_（可留空）"
                     />
                   </div>
@@ -439,7 +439,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                       type="text"
                       value={dateFormat}
                       onChange={(e) => setDateFormat(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-none transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
+                      className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-hidden transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
                       placeholder="yyyy-MM-dd_HHmmss"
                     />
                   </div>
@@ -454,7 +454,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                   type="text"
                   value={findText}
                   onChange={(e) => setFindText(e.target.value)}
-                  className={`w-full px-4 py-2.5 bg-[var(--bg-input)] border rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] outline-none transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)] ${
+                  className={`w-full px-4 py-2.5 bg-[var(--bg-input)] border rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] outline-hidden transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)] ${
                     preview.error && !useRegex
                       ? 'border-[rgba(var(--accent-pink-rgb),0.5)]'
                       : 'border-[var(--border-default)] focus:border-[var(--accent-blue)]'
@@ -469,7 +469,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                   type="text"
                   value={replaceText}
                   onChange={(e) => setReplaceText(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-none transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
+                  className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.5)] focus:border-[var(--accent-blue)] outline-hidden transition-all text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)]"
                   placeholder={useRegex ? '替换内容（支持 $1, $2...）' : '留空以移除'}
                 />
               </div>
@@ -480,7 +480,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                   id="useRegex"
                   checked={useRegex}
                   onChange={(e) => setUseRegex(e.target.checked)}
-                  className="rounded border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] focus:ring-[rgba(var(--accent-blue-rgb),0.5)] cursor-pointer accent-[var(--accent-blue)]"
+                  className="rounded-sm border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] focus:ring-[rgba(var(--accent-blue-rgb),0.5)] cursor-pointer accent-[var(--accent-blue)]"
                 />
                 <label htmlFor="useRegex" className="text-sm text-[var(--text-secondary)] select-none cursor-pointer">使用正则表达式</label>
               </div>

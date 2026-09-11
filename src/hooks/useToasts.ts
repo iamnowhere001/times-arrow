@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
-import { ToastAction, ToastData, type ToastType } from '../components/Toast';
+import { ToastAction, ToastData, type ToastType } from '@/components/common/Toast';
 
 export interface UseToastsResult {
   toasts: ToastData[];

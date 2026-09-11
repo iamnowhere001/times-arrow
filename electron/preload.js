@@ -47,6 +47,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadAiCache: () => ipcRenderer.invoke('load-ai-cache'),
   saveAiCache: (entries) => ipcRenderer.invoke('save-ai-cache', entries),
 
+  /** AI 图片分析：主进程代理 DeepSeek，密钥不出主进程 */
+  analyzeImage: (payload) => ipcRenderer.invoke('ai-analyze', payload),
+
   // 从拖放的 File 对象解析真实磁盘路径
   getFilePath: (file) => {
     try {

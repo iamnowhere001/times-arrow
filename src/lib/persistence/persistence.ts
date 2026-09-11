@@ -5,8 +5,8 @@
  * 这里只做：类型收窄、缺省值兜底、失败时不打断用户操作。
  */
 
-import { PersistedConfig } from './types';
-import { logger } from './logger';
+import { PersistedConfig } from '@/types';
+import { logger } from '@/lib/logger';
 
 /** 当前配置结构版本 */
 export const CONFIG_VERSION = 1;

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Photo } from '../types';
+import { Photo } from '@/types';
 import {
   extOfName,
   formatBytes,
@@ -8,10 +8,10 @@ import {
   formatVideoDuration,
   isVideoPhoto,
   isVideoPlaybackUncertain,
-} from '../utils';
-import { reportVideoMetaFromElement, videoMetaKeyOf } from '../videoMeta';
-import { analyzeImage, analyzeImageFromBase64 } from '../services/geminiService';
-import { logger } from '../logger';
+} from '@/utils';
+import { reportVideoMetaFromElement, videoMetaKeyOf } from '@/lib/media/videoMeta';
+import { analyzeImage, analyzeImageFromBase64 } from '@/services/aiService';
+import { logger } from '@/lib/logger';
 
 interface DetailsPaneProps {
   selectedPhotos: Photo[];
@@ -213,7 +213,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
     setIsAnalyzing(true);
     try {
       // 优先走磁盘路径（Photo.file 已不再填充）：
-      // 主进程读出 base64 后交给 Gemini，避免渲染进程持有 File 对象
+      // 主进程读出 base64 后代理请求 DeepSeek，避免渲染进程持有 File 对象
       let result;
       if (photo.path && window.electronAPI) {
         const { data, error } = await window.electronAPI.readFile(photo.path);
@@ -241,7 +241,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
       }
     } catch (e) {
       logger.error('AI分析失败:', e);
-      onNotify?.('AI 分析失败。请确保已正确设置 API Key，并且图片格式被支持。', 'error');
+      onNotify?.('AI 分析失败。请确保已在 .env.local 配置 DEEPSEEK_API_KEY，并且图片格式受支持。', 'error');
     } finally {
       setIsAnalyzing(false);
     }
@@ -301,7 +301,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                     )}
                     
                     {isExportMode && isGeneratingPreview && (
-                        <div className="absolute inset-0 bg-[rgba(0,0,0,0.6)] flex items-center justify-center backdrop-blur-sm">
+                        <div className="absolute inset-0 bg-[rgba(0,0,0,0.6)] flex items-center justify-center backdrop-blur-xs">
                             <div className="w-10 h-10 rounded-full border-2 border-[rgba(255,255,255,0.2)] border-t-[var(--accent-blue)] animate-spin"></div>
                         </div>
                     )}
@@ -322,7 +322,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                             onChange={(e) => setTempName(e.target.value)}
                             onBlur={handleRenameSubmit}
                             onKeyDown={handleNameKeyDown}
-                            className="w-full text-center font-medium text-[var(--text-primary)] bg-[var(--bg-input)] border border-[var(--accent-blue)] rounded-full px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.4)]"
+                            className="w-full text-center font-medium text-[var(--text-primary)] bg-[var(--bg-input)] border border-[var(--accent-blue)] rounded-full px-3 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.4)]"
                         />
                     ) : (
                         <h3 
@@ -390,7 +390,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                             <span className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
                               isExportMode ? 'bg-[var(--accent-blue)]' : 'bg-[rgba(255,255,255,0.14)]'
                             }`}>
-                                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ease-entrance ${
+                                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ease-entrance ${
                                   isExportMode ? 'translate-x-4' : 'translate-x-0'
                                 }`} />
                             </span>
@@ -401,14 +401,14 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                         <div className="mt-3 bg-[var(--bg-glass)] rounded-xl p-3 border border-[var(--border-subtle)] space-y-4 animate-fadeIn">
                              <div>
                                  <label className="text-xs font-medium text-[var(--text-secondary)] mb-1 block">格式</label>
-                                 <div className="flex bg-[var(--bg-input)] rounded-xl p-1 border border-[var(--border-subtle)] shadow-sm">
+                                 <div className="flex bg-[var(--bg-input)] rounded-xl p-1 border border-[var(--border-subtle)] shadow-xs">
                                      {['image/jpeg', 'image/png', 'image/webp'].map(fmt => (
                                          <button
                                              key={fmt}
                                              onClick={() => setExportSettings(s => ({ ...s, format: fmt }))}
                                              className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
                                                exportSettings.format === fmt 
-                                                 ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-sm' 
+                                                 ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-xs' 
                                                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)]'
                                              }`}
                                          >
@@ -626,7 +626,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                                 }
                             }}
                             placeholder="输入标签后回车"
-                            className="flex-1 min-w-0 px-3 py-2 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-primary)] placeholder-[var(--text-quaternary)] outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
+                            className="flex-1 min-w-0 px-3 py-2 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-primary)] placeholder-[var(--text-quaternary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
                         />
                         <button
                             type="button"
@@ -647,7 +647,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                 <div className="pt-4 border-t border-[var(--border-subtle)]">
                     <div className="flex items-center justify-between mb-3">
                          <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1">
-                            ✨ Gemini AI 分析
+                            ✨ DeepSeek AI 分析
                          </label>
                     </div>
                     

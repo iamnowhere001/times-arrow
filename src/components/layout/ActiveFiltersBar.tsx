@@ -1,6 +1,6 @@
 import React from 'react';
-import { PhotoFilters } from '../types';
-import { buildFilterChips, isFilterActive } from '../filters';
+import { PhotoFilters } from '@/types';
+import { buildFilterChips, isFilterActive } from '@/lib/filter/filters';
 
 interface ActiveFiltersBarProps {
   filters: PhotoFilters;
