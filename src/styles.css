@@ -3,6 +3,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 无原生标题栏（macOS hiddenInset）时：标记可拖动窗口的区域；
+   其中的按钮 / 输入框等交互元素必须显式声明为 no-drag */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 /* macOS Sonoma/Ventura 风格现代化样式 */
 
 /* ------------------------------------------------------------------
@@ -34,7 +43,9 @@
   --bg-overlay: rgba(6, 6, 5, 0.62);
   --bg-input: rgba(0, 0, 0, 0.26);
   --bg-card: rgba(255, 246, 232, 0.04);
-  --bg-table-header: rgba(19, 18, 16, 0.86);
+  /* 列表表头：不透明实色。半透明 + backdrop-blur 会让 sticky 表头在惯性
+     滚动时每帧全宽重新采样模糊，几千行的长列表下是明显的掉帧源 */
+  --bg-table-header: #131210;
   --bg-modal: rgba(22, 20, 18, 0.97);
   --bg-tooltip: rgba(38, 35, 30, 0.98);
   --border-input: rgba(255, 246, 232, 0.16);
@@ -123,7 +134,7 @@
   --bg-overlay: rgba(26, 22, 17, 0.44);
   --bg-input: rgba(26, 22, 17, 0.05);
   --bg-card: rgba(255, 255, 255, 0.72);
-  --bg-table-header: rgba(240, 237, 231, 0.85);
+  --bg-table-header: #f0ede7;
   --bg-modal: rgba(253, 252, 250, 0.97);
   --bg-tooltip: rgba(255, 255, 255, 0.98);
 

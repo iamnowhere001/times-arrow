@@ -131,8 +131,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
 
   const pickDirectory = useCallback(async () => {
     if (!window.electronAPI) return;
-    const dirs = await window.electronAPI.selectDirectory();
-    if (dirs && dirs.length > 0) setTargetDir(dirs[0]);
+    const dir = await window.electronAPI.chooseDirectory();
+    if (dir) setTargetDir(dir);
   }, []);
 
   const startExport = useCallback(async () => {

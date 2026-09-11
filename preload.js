@@ -2,14 +2,16 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // 向渲染进程暴露安全的API
 contextBridge.exposeInMainWorld('electronAPI', {
-  // 目录选择
-  selectDirectory: () => ipcRenderer.invoke('select-directory'),
-  // 文件选择
-  selectFiles: () => ipcRenderer.invoke('select-files'),
+  // 统一导入：同一对话框可多选图片 / 视频文件与文件夹（可混合）
+  selectPaths: () => ipcRenderer.invoke('select-paths'),
+  /** 导出等场景：选择单个目标目录；allowCreate 时面板内可新建文件夹 */
+  chooseDirectory: (options) => ipcRenderer.invoke('choose-directory', options),
 
   // 文件系统操作
   renameFile: (oldPath, newPath) => ipcRenderer.invoke('rename-file', oldPath, newPath),
   deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
+  /** 批量移动文件到目标文件夹（重名自动加序号、同目录跳过、跨盘复制兜底） */
+  moveFiles: (filePaths, targetDir) => ipcRenderer.invoke('move-files', filePaths, targetDir),
   /** 读取文件为 base64（HEIC 自动转为 JPEG） */
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
   /** 在访达 / 资源管理器中定位文件 */
@@ -55,10 +57,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // 事件监听
-  onDirectorySelected: (callback) => {
-    const listener = (event, dirPath) => callback(dirPath);
-    ipcRenderer.on('directory-selected', listener);
-    return () => ipcRenderer.removeListener('directory-selected', listener);
+  /** ⌘O 应用菜单「导入」：主进程完成选择后回传分类好的路径 */
+  onImportPaths: (callback) => {
+    const listener = (event, picked) => callback(picked);
+    ipcRenderer.on('import-paths', listener);
+    return () => ipcRenderer.removeListener('import-paths', listener);
   },
   /** 主进程内存吃紧时广播：'soft' = 常规回收，'hard' = 清空易失缓存；返回取消订阅 */
   onMemoryPressure: (callback) => {

@@ -255,7 +255,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside className={`${isOpen ? 'w-[220px]' : 'w-0 border-0'} bg-[var(--bg-secondary)] backdrop-blur-xl border-r border-[var(--border-subtle)] h-full select-none transition-[width] duration-300 ease-entrance overflow-hidden`}>
       {/* 抽屉式收展：外层只动宽度，内容整体滑出，避免被挤扁 */}
-      <div className={`h-full flex flex-col pt-4 transition-[opacity,transform] duration-200 ease-entrance ${isOpen ? 'opacity-100 translate-x-0 delay-75' : 'opacity-0 -translate-x-3'}`}>
+      <div className={`h-full flex flex-col transition-[opacity,transform] duration-200 ease-entrance ${isOpen ? 'opacity-100 translate-x-0 delay-75' : 'opacity-0 -translate-x-3'}`}>
+      {/* 顶部拖拽区：原生标题栏隐藏后为红绿灯按钮让位，同时承担窗口拖动 */}
+      <div className="app-drag h-[38px] shrink-0"></div>
       <nav className="flex-1 overflow-y-auto px-3 space-y-5 custom-scrollbar">
 
         <div>

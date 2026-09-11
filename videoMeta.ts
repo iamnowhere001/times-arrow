@@ -39,6 +39,20 @@ export const seedVideoMeta = (record: Record<string, VideoMetaRecord> | undefine
   }
 };
 
+/**
+ * 缓存键迁移：文件被移动 / 重命名后，让已探测的时长 / 分辨率跟随到新路径，
+ * 避免移动后重新解码探测。返回旧键是否命中（未命中说明本来就没有缓存）。
+ */
+export const rekeyVideoMeta = (oldKey: string, newKey: string): boolean => {
+  if (!oldKey || !newKey || oldKey === newKey) return false;
+  const meta = cache.get(oldKey);
+  if (!meta) return false;
+  cache.delete(oldKey);
+  // 极端情况下新键已存在（不同路径探测过同一文件），保留新键已有结果即可
+  if (!cache.has(newKey)) cache.set(newKey, meta);
+  return true;
+};
+
 /** 导出当前缓存快照，供持久化使用 */
 export const snapshotVideoMeta = (): Record<string, VideoMetaRecord> => {
   const result: Record<string, VideoMetaRecord> = {};

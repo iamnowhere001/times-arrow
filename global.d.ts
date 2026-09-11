@@ -1,8 +1,42 @@
 declare global {
+  /** 单个文件的移动结果（与 move-files IPC 入参等长） */
+  interface MoveFileResult {
+    /** 源路径 */
+    from: string;
+    /** 移动后的最终路径（成功时） */
+    to?: string;
+    success?: boolean;
+    /** 是否因目标重名被自动追加了序号 */
+    conflicted?: boolean;
+    /** 未执行移动（如源文件已在目标目录） */
+    skipped?: boolean;
+    reason?: 'same-directory';
+    error?: string;
+  }
+
+  /** 批量移动的整体返回 */
+  interface MoveFilesResult {
+    success?: boolean;
+    /** 目标文件夹无效等整体性错误 */
+    error?: string;
+    results: MoveFileResult[];
+  }
+
+  /** 统一导入对话框的选择结果：文件与文件夹可混合多选 */
+  interface PickedPaths {
+    /** 直接选中的媒体文件（图片 / 视频）路径 */
+    files: string[];
+    /** 选中的文件夹路径（交由扫描管线递归导入） */
+    directories: string[];
+    /** 被扩展名过滤掉的非媒体文件数量 */
+    ignored: number;
+  }
+
   interface Window {
     electronAPI: {
-      selectDirectory: () => Promise<string[] | null>;
-      selectFiles: () => Promise<string[] | null>;
+      selectPaths: () => Promise<PickedPaths | null>;
+      /** 选择单个目标目录；allowCreate 时面板内可直接新建文件夹 */
+      chooseDirectory: (options?: { allowCreate?: boolean }) => Promise<string | null>;
       /** 读取文件为 base64（HEIC 自动转为 JPEG） */
       readFile: (path: string) => Promise<{ data: string; error?: string }>;
       /** 重命名文件；目标已存在时自动追加序号（conflicted=true），返回最终路径 */
@@ -15,6 +49,8 @@ declare global {
         error?: string;
       }>;
       deleteFile: (path: string) => Promise<{ success: boolean; error?: string }>;
+      /** 批量移动文件到目标文件夹；逐项返回成功 / 跳过 / 失败结果 */
+      moveFiles: (filePaths: string[], targetDir: string) => Promise<MoveFilesResult>;
       /** 在访达 / 资源管理器中定位文件 */
       showInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
       /** 复制图片到系统剪贴板 */
@@ -77,8 +113,8 @@ declare global {
         entries: Record<string, import('./types').AiCacheEntry>
       ) => Promise<boolean>;
 
-      /** 注册目录选择事件；返回取消订阅函数 */
-      onDirectorySelected: (callback: (path: string) => void) => () => void;
+      /** 注册 ⌘O 菜单导入事件；返回取消订阅函数 */
+      onImportPaths: (callback: (picked: PickedPaths) => void) => () => void;
       /** 注册内存压力广播（主进程看门狗发出）；返回取消订阅函数 */
       onMemoryPressure: (callback: (level: 'soft' | 'hard') => void) => () => void;
     };

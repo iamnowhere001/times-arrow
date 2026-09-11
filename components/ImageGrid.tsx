@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect, forwardRef, useImperativeHandle } from 'react';
-import { Photo, ViewMode, SortConfig, SortKey } from '../types';
+import { Photo, ViewMode, SortConfig, SortKey, SortDirection } from '../types';
 import { formatBytes, formatDate, formatVideoDuration, isVideoPhoto } from '../utils';
 import { useThumbnailSrc, useVideoPoster, ThumbImage } from './ThumbnailImage';
 
@@ -283,6 +283,7 @@ const VirtualGrid = forwardRef<VirtualGridHandle, {
         onContainerContextMenu?.(e);
       }}
       className="flex-1 overflow-y-auto custom-scrollbar min-h-0 p-4"
+      style={{ overflowAnchor: 'none' }}
     >
       {topCapsule !== null && (
         <div
@@ -312,6 +313,287 @@ const VirtualGrid = forwardRef<VirtualGridHandle, {
 
 VirtualGrid.displayName = 'VirtualGrid';
 
+/* ---------------------------------------------------------------------------
+ * 列表虚拟化
+ * 网格用「绝对定位 + 实测布局」，列表保留原生 table 语义 + 上下占位行。
+ * 三个必须做对的细节：
+ * 1. 行高精确：占位行高度 = 实测行高 × 行数。任何 1px 误差在几千行下都会
+ *    让滚动条比例失真；窗口换入换出时内容总高持续变化，惯性滚动就会出现
+ *    「停不下来、直接冲到底」。分隔线统一放在行底（border-b），保证首行 /
+ *    后续行高度一致，不依赖 tr 在前在后。
+ * 2. overflow-anchor 关闭：窗口化本来就在手动管理可见行，浏览器的滚动锚定
+ *    会反向修正 scrollTop，与窗口切换互相打架，造成跳动与猛冲。
+ * 3. 滚动状态封闭在本组件内：惯性滚动每帧只重渲染窗口内的少量行，不波及
+ *    外层选择条 / 表头 / 空状态。
+ * ------------------------------------------------------------------------- */
+
+/** 列表列数（选择框 / 收藏 / 名称 / 内容创建 / 修改 / 创建 / 大小），占位单元格需要 colSpan */
+const LIST_COLUMN_COUNT = 7;
+/** 行高初始估算：py-3(24px) + 40px 缩略图 + 1px 底线 = 65px；挂载后实测校正 */
+const LIST_ROW_ESTIMATED_HEIGHT = 65;
+/** 上下缓冲行数：列表行很轻，给足缓冲避免惯性滚动白屏，同时不挂载过多缩略图 */
+const LIST_OVERSCAN_TOP = 8;
+const LIST_OVERSCAN_BOTTOM = 16;
+
+/** VirtualList 对外暴露的命令式句柄 */
+interface VirtualListHandle {
+  scrollToIndex: (index: number) => void;
+}
+
+/** 注意：回调必须是稳定引用，否则 React.memo 失效 */
+interface ListRowProps {
+  photo: Photo;
+  rowHeight: number;
+  isSelected: boolean;
+  isExiting: boolean;
+  /** 只挂在窗口首行：实测真实行高，校正估算常量 */
+  innerRef?: (el: HTMLTableRowElement | null) => void;
+  onSelect: (id: string, multiSelect: boolean) => void;
+  onRange: (id: string) => void;
+  onOpen: (photo: Photo) => void;
+  onMenu: (e: React.MouseEvent, photo: Photo) => void;
+  onToggleFavorite: (id: string) => void;
+}
+
+const ListRow = React.memo(({
+  photo,
+  rowHeight,
+  isSelected,
+  isExiting,
+  innerRef,
+  onSelect,
+  onRange,
+  onOpen,
+  onMenu,
+  onToggleFavorite,
+}: ListRowProps) => {
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      onRange(photo.id);
+      return;
+    }
+    onSelect(photo.id, e.metaKey || e.ctrlKey);
+  }, [photo.id, onSelect, onRange]);
+
+  return (
+    <tr
+      ref={innerRef}
+      onClick={handleClick}
+      onDoubleClick={() => onOpen(photo)}
+      onContextMenu={(e) => onMenu(e, photo)}
+      style={{ height: rowHeight }}
+      className={`cursor-pointer border-b border-[var(--border-subtle)] transition-[opacity,background-color,color] duration-200 ease-entrance ${
+        isExiting
+          ? 'opacity-0 pointer-events-none'
+          : isSelected
+            ? 'bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--text-primary)]'
+            : 'hover:bg-[var(--bg-glass)] text-[var(--text-secondary)]'
+      }`}
+    >
+      <td className="px-4 py-3">
+        {/* 用 40×40 的 label 包住原生复选框：视觉尺寸不变（保留原生外观），
+            但整个格子都是可点热区；阻止冒泡避免连同行点击一起触发双重切换 */}
+        <label
+          className="flex items-center justify-center w-10 h-10 cursor-pointer rounded-lg hover:bg-[var(--bg-glass)] transition-colors"
+          onClick={e => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onSelect(photo.id, true)}
+            className="w-4 h-4 rounded-lg border-2 border-[rgba(255,255,255,0.2)] bg-[rgba(0,0,0,0.2)] text-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.4)] cursor-pointer accent-[var(--accent-blue)]"
+            aria-label="选择"
+          />
+        </label>
+      </td>
+      <td className="px-4 py-3">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleFavorite(photo.id);
+          }}
+          className={`p-1.5 rounded-full transition-all duration-200 ${
+            photo.isFavorite
+              ? 'text-[var(--accent-pink)] bg-[rgba(var(--accent-pink-rgb),0.15)]'
+              : 'text-[var(--text-quaternary)] hover:text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.15)]'
+          }`}
+          title="收藏"
+          aria-label="收藏"
+        >
+          <svg className="w-4 h-4" fill={photo.isFavorite ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+          </svg>
+        </button>
+      </td>
+
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          <ThumbImage
+            photo={photo}
+            size={40}
+            className="w-10 h-10 object-cover border border-[var(--border-subtle)] shrink-0 bg-[var(--bg-card)]"
+          />
+          {isVideoPhoto(photo) && (
+            <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium text-[var(--accent-cyan)] bg-[rgba(var(--accent-blue-rgb),0.12)] border border-[rgba(var(--accent-blue-rgb),0.25)]">
+              <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+              视频
+            </span>
+          )}
+          <span className="font-medium truncate max-w-[200px]" title={photo.name}>{photo.name}</span>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-[var(--text-tertiary)]">{formatDate(photo.dateTaken || 0)}</td>
+      <td className="px-4 py-3 text-[var(--text-tertiary)]">{formatDate(photo.lastModified)}</td>
+      <td className="px-4 py-3 text-[var(--text-tertiary)]">{formatDate(photo.dateCreated || photo.lastModified)}</td>
+      <td className="px-4 py-3 text-[var(--text-tertiary)] font-mono text-xs">{formatBytes(photo.size)}</td>
+    </tr>
+  );
+});
+
+ListRow.displayName = 'ListRow';
+
+interface VirtualListProps {
+  items: Photo[];
+  selectedIds: Set<string>;
+  exitingIds: Set<string>;
+  /** 表头节点：父组件渲染一次后传入；滚动重渲染时引用不变，整块表头直接跳过 reconcile */
+  header: React.ReactNode;
+  onSelect: (id: string, multiSelect: boolean) => void;
+  onRange: (id: string) => void;
+  onOpen: (photo: Photo) => void;
+  onMenu: (e: React.MouseEvent, photo: Photo) => void;
+  onToggleFavorite: (id: string) => void;
+  onBlankClick?: () => void;
+  onContainerContextMenu?: (e: React.MouseEvent) => void;
+}
+
+const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(({
+  items,
+  selectedIds,
+  exitingIds,
+  header,
+  onSelect,
+  onRange,
+  onOpen,
+  onMenu,
+  onToggleFavorite,
+  onBlankClick,
+  onContainerContextMenu,
+}, ref) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [rowHeight, setRowHeight] = useState(LIST_ROW_ESTIMATED_HEIGHT);
+  const rowHeightRef = useRef(rowHeight);
+  rowHeightRef.current = rowHeight;
+
+  // 视口高度跟随窗口变化
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => setViewportHeight(el.clientHeight);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // rAF 节流：滚动事件频率远高于刷新率，直接 setState 会产生无效重渲染
+  const rafRef = useRef(0);
+  const pendingTopRef = useRef(0);
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    pendingTopRef.current = e.currentTarget.scrollTop;
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      setScrollTop(prev => (prev === pendingTopRef.current ? prev : pendingTopRef.current));
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - LIST_OVERSCAN_TOP);
+  const endIndex = Math.min(
+    items.length,
+    startIndex + Math.ceil((viewportHeight || 600) / rowHeight) + LIST_OVERSCAN_TOP + LIST_OVERSCAN_BOTTOM
+  );
+
+  // 实测行高：首个真实行挂载时量一次 offsetHeight，修正常量估算误差。
+  // 行高统一（分隔线在行底），测量结果不会随窗口位置反复跳变，故只测一次，
+  // 避免滚动跨页时 ref 切换反复读取布局（强制同步 layout）。
+  const measuredRef = useRef(false);
+  const measureRow = useCallback((el: HTMLTableRowElement | null) => {
+    if (!el || measuredRef.current) return;
+    const h = el.offsetHeight;
+    if (h <= 0) return;
+    measuredRef.current = true;
+    if (h !== rowHeightRef.current) {
+      rowHeightRef.current = h;
+      setRowHeight(h);
+    }
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    scrollToIndex: (index: number) => {
+      const el = scrollRef.current;
+      if (!el || index < 0) return;
+      const h = rowHeightRef.current;
+      const top = Math.max(0, index * h - 8);
+      if (top < el.scrollTop || top + h > el.scrollTop + el.clientHeight) {
+        el.scrollTo({ top, behavior: 'auto' });
+      }
+    },
+  }), []);
+
+  const topSpacer = startIndex * rowHeight;
+  const bottomSpacer = (items.length - endIndex) * rowHeight;
+
+  /** 占位行：必须带 <td>（空 tr 的高度在 table 布局下不可靠），并清零 padding / 边框 */
+  const spacerRow = (height: number, key: string) => (
+    <tr key={key} aria-hidden style={{ height, border: 0 }}>
+      <td colSpan={LIST_COLUMN_COUNT} style={{ padding: 0, border: 0 }} />
+    </tr>
+  );
+
+  return (
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      onClick={(e) => { if (e.target === e.currentTarget) onBlankClick?.(); }}
+      onContextMenu={(e) => onContainerContextMenu?.(e)}
+      className="flex-1 overflow-y-auto custom-scrollbar bg-transparent min-h-0"
+      style={{ overflowAnchor: 'none' }}
+    >
+      <table className="w-full text-left text-sm text-[var(--text-secondary)] border-collapse">
+        {header}
+        <tbody>
+          {topSpacer > 0 && spacerRow(topSpacer, 'top-spacer')}
+          {items.slice(startIndex, endIndex).map((photo, i) => (
+            <ListRow
+              key={photo.id}
+              photo={photo}
+              rowHeight={rowHeight}
+              isSelected={selectedIds.has(photo.id)}
+              isExiting={exitingIds.has(photo.id)}
+              innerRef={i === 0 ? measureRow : undefined}
+              onSelect={onSelect}
+              onRange={onRange}
+              onOpen={onOpen}
+              onMenu={onMenu}
+              onToggleFavorite={onToggleFavorite}
+            />
+          ))}
+          {bottomSpacer > 0 && spacerRow(bottomSpacer, 'bottom-spacer')}
+        </tbody>
+      </table>
+    </div>
+  );
+});
+
+VirtualList.displayName = 'VirtualList';
+
 /** ImageGrid 对外暴露的命令式句柄：滚动定位到某张照片（网格 / 列表通用） */
 export interface ImageGridHandle {
   scrollToPhoto: (id: string) => void;
@@ -327,6 +609,8 @@ interface ImageGridProps {
   onFavoriteSelected: () => void;
   viewMode: ViewMode;
   scale: number;
+  /** 调整网格缩略图大小（0.5x ~ 2x），仅网格视图有效 */
+  onScaleChange: (scale: number) => void;
   sortConfig: SortConfig;
   onSort: (key: SortKey) => void;
   onToggleFavorite: (id: string) => void;
@@ -334,6 +618,8 @@ interface ImageGridProps {
   onContextMenu?: (e: React.MouseEvent, photo?: Photo) => void;
   onShowDeleteConfirm: () => void;
   onBatchRename?: () => void;
+  /** 移动选中项到指定文件夹（面板中可新建文件夹） */
+  onMoveSelected?: () => void;
   /** 导出选中项（批量转换格式） */
   onExportSelected?: () => void;
   /** 列数变化上报：App 用于方向键导航步长 */
@@ -343,8 +629,8 @@ interface ImageGridProps {
   /** 空状态引导 */
   emptyTitle?: string;
   emptyDescription?: string;
-  onOpenDirectory?: () => void;
-  onAddImages?: () => void;
+  /** 空库欢迎页的统一导入入口（图片 / 视频 / 文件夹均可批量选择） */
+  onImport?: () => void;
   /** 收藏夹为空时，引导跳回所有照片 */
   onShowAll?: () => void;
   /** 搜索无结果时，清除搜索 */
@@ -633,8 +919,6 @@ const ImageCard = React.memo(({
 
 ImageCard.displayName = 'ImageCard';
 
-/** 列表模式行高（px），用于窗口化计算 */
-const LIST_ROW_HEIGHT = 57;
 /** 无条目在塌陷时的空集合：保持引用稳定，避免每次渲染都让 memo 失效 */
 const NO_EXITING_IDS: Set<string> = new Set();
 
@@ -653,6 +937,28 @@ const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
   { key: 'size', label: '大小' },
 ];
 
+/**
+ * 表头排序箭头。定义在组件外：若定义在渲染函数内，每次渲染都是一个新的
+ * 组件类型，React 会卸载并重挂载这些节点（连带失焦 / 动画重播）。
+ */
+const SortIndicator: React.FC<{ active: boolean; direction: SortDirection }> = ({ active, direction }) => (
+  <span className={`ml-1 inline-flex items-center justify-center w-4 h-4 transition-all duration-200 ${
+    active ? 'opacity-100 text-[var(--accent-cyan)]' : 'opacity-0 text-[var(--text-quaternary)] group-hover:opacity-50'
+  }`}>
+    {active ? (direction === 'desc' ? '↓' : '↑') : null}
+  </span>
+);
+
+/** 网格缩放：对角双向箭头 */
+const ResizeIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="4 9 4 4 9 4"></polyline>
+    <polyline points="20 15 20 20 15 20"></polyline>
+    <line x1="4" y1="4" x2="10" y2="10"></line>
+    <line x1="20" y1="20" x2="14" y2="14"></line>
+  </svg>
+);
+
 const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
   photos,
   selectedIds,
@@ -663,6 +969,7 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
   onFavoriteSelected,
   viewMode,
   scale,
+  onScaleChange,
   sortConfig,
   onSort,
   onToggleFavorite,
@@ -670,73 +977,33 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
   onContextMenu,
   onShowDeleteConfirm,
   onBatchRename,
+  onMoveSelected,
   onExportSelected,
   onColumnsChange,
   viewTitle,
   emptyTitle = '没有照片',
-  emptyDescription = '拖放图片到此处，或点击上方按钮打开文件夹',
-  onOpenDirectory,
-  onAddImages,
+  emptyDescription = '拖放图片、视频或文件夹到此处，或点击上方「导入」按钮批量添加',
+  onImport,
   onShowAll,
   onClearSearch,
   showAllLabel = '前往「所有照片」',
   exitingIds = NO_EXITING_IDS,
 }, ref) => {
   const selectAllRef = useRef<HTMLInputElement>(null);
-  const listScrollRef = useRef<HTMLDivElement>(null);
+  const virtualListRef = useRef<VirtualListHandle>(null);
   const virtualGridRef = useRef<VirtualGridHandle>(null);
 
   // 列表 / 网格统一的滚动定位：方向键导航时让选中项进入视口
   useImperativeHandle(ref, () => ({
     scrollToPhoto: (id: string) => {
       if (viewMode === 'list') {
-        const el = listScrollRef.current;
-        if (!el) return;
         const index = photos.findIndex(p => p.id === id);
-        if (index < 0) return;
-        const targetTop = Math.max(0, index * LIST_ROW_HEIGHT - 60);
-        if (targetTop < el.scrollTop || targetTop + LIST_ROW_HEIGHT > el.scrollTop + el.clientHeight) {
-          el.scrollTo({ top: targetTop, behavior: 'auto' });
-        }
+        if (index >= 0) virtualListRef.current?.scrollToIndex(index);
       } else {
         virtualGridRef.current?.scrollToItem(id);
       }
     },
   }), [viewMode, photos]);
-
-  // 列表模式的滚动位置与视口高度，用于窗口化渲染
-  const [listScroll, setListScroll] = useState({ top: 0, height: 0 });
-
-  // rAF 节流：避免滚动事件高频触发 setState
-  const listRafRef = useRef(0);
-  const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    const top = el.scrollTop;
-    const height = el.clientHeight;
-    if (listRafRef.current) return;
-    listRafRef.current = requestAnimationFrame(() => {
-      listRafRef.current = 0;
-      setListScroll(prev =>
-        prev.top === top && prev.height === height ? prev : { top, height }
-      );
-    });
-  }, []);
-
-  useEffect(() => () => {
-    if (listRafRef.current) cancelAnimationFrame(listRafRef.current);
-  }, []);
-
-  useEffect(() => {
-    if (viewMode !== 'list') return;
-    const el = listScrollRef.current;
-    if (el) setListScroll(prev => ({ ...prev, height: el.clientHeight }));
-  }, [viewMode, photos.length]);
-
-  const listStartIndex = Math.max(0, Math.floor(listScroll.top / LIST_ROW_HEIGHT) - 6);
-  const listEndIndex = Math.min(
-    photos.length,
-    listStartIndex + Math.ceil((listScroll.height || 600) / LIST_ROW_HEIGHT) + 12
-  );
 
   // 「全选」语义：只针对当前视图中出现的照片计算
   const allVisibleSelected = useMemo(
@@ -826,93 +1093,6 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
     />
   ), [selectedIds, exitingIds, introDelays, handleSelect, handleRange, handleOpen, handleMenu, handleFavorite, handleDeleteConfirm]);
 
-  const renderRow = useCallback((photo: Photo) => {
-    const isSelected = selectedIds.has(photo.id);
-    const isExiting = exitingIds.has(photo.id);
-    const rowClick = (e: React.MouseEvent) => {
-      if (e.shiftKey) {
-        onRangeSelect(photo.id);
-        return;
-      }
-      handleSelect(photo.id, e.metaKey || e.ctrlKey);
-    };
-    return (
-      <tr
-        onClick={rowClick}
-        onDoubleClick={() => handleOpen(photo)}
-        onContextMenu={(e) => handleMenu(e, photo)}
-        className={`cursor-pointer transition-[opacity,background-color,color] duration-200 ease-entrance ${
-          isExiting
-            ? 'opacity-0 pointer-events-none'
-            : isSelected
-              ? 'bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--text-primary)]'
-              : 'hover:bg-[var(--bg-glass)] text-[var(--text-secondary)]'
-        }`}
-      >
-        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={() => handleSelect(photo.id, true)}
-            className="rounded-lg border-2 border-[rgba(255,255,255,0.2)] bg-[rgba(0,0,0,0.2)] text-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.4)] cursor-pointer accent-[var(--accent-blue)]"
-            aria-label="选择"
-          />
-        </td>
-        <td className="px-4 py-3">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleFavorite(photo.id);
-            }}
-            className={`p-1.5 rounded-full transition-all duration-200 ${
-              photo.isFavorite
-                ? 'text-[var(--accent-pink)] bg-[rgba(var(--accent-pink-rgb),0.15)]'
-                : 'text-[var(--text-quaternary)] hover:text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.15)]'
-            }`}
-            title="收藏"
-            aria-label="收藏"
-          >
-            <svg className="w-4 h-4" fill={photo.isFavorite ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
-            </svg>
-          </button>
-        </td>
-
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-3">
-            <ThumbImage
-              photo={photo}
-              size={40}
-              className="w-10 h-10 rounded-lg object-cover border border-[var(--border-subtle)] shrink-0 bg-[var(--bg-card)]"
-            />
-            {isVideoPhoto(photo) && (
-              <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium text-[var(--accent-cyan)] bg-[rgba(var(--accent-blue-rgb),0.12)] border border-[rgba(var(--accent-blue-rgb),0.25)]">
-                <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                视频
-              </span>
-            )}
-            <span className="font-medium truncate max-w-[200px]" title={photo.name}>{photo.name}</span>
-          </div>
-        </td>
-        <td className="px-4 py-3 text-[var(--text-tertiary)]">{formatDate(photo.dateTaken || 0)}</td>
-        <td className="px-4 py-3 text-[var(--text-tertiary)]">{formatDate(photo.lastModified)}</td>
-        <td className="px-4 py-3 text-[var(--text-tertiary)]">{formatDate(photo.dateCreated || photo.lastModified)}</td>
-        <td className="px-4 py-3 text-[var(--text-tertiary)] font-mono text-xs">{formatBytes(photo.size)}</td>
-      </tr>
-    );
-  }, [selectedIds, exitingIds, handleSelect, handleRange, handleOpen, handleMenu, handleFavorite, onRangeSelect]);
-
-  const SortIndicator = ({ columnKey }: { columnKey: SortKey }) => {
-    const isActive = sortConfig.key === columnKey;
-    return (
-      <span className={`ml-1 inline-flex items-center justify-center w-4 h-4 transition-all duration-200 ${
-        isActive ? 'opacity-100 text-[var(--accent-cyan)]' : 'opacity-0 text-[var(--text-quaternary)] group-hover:opacity-50'
-      }`}>
-        {isActive && sortConfig.direction === 'desc' ? '↓' : '↑'}
-      </span>
-    );
-  };
-
   /**
    * 排序 / 分类切换后的整组淡入。
    * 先无过渡地落到初始态（透明 + 下移 4px），等浏览器真正绘制出这一帧，
@@ -1000,6 +1180,17 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
             <span className="hidden sm:inline">重命名</span>
           </button>
         )}
+        {onMoveSelected && (
+          <button
+            type="button"
+            onClick={onMoveSelected}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--accent-blue)] hover:bg-[rgba(var(--accent-blue-rgb),0.12)] rounded-lg border border-[var(--border-default)] bg-[var(--bg-glass)] transition-all duration-200"
+            title="移动选中项到其他文件夹（可在面板中新建文件夹）"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h3.5l2 2H19a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path><path strokeLinecap="round" strokeLinejoin="round" d="M9.5 13.5h7m0 0l-2.5-2.5m2.5 2.5l-2.5 2.5"></path></svg>
+            <span className="hidden sm:inline">移动到</span>
+          </button>
+        )}
         {onExportSelected && (
           <button
             type="button"
@@ -1026,7 +1217,7 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
 
   /* ============ 空状态：把“下一步能做什么”直接放在眼前 ============ */
   if (photos.length === 0) {
-    const isWelcome = Boolean(onOpenDirectory || onAddImages);
+    const isWelcome = Boolean(onImport);
     // 空库欢迎页的能力要点：纯本地 / 拖放导入 / 图片视频，帮助新用户建立预期。
     const welcomePoints = [
       {
@@ -1084,20 +1275,12 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
               ))}
             </div>
             <div className="flex items-center gap-3 animate-fadeInUp" style={{ animationDelay: '240ms' }}>
-              {onAddImages && (
+              {onImport && (
                 <button
-                  onClick={onAddImages}
-                  className="px-5 py-2.5 rounded-xl text-sm font-medium bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] border border-[var(--border-default)] text-[var(--text-primary)] transition-all duration-200 active:scale-[0.98]"
+                  onClick={onImport}
+                  className="px-6 py-2.5 rounded-xl text-sm font-semibold text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.25)] transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
                 >
-                  添加图片
-                </button>
-              )}
-              {onOpenDirectory && (
-                <button
-                  onClick={onOpenDirectory}
-                  className="px-5 py-2.5 rounded-xl text-sm font-semibold text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.25)] transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
-                >
-                  打开文件夹
+                  导入图片 / 视频 / 文件夹
                 </button>
               )}
             </div>
@@ -1140,89 +1323,97 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
 
   /* ============ 列表视图 ============ */
   if (viewMode === 'list') {
+    // 表头只依赖排序状态，作为 element 传给 VirtualList：滚动帧不会重渲染它。
+    // 背景用不透明色（非毛玻璃）：backdrop-filter 在惯性滚动时要每帧全宽重新
+    // 采样模糊，是长列表掉帧的常见来源。
+    const tableHeader = (
+      <thead className="bg-[var(--bg-table-header)] text-[var(--text-secondary)] font-semibold border-b border-[var(--border-subtle)] sticky top-0 z-10">
+        <tr>
+          <th className="px-4 py-3 w-10 rounded-tl-lg">
+            <label
+              className="flex items-center justify-center w-10 h-10 cursor-pointer rounded-lg hover:bg-[var(--bg-glass)] transition-colors"
+              title="全选 / 取消全选"
+            >
+              <input
+                type="checkbox"
+                ref={selectAllRef}
+                checked={allVisibleSelected}
+                onChange={onSelectAll}
+                className="w-4 h-4 rounded-lg border-2 border-[rgba(255,255,255,0.2)] bg-[rgba(0,0,0,0.2)] text-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.4)] cursor-pointer accent-[var(--accent-blue)]"
+                aria-label="全选"
+              />
+            </label>
+          </th>
+          <th className="px-4 py-3 w-10"></th>
+
+          <th
+            className="px-4 py-3 cursor-pointer group hover:bg-[var(--bg-glass)] transition-colors select-none"
+            onClick={() => onSort('name')}
+          >
+            <div className="flex items-center">
+              名称 <SortIndicator active={sortConfig.key === 'name'} direction={sortConfig.direction} />
+            </div>
+          </th>
+
+          <th
+            className="px-4 py-3 cursor-pointer group hover:bg-[var(--bg-glass)] transition-colors select-none"
+            onClick={() => onSort('dateTaken')}
+          >
+            <div className="flex items-center">
+              内容创建时间 <SortIndicator active={sortConfig.key === 'dateTaken'} direction={sortConfig.direction} />
+            </div>
+          </th>
+
+          <th
+            className="px-4 py-3 cursor-pointer group hover:bg-[var(--bg-glass)] transition-colors select-none"
+            onClick={() => onSort('dateModified')}
+          >
+            <div className="flex items-center">
+              修改时间 <SortIndicator active={sortConfig.key === 'dateModified'} direction={sortConfig.direction} />
+            </div>
+          </th>
+
+          <th
+            className="px-4 py-3 cursor-pointer group hover:bg-[var(--bg-glass)] transition-colors select-none"
+            onClick={() => onSort('dateCreated')}
+          >
+            <div className="flex items-center">
+              创建时间 <SortIndicator active={sortConfig.key === 'dateCreated'} direction={sortConfig.direction} />
+            </div>
+          </th>
+
+          <th
+            className="px-4 py-3 cursor-pointer group hover:bg-[var(--bg-glass)] transition-colors select-none rounded-tr-lg"
+            onClick={() => onSort('size')}
+          >
+            <div className="flex items-center">
+              大小 <SortIndicator active={sortConfig.key === 'size'} direction={sortConfig.direction} />
+            </div>
+          </th>
+        </tr>
+      </thead>
+    );
+
     return (
       <div className="flex-1 flex flex-col w-full min-h-0">
         {selectionBar}
-        <div
-          ref={listScrollRef}
-          className={`flex-1 overflow-y-auto custom-scrollbar bg-transparent min-h-0 ${reflowClass}`}
-          onScroll={handleListScroll}
-          onClick={(e) => { if (e.target === e.currentTarget) onClearSelection(); }}
-          onContextMenu={(e) => onContextMenu && onContextMenu(e)}
-        >
-        <table className="w-full text-left text-sm text-[var(--text-secondary)] border-collapse">
-          <thead className="bg-[var(--bg-table-header)] backdrop-blur-xl text-[var(--text-secondary)] font-semibold border-b border-[var(--border-subtle)] sticky top-0 z-10">
-            <tr>
-              <th className="px-4 py-3 w-10 rounded-tl-lg">
-                <input
-                  type="checkbox"
-                  ref={selectAllRef}
-                  checked={allVisibleSelected}
-                  onChange={onSelectAll}
-                  className="rounded-lg border-2 border-[rgba(255,255,255,0.2)] bg-[rgba(0,0,0,0.2)] text-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.4)] cursor-pointer accent-[var(--accent-blue)]"
-                  aria-label="全选"
-                />
-              </th>
-              <th className="px-4 py-3 w-10"></th>
-
-              <th
-                className="px-4 py-3 cursor-pointer group hover:bg-[var(--bg-glass)] transition-colors select-none"
-                onClick={() => onSort('name')}
-              >
-                <div className="flex items-center">
-                  名称 <SortIndicator columnKey="name" />
-                </div>
-              </th>
-
-              <th
-                className="px-4 py-3 cursor-pointer group hover:bg-[var(--bg-glass)] transition-colors select-none"
-                onClick={() => onSort('dateTaken')}
-              >
-                <div className="flex items-center">
-                  内容创建时间 <SortIndicator columnKey="dateTaken" />
-                </div>
-              </th>
-
-              <th
-                className="px-4 py-3 cursor-pointer group hover:bg-[var(--bg-glass)] transition-colors select-none"
-                onClick={() => onSort('dateModified')}
-              >
-                <div className="flex items-center">
-                  修改时间 <SortIndicator columnKey="dateModified" />
-                </div>
-              </th>
-
-              <th
-                className="px-4 py-3 cursor-pointer group hover:bg-[var(--bg-glass)] transition-colors select-none"
-                onClick={() => onSort('dateCreated')}
-              >
-                <div className="flex items-center">
-                  创建时间 <SortIndicator columnKey="dateCreated" />
-                </div>
-              </th>
-
-              <th
-                className="px-4 py-3 cursor-pointer group hover:bg-[var(--bg-glass)] transition-colors select-none rounded-tr-lg"
-                onClick={() => onSort('size')}
-              >
-                <div className="flex items-center">
-                  大小 <SortIndicator columnKey="size" />
-                </div>
-              </th>
-            </tr>
-          </thead>
-
-          <tbody className="divide-y divide-[var(--border-subtle)]">
-            {/* 窗口化：用上下占位行撑起高度，只渲染可见区间 */}
-            {listStartIndex > 0 && (
-              <tr aria-hidden style={{ height: listStartIndex * LIST_ROW_HEIGHT }} />
-            )}
-            {photos.slice(listStartIndex, listEndIndex).map(renderRow)}
-            {listEndIndex < photos.length && (
-              <tr aria-hidden style={{ height: (photos.length - listEndIndex) * LIST_ROW_HEIGHT }} />
-            )}
-          </tbody>
-        </table>
+        {/* reflow 动画挂在包裹层：不要让滚动容器常驻 transform，否则整个滚动
+            内容（几十万 px 高）会被提升成一个超大合成层 */}
+        <div className={`flex-1 min-h-0 flex flex-col ${reflowClass}`}>
+          <VirtualList
+            ref={virtualListRef}
+            items={photos}
+            selectedIds={selectedIds}
+            exitingIds={exitingIds}
+            header={tableHeader}
+            onSelect={handleSelect}
+            onRange={handleRange}
+            onOpen={handleOpen}
+            onMenu={handleMenu}
+            onToggleFavorite={handleFavorite}
+            onBlankClick={onClearSelection}
+            onContainerContextMenu={(e) => onContextMenu?.(e)}
+          />
         </div>
       </div>
     );
@@ -1243,12 +1434,29 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
                 <span className="text-sm font-semibold text-[var(--text-primary)] whitespace-nowrap">{viewTitle}</span>
               )}
               <span className="text-sm text-[var(--text-tertiary)] whitespace-nowrap">{photos.length} 项</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--bg-glass)] border border-[var(--border-subtle)] text-[var(--text-tertiary)] whitespace-nowrap hidden sm:inline-flex">
-                按{sortByDate ? '时间' : sortConfig.key === 'name' ? '名称' : '大小'}{sortConfig.direction === 'asc' ? '升序' : '降序'}
-              </span>
             </div>
 
             <div className="flex-1" />
+
+            {/* 网格大小：从顶栏移到情境条，与排序同属「浏览视图」控制；
+                列表视图不渲染此条，因此天然只在网格模式出现 */}
+            <div
+              className="hidden lg:flex items-center gap-2 h-8 pl-2.5 pr-2 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)]"
+              title="调整网格大小"
+            >
+              <ResizeIcon className="w-3.5 h-3.5 text-[var(--text-tertiary)] shrink-0" />
+              <input
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.1"
+                value={scale}
+                onChange={(e) => onScaleChange(parseFloat(e.target.value))}
+                className="w-16 2xl:w-20 appearance-none cursor-pointer accent-[var(--accent-blue)] focus:outline-none"
+                aria-label="网格大小"
+              />
+              <span className="text-[11px] font-mono text-[var(--text-tertiary)] w-8 text-right">{Math.round(scale * 100)}%</span>
+            </div>
 
             <div className="flex items-center gap-1 p-0.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)]">
               {SORT_OPTIONS.map((opt) => (
@@ -1271,16 +1479,6 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
               >
                 {directionLabel}
               </button>
-            </div>
-
-            <div className="hidden xl:flex items-center gap-1.5 text-[var(--text-tertiary)]">
-              <span className="flex items-center gap-1"><span className="kbd">空格</span>预览</span>
-              <span className="w-px h-3 bg-[var(--border-subtle)] mx-1"></span>
-              <span className="flex items-center gap-1"><span className="kbd">⇧</span>连选</span>
-              <span className="w-px h-3 bg-[var(--border-subtle)] mx-1"></span>
-              <span className="flex items-center gap-1"><span className="kbd">⌘A</span>全选</span>
-              <span className="w-px h-3 bg-[var(--border-subtle)] mx-1"></span>
-              <span className="flex items-center gap-1"><span className="kbd">⌫</span>删除</span>
             </div>
         </div>
       )}

@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
 import { Photo, type DuplicateScope } from '../types';
 import { formatBytes, hammingDistance, photoOriginalTime, type DuplicateScanProgress } from '../utils';
-import { ThumbImage, useThumbnailSrc } from './ThumbnailImage';
+import { useThumbnailSrc } from './ThumbnailImage';
 
 const getFolderPath = (path: string): string => {
   if (!path) return '';
@@ -93,12 +93,12 @@ const DuplicateGlyph = () => (
 
 const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
   <svg
-    className={`w-4 h-4 shrink-0 text-[var(--text-tertiary)] transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
+    className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
     fill="none"
     stroke="currentColor"
     viewBox="0 0 24 24"
   >
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 5l7 7-7 7" />
   </svg>
 );
 
@@ -120,43 +120,18 @@ interface DuplicateDetectorProps {
   /** 比对范围：全库跨目录 / 仅同目录 */
   scope: DuplicateScope;
   onScopeChange: (scope: DuplicateScope) => void;
+  /** 侧边栏是否展开：收起时顶栏左侧需为红绿灯按钮让位 */
+  isLeftPaneOpen: boolean;
 }
 
-/**
- * 组的「印相叠」标识：原图压在最上面，拷贝在后方扇形露出。
- * 先让人看到「同一张图 N 份」，再读到文字 —— 这是本页的签名元素。
- */
-const GroupStack: React.FC<{ photos: Photo[] }> = ({ photos }) => {
-  const [original, ...copies] = photos;
-  const behind = copies.slice(0, 2);
+/** 检测完成后默认展开的组数：首屏直接看到内容，又不至于把页面拉得过长 */
+const DEFAULT_EXPANDED_GROUPS = 10;
 
-  return (
-    <span className="relative block w-11 h-11 shrink-0">
-      {behind.map((photo, index) => (
-        <ThumbImage
-          key={photo.id}
-          photo={photo}
-          size={96}
-          alt=""
-          className={`absolute inset-0 w-full h-full rounded-lg object-cover bg-[var(--bg-card)] border border-[var(--border-subtle)] opacity-60 ${
-            index === 0 ? '-rotate-6 -translate-x-1' : 'rotate-6 translate-x-1'
-          }`}
-        />
-      ))}
-      <ThumbImage
-        photo={original}
-        size={96}
-        alt={original.name}
-        className="absolute inset-0 w-full h-full rounded-lg object-cover bg-[var(--bg-card)] border-2 border-[var(--accent-green)] shadow-sm"
-      />
-      {copies.length > 2 && (
-        <span className="absolute -bottom-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--accent-purple)] text-[var(--accent-contrast)] text-[10px] font-semibold leading-[16px] text-center border border-[var(--bg-elevated)]">
-          {photos.length}
-        </span>
-      )}
-    </span>
-  );
-};
+/**
+ * 组的稳定身份：组内按时间升序，第一张即最早的原图。
+ * 用照片 id 而非数组下标 —— 删除整组后，后面的组不会因下标前移而「替位继承」展开态。
+ */
+const groupKeyOf = (group: Photo[]): string => group[0]?.id ?? '';
 
 /**
  * 单张重复图片卡片。
@@ -300,8 +275,10 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
   onSimilarityChange,
   scope,
   onScopeChange,
+  isLeftPaneOpen,
 }) => {
-  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  /** 展开的组（以组内最早照片 id 标识，见 groupKeyOf） */
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   /** 被勾选「待删除」的照片 id，默认空，不做任何默认选择 */
   const [markedIds, setMarkedIds] = useState<Set<string>>(new Set());
 
@@ -314,9 +291,12 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
       setMarkedIds(new Set());
       setExpandedGroups(new Set());
     } else if (!isProcessing && wasProcessing) {
-      const expanded = new Set<number>();
-      duplicateGroups.forEach((_, i) => {
-        if (i < 3) expanded.add(i);
+      const expanded = new Set<string>();
+      duplicateGroups.forEach((group, i) => {
+        if (i < DEFAULT_EXPANDED_GROUPS) {
+          const key = groupKeyOf(group);
+          if (key) expanded.add(key);
+        }
       });
       setExpandedGroups(expanded);
     }
@@ -333,6 +313,21 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
       const next = new Set<string>();
       prev.forEach(id => {
         if (valid.has(id)) next.add(id);
+        else changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [duplicateGroups]);
+
+  // 同理：删除整组后，把不再存在的展开 key 清掉，避免集合无限累积
+  useEffect(() => {
+    setExpandedGroups(prev => {
+      if (prev.size === 0) return prev;
+      const valid = new Set(duplicateGroups.map(groupKeyOf).filter(Boolean));
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach(key => {
+        if (valid.has(key)) next.add(key);
         else changed = true;
       });
       return changed ? next : prev;
@@ -385,19 +380,22 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
     return { count, size };
   }, [duplicateGroups]);
 
-  const handleToggleGroup = useCallback((groupIndex: number) => {
+  const handleToggleGroup = useCallback((key: string) => {
+    if (!key) return;
     setExpandedGroups(prev => {
       const next = new Set(prev);
-      if (next.has(groupIndex)) next.delete(groupIndex);
-      else next.add(groupIndex);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }, []);
 
   const handleExpandAll = useCallback(() => {
-    setExpandedGroups(prev =>
-      prev.size === duplicateGroups.length ? new Set() : new Set(duplicateGroups.map((_, i) => i))
-    );
+    setExpandedGroups(prev => {
+      const keys = duplicateGroups.map(groupKeyOf).filter(Boolean);
+      const allOpen = keys.length > 0 && keys.every(key => prev.has(key));
+      return allOpen ? new Set() : new Set(keys);
+    });
   }, [duplicateGroups]);
 
   const handleTogglePhoto = useCallback((photo: Photo) => {
@@ -456,7 +454,8 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
       ? Math.min(100, Math.round((progress.processed / progress.total) * 100))
       : 0;
 
-  const allExpanded = duplicateGroups.length > 0 && expandedGroups.size === duplicateGroups.length;
+  const allExpanded =
+    duplicateGroups.length > 0 && duplicateGroups.every(group => expandedGroups.has(groupKeyOf(group)));
   const inSelectionMode = markedPhotos.length > 0;
 
   /**
@@ -472,8 +471,8 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
   return (
     <div className="flex-1 flex flex-col w-full min-h-0">
       {/* 顶栏：与图库工具栏同位同高，形成同一套外壳 */}
-      <div className="bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 shrink-0 px-4 py-2.5 shadow-lg shadow-[rgba(0,0,0,0.15)]">
-        <div className="flex items-center justify-between h-10 gap-3">
+      <div className={`app-drag bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 shrink-0 py-2.5 shadow-lg shadow-[rgba(0,0,0,0.15)] ${isLeftPaneOpen ? 'px-4' : 'pl-[78px] pr-4'}`}>
+        <div className="app-no-drag flex items-center justify-between h-10 gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={onBack}
@@ -724,7 +723,8 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
             {!isProcessing && duplicateGroups.length > 0 && (
               <div className="px-4 pb-4 space-y-3">
                 {duplicateGroups.map((group, groupIndex) => {
-                  const isExpanded = expandedGroups.has(groupIndex);
+                  const groupKey = groupKeyOf(group);
+                  const isExpanded = !!groupKey && expandedGroups.has(groupKey);
                   const groupMarked = groupMarkedCounts[groupIndex] || 0;
                   const allMarked = groupMarked === group.length;
                   // 组内已按时间升序排列，第一张即最早的原始照片
@@ -739,16 +739,31 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                     : null;
 
                   return (
-                    <div key={groupIndex} className="group/row rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-glass)] overflow-hidden">
-                      {/* Group header */}
-                      <div className="w-full flex items-center justify-between px-4 py-3 gap-3">
+                    // content-visibility：上百组常驻 DOM 时，跳过屏外组的布局与绘制，滚动更跟手
+                    <div
+                      key={groupKey || groupIndex}
+                      className="group/row rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-glass)] overflow-hidden [content-visibility:auto] [contain-intrinsic-size:auto_46px]"
+                    >
+                      {/* Group header：整行可点，悬停整体染色提示可折叠 */}
+                      <div className="w-full flex items-center justify-between px-3 py-2.5 gap-2 transition-colors duration-150 hover:bg-[var(--bg-glass-hover)]">
                         <button
-                          onClick={() => handleToggleGroup(groupIndex)}
-                          className="flex items-center gap-3 min-w-0 flex-1 text-left"
+                          onClick={() => handleToggleGroup(groupKey)}
+                          aria-expanded={isExpanded}
+                          aria-controls={`duplicate-group-panel-${groupIndex}`}
+                          title={isExpanded ? '收起本组' : '展开本组'}
+                          className="flex items-center gap-2.5 min-w-0 flex-1 text-left select-none"
                         >
-                          <ChevronIcon expanded={isExpanded} />
-                          <GroupStack photos={group} />
-                          <span className="text-sm font-medium text-[var(--text-primary)] shrink-0">
+                          {/* 箭头专属热区：折叠时弱化、悬停 / 展开时提亮 */}
+                          <span
+                            className={`w-6 h-6 shrink-0 rounded-md flex items-center justify-center transition-colors duration-150 ${
+                              isExpanded
+                                ? 'bg-[var(--bg-glass-active)] text-[var(--text-secondary)]'
+                                : 'text-[var(--text-tertiary)] group-hover/row:bg-[var(--bg-glass-active)] group-hover/row:text-[var(--text-secondary)]'
+                            }`}
+                          >
+                            <ChevronIcon expanded={isExpanded} />
+                          </span>
+                          <span className="text-sm font-medium text-[var(--text-primary)] shrink-0 tabular-nums">
                             相似组 {groupIndex + 1}
                           </span>
                           {/* 完全相同时并进同一颗胶囊，避免两个中性 chip 并排；只有 <100% 才另起一颗 */}
@@ -786,7 +801,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                         }`}>
                           <button
                             onClick={() => handleKeepOriginalInGroup(group)}
-                            className="text-xs text-[var(--accent-green)] hover:opacity-80 transition-opacity px-2 py-1 rounded-lg hover:bg-[var(--bg-glass-hover)]"
+                            className="text-xs text-[var(--accent-green)] hover:opacity-80 transition-opacity px-2 py-1 rounded-lg hover:bg-[var(--bg-glass-active)]"
                             title="保留本组最早的原图，其余拷贝标记为待删除"
                           >
                             只留最早
@@ -794,7 +809,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                           {isExpanded && (
                             <button
                               onClick={() => handleGroupSelectAll(group, !allMarked)}
-                              className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors px-2 py-1 rounded-lg hover:bg-[var(--bg-glass-hover)]"
+                              className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors px-2 py-1 rounded-lg hover:bg-[var(--bg-glass-active)]"
                               title="连原图一起选中本组全部照片"
                             >
                               {allMarked ? '取消全选' : '全选本组'}
@@ -806,6 +821,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                       {/* Group content：常驻渲染，用 grid-template-rows 0fr → 1fr 做展开过渡。
                           不必测量高度，收起时也不必卸载卡片（反复卸载会让缩略图重新解码） */}
                       <div
+                        id={`duplicate-group-panel-${groupIndex}`}
                         className={`grid transition-[grid-template-rows] duration-300 ease-entrance ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
                         aria-hidden={!isExpanded}
                       >

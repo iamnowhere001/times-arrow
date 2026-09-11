@@ -693,7 +693,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
       {isMulti && (
           <div className="p-5">
               <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-                  对多张照片的操作用图库上方的操作条完成：收藏、重命名、导出或移入回收站。
+                  对多张照片的操作用图库上方的操作条完成：收藏、重命名、移动到文件夹、导出或移入回收站。
               </p>
               <div className="mt-4 p-4 bg-[var(--bg-glass)] rounded-lg border border-[var(--border-subtle)]">
                   <div className="flex justify-between mb-2">

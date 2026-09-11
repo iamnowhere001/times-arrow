@@ -100,6 +100,9 @@ const isHeicFile = (filePath) => {
 };
 
 const isVideoFile = (filePath) => VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+const isMediaFile = (filePath) =>
+  IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase()) ||
+  VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 
 const VIDEO_MIME_TYPES = {
   '.mp4': 'video/mp4',
@@ -697,6 +700,9 @@ function createWindow() {
     width: bounds?.width ?? DEFAULT_WINDOW_SIZE.width,
     height: bounds?.height ?? DEFAULT_WINDOW_SIZE.height,
     ...(bounds?.x !== undefined && bounds?.y !== undefined ? { x: bounds.x, y: bounds.y } : {}),
+    // macOS：隐藏原生标题栏（含标题文字），仅保留内缩的红绿灯按钮，
+    // 窗口拖动由渲染进程中的 -webkit-app-region: drag 区域承担。
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -740,15 +746,11 @@ function createMenu() {
       label: '文件',
       submenu: [
         {
-          label: '打开目录',
+          label: '导入图片或文件夹…',
           accelerator: 'CmdOrCtrl+O',
           click: async () => {
-            const result = await dialog.showOpenDialog(mainWindow, {
-              properties: ['openDirectory'],
-            });
-            if (!result.canceled && result.filePaths.length > 0) {
-              mainWindow.webContents.send('directory-selected', result.filePaths[0]);
-            }
+            const picked = await openImportDialog();
+            if (picked) mainWindow.webContents.send('import-paths', picked);
           },
         },
         {
@@ -810,6 +812,30 @@ function isSameFile(a, b) {
   }
 }
 
+/**
+ * 两个路径是否指向同一个目录（比较 inode）。
+ * 用于「移动到文件夹」时识别源文件已在目标目录中（stat 跟随符号链接，
+ * /var 与 /private/var 这类差异也能正确判同）。
+ */
+function isSameDirectory(a, b) {
+  try {
+    const sa = fs.statSync(a);
+    const sb = fs.statSync(b);
+    return sa.isDirectory() && sb.isDirectory() && sa.dev === sb.dev && sa.ino === sb.ino;
+  } catch {
+    return path.resolve(a) === path.resolve(b);
+  }
+}
+
+/**
+ * 跨磁盘 / 跨卷移动：rename 抛 EXDEV 时退化为「复制成功后再删源文件」。
+ * COPYFILE_EXCL 兜底保证绝不覆盖（正常路径已由 buildUniquePath 保证）。
+ */
+async function moveAcrossDevices(srcPath, destPath) {
+  await fs.promises.copyFile(srcPath, destPath, fs.constants.COPYFILE_EXCL);
+  await fs.promises.unlink(srcPath);
+}
+
 // 重命名：目标不存在直接改；目标已存在（且不是自身）时自动追加序号，绝不覆盖
 ipcMain.handle('rename-file', async (event, oldPath, newPath) => {
   try {
@@ -846,6 +872,69 @@ ipcMain.handle('delete-file', async (event, filePath) => {
     logger.error('Error moving file to trash:', error);
     return { error: error.message, success: false };
   }
+});
+
+/**
+ * 批量移动文件到指定文件夹（整理图库用）。
+ * - 源文件已在目标目录 → 跳过（skipped + reason='same-directory'）
+ * - 目标已存在同名文件 → 自动追加序号（conflicted=true），绝不覆盖
+ * - 跨磁盘 / 跨卷 → 复制后删除源文件
+ * 逐个串行执行：前一个落盘后后一个才能探测同名，避免批内互相覆盖。
+ * 返回整体错误 + 每个文件独立结果，失败项由渲染进程组织重试。
+ */
+ipcMain.handle('move-files', async (event, filePaths, targetDir) => {
+  if (!Array.isArray(filePaths) || typeof targetDir !== 'string' || !targetDir) {
+    return { error: 'Invalid arguments', results: [] };
+  }
+
+  let targetStat;
+  try {
+    targetStat = await fs.promises.stat(targetDir);
+  } catch {
+    return { error: '目标文件夹不存在', results: [] };
+  }
+  if (!targetStat.isDirectory()) {
+    return { error: '目标位置不是文件夹', results: [] };
+  }
+
+  const results = [];
+  for (const srcPath of filePaths) {
+    if (typeof srcPath !== 'string' || !srcPath) {
+      results.push({ from: String(srcPath ?? ''), error: '无效的文件路径' });
+      continue;
+    }
+
+    try {
+      if (isSameDirectory(path.dirname(srcPath), targetDir)) {
+        results.push({ from: srcPath, skipped: true, reason: 'same-directory' });
+        continue;
+      }
+
+      const fileName = path.basename(srcPath);
+      const destPath = buildUniquePath(targetDir, fileName);
+      try {
+        await rename(srcPath, destPath);
+      } catch (err) {
+        if (err.code === 'EXDEV') {
+          await moveAcrossDevices(srcPath, destPath);
+        } else {
+          throw err;
+        }
+      }
+      logger.debug(`Moved file: ${srcPath} -> ${destPath}`);
+      results.push({
+        from: srcPath,
+        to: destPath,
+        success: true,
+        conflicted: destPath !== path.join(targetDir, fileName),
+      });
+    } catch (error) {
+      logger.error('Error moving file:', error);
+      results.push({ from: srcPath, error: error.message });
+    }
+  }
+
+  return { success: true, results };
 });
 
 // 在访达 / 资源管理器中定位文件
@@ -925,42 +1014,76 @@ ipcMain.handle('write-file-unique', async (event, targetDir, fileName, base64) =
   }
 });
 
-ipcMain.handle('select-directory', async (event) => {
-  try {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openDirectory', 'multiSelections'],
-    });
-    
-    if (!result.canceled && result.filePaths.length > 0) {
-      return result.filePaths;
+/**
+ * 统一导入对话框：macOS 下 openFile + openDirectory 可同时生效，
+ * 用户能在同一个面板里多选「文件 + 文件夹」。
+ * openDirectory 生效时系统面板会忽略扩展名过滤，因此这里再按扩展名
+ * 对直接选中的文件做一次媒体过滤；文件夹内容交给 scanDirectory 递归过滤。
+ * 返回 { files, directories, ignored }；取消返回 null。
+ */
+async function openImportDialog() {
+  const imageExts = [...IMAGE_EXTENSIONS].map((e) => e.slice(1));
+  const videoExts = [...VIDEO_EXTENSIONS].map((e) => e.slice(1));
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '导入图片、视频或文件夹',
+    properties: ['openFile', 'openDirectory', 'multiSelections'],
+    filters: [
+      { name: '媒体文件', extensions: [...imageExts, ...videoExts] },
+      { name: '图片', extensions: imageExts },
+      { name: '视频', extensions: videoExts },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) return null;
+
+  const files = [];
+  const directories = [];
+  let ignored = 0;
+  await Promise.all(result.filePaths.map(async (filePath) => {
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (stat.isDirectory()) directories.push(filePath);
+      else if (isMediaFile(filePath)) files.push(filePath);
+      else ignored += 1;
+    } catch {
+      ignored += 1;
     }
-    return null;
+  }));
+
+  return { files, directories, ignored };
+}
+
+ipcMain.handle('select-paths', async () => {
+  try {
+    return await openImportDialog();
   } catch (error) {
-    logger.error('Error selecting directory:', error);
+    logger.error('Error selecting paths:', error);
     return null;
   }
 });
 
-ipcMain.handle('select-files', async (event) => {
+/**
+ * 选择单个目标目录（与「导入」是不同语义，保持纯目录面板）。
+ * options.allowCreate：macOS 下面板内允许直接「新建文件夹」（移动整理用）；
+ * Windows 的目录选择器自带新建按钮，无需额外属性。
+ */
+ipcMain.handle('choose-directory', async (event, options) => {
   try {
-    const imageExts = [...IMAGE_EXTENSIONS].map((e) => e.slice(1));
-    const videoExts = [...VIDEO_EXTENSIONS].map((e) => e.slice(1));
+    const properties = ['openDirectory'];
+    if (options?.allowCreate && process.platform === 'darwin') {
+      properties.push('createDirectory');
+    }
     const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openFile', 'multiSelections'],
-      filters: [
-        { name: '媒体文件', extensions: [...imageExts, ...videoExts] },
-        { name: '图片', extensions: imageExts },
-        { name: '视频', extensions: videoExts },
-        { name: 'All Files', extensions: ['*'] }
-      ]
+      title: options?.allowCreate ? '移动到文件夹' : '选择目标文件夹',
+      properties,
     });
-    
     if (!result.canceled && result.filePaths.length > 0) {
-      return result.filePaths;
+      return result.filePaths[0];
     }
     return null;
   } catch (error) {
-    logger.error('Error selecting files:', error);
+    logger.error('Error choosing directory:', error);
     return null;
   }
 });

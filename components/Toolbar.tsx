@@ -5,20 +5,14 @@ import { countAdvancedFilters } from '../filters';
 import FilterPanel from './FilterPanel';
 
 interface ToolbarProps {
-  /** 打开 / 更换文件夹（左侧主要导航） */
-  onOpenDirectory: () => Promise<boolean>;
-  /** 添加单个或多个图片 / 视频 */
-  onAddImages: () => void;
+  /** 统一导入：图片 / 视频文件与文件夹都能批量选择 */
+  onImport: () => void;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
   onCheckDuplicates: () => void;
   onResetList: () => void;
   /** 库中是否已有内容：决定「检测重复 / 重置列表」是否可用 */
   hasPhotos: boolean;
-  scale: number;
-  setScale: (scale: number) => void;
-  /** 当前已打开的文件夹名（无则显示「打开文件夹」） */
-  currentFolder: string | null;
   isDetailsPaneOpen: boolean;
   setIsDetailsPaneOpen: (isOpen: boolean) => void;
   isLeftPaneOpen: boolean;
@@ -39,12 +33,6 @@ interface ToolbarProps {
   /** 打开快捷键总览层（? 唤出） */
   onOpenShortcuts: () => void;
 }
-
-const FolderIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-  </svg>
-);
 
 const ImageIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -89,15 +77,12 @@ const ListIcon = () => (
   </svg>
 );
 
-const ChevronLeftIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15 18 9 12 15 6"></polyline>
-  </svg>
-);
-
-const ChevronRightIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="9 18 15 12 9 6"></polyline>
+/** macOS 标准「侧边栏」图标：圆角矩形 + 实心左侧面板（SF Symbol sidebar.left），
+    收起 / 展开共用同一图标，状态由侧栏本身表达 */
+const SidebarIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4V4H5Z" fill="currentColor" stroke="none"></path>
+    <rect x="3" y="4" width="18" height="16" rx="2"></rect>
   </svg>
 );
 
@@ -121,16 +106,6 @@ const FunnelIcon = () => (
   </svg>
 );
 
-/** 网格缩放：对角双向箭头，避免与「搜索」的放大镜图标混淆 */
-const ResizeIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="4 9 4 4 9 4"></polyline>
-    <polyline points="20 15 20 20 15 20"></polyline>
-    <line x1="4" y1="4" x2="10" y2="10"></line>
-    <line x1="20" y1="20" x2="14" y2="14"></line>
-  </svg>
-);
-
 /** 问号帮助：唤起快捷键总览层 */
 const HelpIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -150,7 +125,7 @@ interface ToolButtonProps {
   disabled?: boolean;
   /**
    * 悬停时呈现的语义色。
-   * 静止态统一为中性灰 —— 顶栏只保留「打开文件夹 / 添加」两处彩色，
+   * 静止态统一为中性灰 —— 顶栏只保留「导入」一处彩色，
    * 其余功能靠悬停变色与 Tooltip 识别，避免一排图标五颜六色。
    */
   hoverColor?: string;
@@ -208,8 +183,8 @@ const ToolButton: React.FC<ToolButtonProps> = ({
 
 /**
  * 带文字标签的动作按钮：顶栏左区用它承载「导入」这一类主操作。
- * 主操作在一屏里始终要有名字，所以分两档标签：xl 起显示短标签，2xl 起显示完整标签
- * （例如文件夹按钮在 xl 显示「打开」、2xl 显示文件夹名），避免只剩两个图标靠猜。
+ * 主操作在一屏里始终要有名字，所以分两档标签：lg 起显示短标签，2xl 起显示完整标签，
+ * 避免只剩一个图标靠猜。
  */
 const ActionButton: React.FC<{
   onClick: () => void;
@@ -245,16 +220,12 @@ const ActionButton: React.FC<{
  * 右侧只留视图类开关；批量重命名 / 删除等条目级操作交给内容区的情境条与右键菜单。
  */
 const Toolbar: React.FC<ToolbarProps> = ({
-  onOpenDirectory,
-  onAddImages,
+  onImport,
   viewMode,
   setViewMode,
   onCheckDuplicates,
   onResetList,
   hasPhotos,
-  scale,
-  setScale,
-  currentFolder,
   isDetailsPaneOpen,
   setIsDetailsPaneOpen,
   isLeftPaneOpen,
@@ -273,32 +244,29 @@ const Toolbar: React.FC<ToolbarProps> = ({
   const advancedFilterCount = countAdvancedFilters(filters);
 
   return (
-    <header className="bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 sticky top-0 px-3 py-2 shadow-lg shadow-[rgba(0,0,0,0.15)]">
-      <div className="flex items-center gap-2 h-9">
+    <header className={`app-drag bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 sticky top-0 py-2 shadow-lg shadow-[rgba(0,0,0,0.15)] ${isLeftPaneOpen ? 'px-3' : 'pl-[78px] pr-3'}`}>
+      <div className="app-no-drag flex items-center gap-2 h-9">
 
         {/* ===== 左：主要导航与常用操作 ===== */}
         <div className="flex items-center gap-1 shrink-0 min-w-0">
-          <ToolButton
+          {/* 侧边栏开关：常驻浅色圆角底（参照系统照片应用），收起后紧邻红绿灯 */}
+          <button
+            type="button"
             onClick={() => setIsLeftPaneOpen(!isLeftPaneOpen)}
-            icon={isLeftPaneOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-            title={isLeftPaneOpen ? '收起侧边栏' : '展开侧边栏'}
-            hoverColor="var(--accent-cyan)"
-          />
+            title={isLeftPaneOpen ? '隐藏侧边栏' : '显示侧边栏'}
+            aria-label={isLeftPaneOpen ? '隐藏侧边栏' : '显示侧边栏'}
+            aria-expanded={isLeftPaneOpen}
+            className="flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] hover:border-[var(--border-hover)] active:scale-[0.98] transition-all duration-200 shrink-0"
+          >
+            <SidebarIcon />
+          </button>
 
           <ActionButton
-            onClick={() => { void onOpenDirectory(); }}
-            icon={<span className="text-[var(--accent-cyan)] flex items-center"><FolderIcon /></span>}
-            title={currentFolder ? `更换文件夹（当前：${currentFolder}）` : '打开文件夹'}
-            label={currentFolder ?? '打开文件夹'}
-            variant="outline"
-          />
-
-          <ActionButton
-            onClick={onAddImages}
+            onClick={onImport}
             icon={<ImageIcon />}
-            title="添加图片 / 视频"
-            label="添加"
-            compactLabel="添加"
+            title="导入图片、视频或文件夹（可批量多选）"
+            label="导入图片 / 文件夹"
+            compactLabel="导入"
             variant="solid"
           />
 
@@ -409,26 +377,6 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
         {/* ===== 右：视图与辅助控制 ===== */}
         <div className="flex items-center gap-1 shrink-0">
-          {viewMode === 'grid' && (
-            <div
-              className="hidden lg:flex items-center gap-2 h-9 pl-2.5 pr-2 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]"
-              title="调整网格大小"
-            >
-              <ResizeIcon className="w-3.5 h-3.5 text-[var(--text-tertiary)] shrink-0" />
-              <input
-                type="range"
-                min="0.5"
-                max="2"
-                step="0.1"
-                value={scale}
-                onChange={(e) => setScale(parseFloat(e.target.value))}
-                className="w-16 2xl:w-20 appearance-none cursor-pointer accent-[var(--accent-blue)] focus:outline-none"
-                aria-label="网格大小"
-              />
-              <span className="text-[11px] font-mono text-[var(--text-tertiary)] w-8 text-right">{Math.round(scale * 100)}%</span>
-            </div>
-          )}
-
           <div className="flex items-center gap-0.5 h-9 p-0.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
             <ToolButton
               onClick={() => setViewMode('grid')}
