@@ -71,6 +71,7 @@ import LoadingOverlay from '@/components/common/LoadingOverlay';
 import ActiveFiltersBar from '@/components/layout/ActiveFiltersBar';
 import AdjustDateModal, { type DateAdjustment } from '@/components/modal/AdjustDateModal';
 import SaveAlbumModal from '@/components/modal/SaveAlbumModal';
+import AiSettingsModal from '@/components/modal/AiSettingsModal';
 import ShortcutsOverlay from '@/components/common/ShortcutsOverlay';
 import { logger } from '@/lib/logger';
 
@@ -123,6 +124,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const photosRef = useRef<Photo[]>([]);
   const [isAdjustDateModalOpen, setIsAdjustDateModalOpen] = useState(false);
   const [isSaveAlbumModalOpen, setIsSaveAlbumModalOpen] = useState(false);
+  /** AI 设置弹窗（配置 DeepSeek API Key / 接口地址 / 模型） */
+  const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
   // 快捷键总览层（? 唤出，Esc 关闭）
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   /** 图库封面路径；null 表示未设置 */
@@ -187,12 +190,28 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
     const timer = window.setTimeout(() => {
       exitTimersRef.current = exitTimersRef.current.filter(t => t !== timer);
+
+      // 释放降级路径（拖放无磁盘路径）产生的 blob: URL。
+      // 这些条目在磁盘上没有对应文件，若不在这里回收，ObjectURL 会一直常驻内存，
+      // 直到「重置列表」才被清掉 —— 长时间增删就是典型的内存只增不减。
+      const blobUrls: string[] = [];
+      photosRef.current.forEach(photo => {
+        if (ids.has(photo.id) && photo.url.startsWith('blob:')) blobUrls.push(photo.url);
+      });
+
       setPhotos(prev => prev.filter(p => !ids.has(p.id)));
       setExitingIds(prev => {
         const next = new Set(prev);
         ids.forEach(id => next.delete(id));
         return next;
       });
+
+      // 等卡片卸载后再释放，避免淡出动画过程中图片变成破图
+      if (blobUrls.length > 0) {
+        window.requestAnimationFrame(() => {
+          blobUrls.forEach(url => URL.revokeObjectURL(url));
+        });
+      }
     }, EXIT_DURATION);
     exitTimersRef.current.push(timer);
   }, []);
@@ -1740,6 +1759,16 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     [photos]
   );
 
+  // 传给 memo 组件（Toolbar / Sidebar）的回调必须保持引用稳定，
+  // 否则每次 App 渲染都会生成新函数，React.memo 直接失效。
+  const handleOpenSaveAlbum = useCallback(() => setIsSaveAlbumModalOpen(true), []);
+  const handleSelectTimeline = useCallback(() => setMainView('timeline'), []);
+  const handleOpenShortcuts = useCallback(() => setIsShortcutsOpen(true), []);
+  const handleOpenAiSettings = useCallback(() => setIsAiSettingsOpen(true), []);
+  const handleCheckDuplicatesClick = useCallback(() => {
+    void handleCheckDuplicates();
+  }, [handleCheckDuplicates]);
+
   // 侧栏分类选择：分类与媒体类型一起写入筛选状态（与筛选面板共用同一份数据）
   const handleSelectNav = useCallback((category: string, filter: MediaFilter) => {
     setFilters(prev => ({
@@ -1837,7 +1866,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         }
         return;
       }
-      if (quickLookPhoto || isRenameModalOpen || isDeleteModalOpen || isExportModalOpen) return;
+      if (quickLookPhoto || isRenameModalOpen || isDeleteModalOpen || isExportModalOpen || isAiSettingsOpen) return;
 
       const target = e.target as HTMLElement | null;
       const isTextInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
@@ -1905,7 +1934,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     quickLookPhoto, isRenameModalOpen, isDeleteModalOpen, isDuplicateDetectorOpen, isTimelineOpen, isExportModalOpen,
-    isShortcutsOpen,
+    isShortcutsOpen, isAiSettingsOpen,
     contextMenu, visiblePhotos, selectedIds,
     handleSelectAllVisible, handleFavoriteSelected, handleArrowNavigation, handleExitDuplicates,
   ]);
@@ -1917,6 +1946,11 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       void importPickedPaths(picked);
     });
   }, [importPickedPaths]);
+
+  // 应用菜单「AI 分析设置…」（⌘,）：任意视图下都能唤出配置弹窗
+  useEffect(() => {
+    return window.electronAPI?.onOpenAiSettings?.(handleOpenAiSettings);
+  }, [handleOpenAiSettings]);
 
   // 拖拽遮罩的进出场：拖入时先挂载再隔一帧淡入（否则初始态会被跳过），
   // 拖出时先淡出、动画结束才卸载 —— 与卡片塌陷同档时长
@@ -2155,10 +2189,10 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           activeAlbumId={activeAlbumId}
           onSelectAlbum={handleSelectAlbum}
           onDeleteAlbum={handleDeleteAlbum}
-          onRequestSaveAlbum={() => setIsSaveAlbumModalOpen(true)}
+          onRequestSaveAlbum={handleOpenSaveAlbum}
           recentDirectories={recentDirectories}
           onSelectRecentFolder={handleSelectRecentFolder}
-          onSelectTimeline={() => setMainView('timeline')}
+          onSelectTimeline={handleSelectTimeline}
           isTimelineActive={isTimelineOpen}
           isOpen={isLeftPaneOpen}
           themeMode={theme}
@@ -2241,7 +2275,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onImport={handleImport}
           viewMode={viewMode}
           setViewMode={setViewMode}
-          onCheckDuplicates={() => handleCheckDuplicates()}
+          onCheckDuplicates={handleCheckDuplicatesClick}
           onResetList={handleResetList}
           hasPhotos={photos.length > 0}
           isDetailsPaneOpen={isDetailsPaneOpen}
@@ -2256,7 +2290,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onResetFilters={resetFilters}
           filterOptions={filterOptions}
           hasVideos={counts.videos > 0}
-          onOpenShortcuts={() => setIsShortcutsOpen(true)}
+          onOpenShortcuts={handleOpenShortcuts}
         />
         <ActiveFiltersBar
           filters={filters}
@@ -2376,6 +2410,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onRenamePhoto={handleRenamePhoto}
           isDetailsPaneOpen={isDetailsPaneOpen}
           onNotify={showToast}
+          onOpenAiSettings={handleOpenAiSettings}
         />
       </ErrorBoundary>
       )}
@@ -2419,6 +2454,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onConfirm={handleConfirmDelete}
         />
       )}
+      {/* AI 分析设置：应用内配置 DeepSeek API Key / 接口地址 / 模型 */}
+      <AiSettingsModal
+        isOpen={isAiSettingsOpen}
+        onClose={() => setIsAiSettingsOpen(false)}
+        onNotify={showToast}
+      />
       {/* Export Modal */}
       {isExportModalOpen && (
         <ExportModal

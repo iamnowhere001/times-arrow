@@ -29,8 +29,10 @@ export const movePhotosToTrash = async (targets: Photo[]): Promise<TrashResult> 
       continue;
     }
     if (!photo.path) {
-      failedPhotos.push(photo);
-      errors.push(`「${photo.name}」缺少文件路径`);
+      // 拖放降级条目（只有 blob: 预览、磁盘上没有文件）：
+      // 「移入回收站」无处可移，从列表中移除即为唯一有意义的操作。
+      // 视为删除成功，交由调用方 removeWithCollapse 顺带回收 blob URL。
+      deletedIds.add(photo.id);
       continue;
     }
     try {

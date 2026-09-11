@@ -12,6 +12,44 @@ import {
 import { reportVideoMetaFromElement, videoMetaKeyOf } from '@/lib/media/videoMeta';
 import { analyzeImage, analyzeImageFromBase64 } from '@/services/aiService';
 import { logger } from '@/lib/logger';
+import { useThumbnailSrc } from '@/components/grid/ThumbnailImage';
+
+/**
+ * 详情预览图：先用磁盘缩略图把画面立刻铺出来，原图在后台解码完成后再无缝替换。
+ * 面板通栏只有 380px，按 2x 截屏也只需要 ~760px 的像素，
+ * 直接上原图意味着每切一张就要解码一张全尺寸大图 —— 切换照片因此发顿。
+ * 缩略图路径与网格共用同一份磁盘缓存，通常已命中，切换是即时的。
+ */
+const DETAIL_PREVIEW_SIZE = 760;
+/** 预览图统一：宽度占满、高度封顶（长截图/竖幅不会把面板撑爆），等比缩放不裁切 */
+const PREVIEW_IMG_CLASS = 'w-full h-auto max-h-[44vh] object-contain';
+
+const PreviewImage: React.FC<{ photo: Photo; alt: string }> = ({ photo, alt }) => {
+  const thumbSrc = useThumbnailSrc(photo, DETAIL_PREVIEW_SIZE);
+  const [fullReady, setFullReady] = useState(false);
+
+  useEffect(() => {
+    setFullReady(false);
+    // 没有缩略图（或缩略图就是原图）时无需预解码，直接显示原图即可
+    if (!thumbSrc || thumbSrc === photo.url) return;
+
+    let cancelled = false;
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => { if (!cancelled) setFullReady(true); };
+    img.onerror = () => { if (!cancelled) setFullReady(false); };
+    img.src = photo.url;
+    return () => {
+      cancelled = true;
+      img.onload = null;
+      img.onerror = null;
+      // 清空 src 让浏览器立刻放弃这张全尺寸图的解码缓存
+      img.src = '';
+    };
+  }, [photo.id, photo.url, thumbSrc]);
+
+  return <img src={fullReady || !thumbSrc ? photo.url : thumbSrc} alt={alt} className={PREVIEW_IMG_CLASS} />;
+};
 
 interface DetailsPaneProps {
   selectedPhotos: Photo[];
@@ -20,6 +58,8 @@ interface DetailsPaneProps {
   isDetailsPaneOpen: boolean;
   /** 通知回调（替代 alert） */
   onNotify?: (message: string, type: 'success' | 'info' | 'error' | 'warning') => void;
+  /** 打开「AI 分析设置」弹窗（配置 DeepSeek API Key 等） */
+  onOpenAiSettings?: () => void;
 }
 
 interface ExportSettings {
@@ -27,7 +67,7 @@ interface ExportSettings {
   quality: number;
 }
 
-const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto, onRenamePhoto, isDetailsPaneOpen, onNotify }) => {
+const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto, onRenamePhoto, isDetailsPaneOpen, onNotify, onOpenAiSettings }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   const [isExportMode, setIsExportMode] = useState(false);
@@ -138,6 +178,10 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
   useEffect(() => {
       if (!isExportMode || !photo) return;
 
+      // 生成过程是异步且较重的：卸载 / 切图后必须丢弃结果，
+      // 否则会往已卸载的组件写状态，并白白留下一个未被回收的 ObjectURL 与全尺寸 canvas。
+      let cancelled = false;
+
       const generate = async () => {
           setIsGeneratingPreview(true);
           try {
@@ -148,6 +192,10 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                 img.onload = resolve;
                 img.onerror = () => reject(new Error('Image failed to load'));
             });
+            if (cancelled) {
+                img.src = '';
+                return;
+            }
 
             const canvas = document.createElement('canvas');
             canvas.width = img.width;
@@ -165,11 +213,21 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, 0, 0);
-            
+
+            // 画完即可松开对解码后位图（全尺寸）的引用，避免多张预览叠加占内存
+            img.src = '';
+            img.onload = null;
+            img.onerror = null;
+
             await new Promise<void>((resolve, reject) => {
                 canvas.toBlob((blob) => {
                     if (blob) {
                         const newUrl = URL.createObjectURL(blob);
+                        if (cancelled) {
+                            URL.revokeObjectURL(newUrl);
+                            resolve();
+                            return;
+                        }
                         setPreviewData(prev => {
                             if (prev?.url) URL.revokeObjectURL(prev.url);
                             return { url: newUrl, size: blob.size, blob };
@@ -180,15 +238,23 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                     }
                 }, exportSettings.format, exportSettings.quality);
             });
+
+            // 释放 canvas 占用的显存 / 内存
+            canvas.width = 0;
+            canvas.height = 0;
           } catch (error) {
+              if (cancelled) return;
               logger.error("Preview generation failed", error);
           } finally {
-              setIsGeneratingPreview(false);
+              if (!cancelled) setIsGeneratingPreview(false);
           }
       };
 
       const timer = setTimeout(generate, 500);
-      return () => clearTimeout(timer);
+      return () => {
+          cancelled = true;
+          clearTimeout(timer);
+      };
   }, [exportSettings, isExportMode, photo]);
 
   const handleDownload = () => {
@@ -210,6 +276,21 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
 
   const handleAnalyze = async () => {
     if (isMulti) return;
+
+    // 未配置密钥时直接引导到「AI 设置」，而不是等请求失败再报错
+    if (window.electronAPI?.getAiConfig) {
+      try {
+        const config = await window.electronAPI.getAiConfig();
+        if (!config.apiKey) {
+          onNotify?.('尚未配置 DeepSeek API Key，请在「AI 设置」中填写。', 'warning');
+          onOpenAiSettings?.();
+          return;
+        }
+      } catch {
+        /* 读取配置失败时继续走分析流程，由后续错误提示兜底 */
+      }
+    }
+
     setIsAnalyzing(true);
     try {
       // 优先走磁盘路径（Photo.file 已不再填充）：
@@ -241,7 +322,11 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
       }
     } catch (e) {
       logger.error('AI分析失败:', e);
-      onNotify?.('AI 分析失败。请确保已在 .env.local 配置 DEEPSEEK_API_KEY，并且图片格式受支持。', 'error');
+      const detail = e instanceof Error && e.message ? e.message : '';
+      onNotify?.(
+        detail || 'AI 分析失败，请检查「AI 设置」中的 DeepSeek 配置与图片格式是否受支持。',
+        'error'
+      );
     } finally {
       setIsAnalyzing(false);
     }
@@ -295,9 +380,9 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                             className="w-full aspect-video object-contain bg-black"
                         />
                     ) : isExportMode && previewData ? (
-                        <img src={previewData.url} className="w-full h-auto object-contain" alt="Export Preview" />
+                        <img src={previewData.url} className={PREVIEW_IMG_CLASS} alt="导出预览" />
                     ) : (
-                        <img src={photo.url} className="w-full h-auto object-contain" alt="Original" />
+                        <PreviewImage photo={photo} alt={photo.name} />
                     )}
                     
                     {isExportMode && isGeneratingPreview && (
@@ -313,7 +398,9 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                     )}
                 </div>
                 
-                <div className="w-full px-2 mt-3 mb-1">
+                {/* 文件名：点击即重命名。此处刻意补一个铅笔提示 —— 原先只有一个 title 属性，
+                    鼠标没悬停上去之前，完全看不出这行字是可以改的 */}
+                <div className="w-full px-2 mt-3.5">
                     {isEditingName ? (
                         <input
                             ref={nameInputRef}
@@ -325,17 +412,22 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                             className="w-full text-center font-medium text-[var(--text-primary)] bg-[var(--bg-input)] border border-[var(--accent-blue)] rounded-full px-3 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.4)]"
                         />
                     ) : (
-                        <h3 
+                        <button
+                            type="button"
                             onClick={startEditing}
-                            className="font-medium text-[var(--text-primary)] text-center break-all cursor-text hover:bg-[var(--bg-glass-hover)] rounded-full px-3 py-1.5 border border-transparent transition-colors"
-                            title="点击重命名"
+                            title="重命名"
+                            className="group/name w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full border border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--bg-glass-hover)] transition-colors duration-200"
                         >
-                            {photo.name}
-                        </h3>
+                            <span className="min-w-0 font-medium text-[var(--text-primary)] text-center break-all">{photo.name}</span>
+                            <svg className="shrink-0 w-3.5 h-3.5 text-[var(--text-quaternary)] opacity-0 group-hover/name:opacity-100 transition-opacity duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                        </button>
                     )}
                 </div>
-                
-                <div className="flex items-center gap-2 mt-1">
+
+                <div className="flex items-center gap-2 mt-2">
                     <p className={`text-xs ${isExportMode ? 'text-[var(--text-tertiary)] line-through' : 'text-[var(--text-secondary)]'}`}>
                         {formatBytes(photo.size)}
                     </p>
@@ -649,6 +741,18 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                          <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1">
                             ✨ DeepSeek AI 分析
                          </label>
+                         <button
+                            type="button"
+                            onClick={() => onOpenAiSettings?.()}
+                            title="AI 设置（配置 API Key / 接口地址 / 模型）"
+                            aria-label="打开 AI 设置"
+                            className="flex items-center justify-center w-6 h-6 rounded-lg text-[var(--text-quaternary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200"
+                         >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10.6 3V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 16.09 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 20.4 9v.09A1.65 1.65 0 0 0 21.6 10.6H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                         </button>
                     </div>
                     
                     {!photo.aiDescription && !photo.aiTags && (

@@ -1,7 +1,6 @@
 # PhotoMinder
 
 > 基于本地的 macOS 风格照片 / 视频管理桌面应用。纯本地处理，所有文件操作（重命名、删除、导出）均直接作用于磁盘，不上传任何文件。
-> 状态：v0.4.0 · 个人自用、持续迭代中。
 
 PhotoMinder 让你像管理本地文件夹一样整理照片与视频：递归导入、批量重命名（含乱码修复）、重复照片检测与清理、EXIF 详情查看、格式转换导出，并用 DeepSeek AI 为照片生成描述与标签。整个过程全部在本地完成，没有云端同步、没有隐私泄漏风险。
 
@@ -53,7 +52,7 @@ PhotoMinder 让你像管理本地文件夹一样整理照片与视频：递归�
 - **智能相簿**：把当前筛选条件存为命名相簿（侧栏「+」或条件条「存为相簿」），内容随图库自动更新，可一键应用 / 删除
 - **用户标签**：详情面板为照片 / 视频添加、移除标签（与 AI 标签分开维护），标签参与搜索，也可作为筛选条件
 - **调整日期与时间**：批量平移（天 / 时 / 分）或设为指定时间（可保持原有相对间隔）；仅修改应用内记录，不改动原文件，详情面板会标注「已修正」
-- **状态持久化**：收藏、隐藏、标签、时间修正、智能相簿、视频元数据、封面、最近打开的目录写入 `userData/config.json`；AI 分析结果单独存 `userData/ai-cache.json`（上限 2000 条，超出淘汰最早）；主题、排序、网格缩放、媒体筛选、侧栏 / 详情面板开合、重复检测参数一并记忆；窗口尺寸与位置由主进程记录（含多屏保护）。均采用「临时文件 + rename」原子替换写入
+- **状态持久化**：收藏、隐藏、标签、时间修正、智能相簿、视频元数据、封面、最近打开的目录写入 `userData/config.json`；AI 分析结果单独存 `userData/ai-cache.json`（上限 2000 条，超出淘汰最早）；AI 服务配置（API Key / 接口地址 / 模型）存 `userData/ai-config.json`；主题、排序、网格缩放、媒体筛选、侧栏 / 详情面板开合、重复检测参数一并记忆；窗口尺寸与位置由主进程记录（含多屏保护）。均采用「临时文件 + rename」原子替换写入
 
 **文件管理**
 
@@ -89,7 +88,7 @@ PhotoMinder 让你像管理本地文件夹一样整理照片与视频：递归�
 - 就地重命名（Enter 提交 / Esc 取消）
 - 导出转换：JPEG / PNG / WebP，可调节质量，实时预览与体积估算；单张保存到「下载」
 - 视频：内嵌播放器预览，展示时长 / 分辨率 / 容器格式；无法在应用内解码时给出明确说明与「在访达中显示」兜底；图片专属的导出 / AI 区块自动隐藏
-- DeepSeek AI 分析：生成图片描述与标签（需配置 `DEEPSEEK_API_KEY`；主进程读盘并代理请求，渲染进程既不持有 `File` 对象也不接触密钥）
+- DeepSeek AI 分析：生成图片描述与标签。API Key / 接口地址 / 模型可在应用内「AI 设置」（详情面板 AI 区块的齿轮按钮，或菜单「设置 → AI 分析设置…」/ `⌘,`）中配置，也可继续用 `DEEPSEEK_API_KEY` 等环境变量；主进程读盘并代理请求，渲染进程既不持有 `File` 对象也不接触密钥。未配置密钥时点击「分析图片」会直接引导到设置面板
 
 **界面与体验**
 
@@ -143,7 +142,7 @@ PhotoMinder 让你像管理本地文件夹一样整理照片与视频：递归�
 │   │   ├── detail/                 #     DetailsPane / QuickLook
 │   │   ├── duplicate/              #     DuplicateDetector
 │   │   ├── filter/                 #     FilterPanel
-│   │   ├── modal/                  #     Rename / Export / AdjustDate / SaveAlbum / DeleteConfirm
+│   │   ├── modal/                  #     Rename / Export / AdjustDate / SaveAlbum / DeleteConfirm / AiSettings
 │   │   └── common/                 #     Toast / ErrorBoundary / LoadingOverlay / ContextMenu / DragOverlay / ShortcutsOverlay
 │   ├── hooks/                      #   useThemeMode / useToasts / useDuplicateDetection
 │   ├── services/                   #   aiService（DeepSeek 图片分析，经 IPC 走主进程代理）
@@ -176,8 +175,10 @@ PhotoMinder 让你像管理本地文件夹一样整理照片与视频：递归�
 # 1. 安装依赖
 npm install
 
-# 2.（可选）配置 DeepSeek API Key，用于 AI 图片分析（详见 .env.example）
-cp .env.example .env.local   # 然后填入真实 DEEPSEEK_API_KEY
+# 2.（可选）配置 DeepSeek API Key，用于 AI 图片分析
+#    方式一：启动后在应用内「设置 → AI 分析设置…」（⌘,）填写，无需重启
+#    方式二：cp .env.example .env.local 后填入 DEEPSEEK_API_KEY（详见 .env.example）
+cp .env.example .env.local
 
 # 3. 启动
 npm run dev              # 仅 Web（Vite 开发服务器，默认 http://localhost:3000）
@@ -195,6 +196,14 @@ npm run electron:build  # 构建并使用 electron-builder 打包（当前仅 ma
 npm run dist:mac        # 同上，显式指定 macOS arm64
 ```
 
+**产物体积**
+
+macOS arm64 的 DMG 约 80MB（解压安装后约 227MB），其中 Electron Framework 主体二进制就占 190MB，这部分无法再压缩。已做的瘦身：
+
+- `build/afterPack.js`：移除 Electron 自带的 200+ 套无用语言包（仅留 `en` / `zh_CN`）与 SwiftShader。
+- `build/files` 排除规则：只保留 `libheif-js` 真正被 `heic-decode` 加载的那一个 wasm 打包文件（`libheif-wasm/libheif-bundle.js`，wasm 已内嵌），并去掉 `exifreader` 的 `src/` 与 `bin/`。
+- `build/recompressDmg.js`：`electron-builder` 的 `dmg.format` 不支持 lzma，因此在它产出 UDZO 之后用 `hdiutil convert -format ULMO` 重压。对同一个 Electron 二进制采样，压缩率 zlib 49.8% / lzfse 48.9% / bzip2 45.1% / **lzma 31.8%**，这一步能把 DMG 再降约 24%。非 macOS 或无收益时自动跳过。
+
 ## 快捷键
 
 主视图（输入框 / 弹层打开时让行）：
@@ -205,6 +214,7 @@ npm run dist:mac        # 同上，显式指定 macOS arm64
 | `⌘F` / `Ctrl+F` | 聚焦搜索框（搜索框内按 `Esc` 清空） |
 | `⌘⇧F` | 批量收藏 / 取消收藏选中项 |
 | `⌘O` / `Ctrl+O` | 打开目录（应用菜单） |
+| `⌘,` / `Ctrl+,` | 打开 AI 分析设置（配置 DeepSeek API Key / 接口地址 / 模型） |
 | `空格` / `Enter` | 打开 QuickLook 预览 |
 | `←` `→` `↑` `↓` | 单张选择移动（上下按网格列数跳步） |
 | `Delete` / `⌫` | 删除确认 |
@@ -235,9 +245,11 @@ QuickLook 预览打开时生效：
 
 | 变量 | 说明 | 安全提示 |
 | --- | --- | --- |
-| `DEEPSEEK_API_KEY` | DeepSeek API Key，用于详情面板的 AI 图片描述与标签。写入 `.env.local`（示例见 `.env.example`），**仅由 Electron 主进程读取** | 密钥不会进入前端产物；打包后可通过系统环境变量或 `userData/ai.env` 配置 |
-| `DEEPSEEK_BASE_URL` | 可选，默认 `https://api.deepseek.com` | — |
-| `DEEPSEEK_MODEL` | 可选，默认 `deepseek-flash`（支持图像输入） | — |
+| `DEEPSEEK_API_KEY` | DeepSeek API Key，用于详情面板的 AI 图片描述与标签。可直接在应用内「AI 设置」填写（写入 `userData/ai-config.json`），或写入 `.env.local`（示例见 `.env.example`）。**仅由 Electron 主进程读取** | 密钥不会进入前端产物；应用内设置优先级高于环境变量 |
+| `DEEPSEEK_BASE_URL` | 可选，默认 `https://api.deepseek.com`；也可在应用内覆盖 | — |
+| `DEEPSEEK_MODEL` | 可选，默认 `deepseek-flash`（支持图像输入）；也可在应用内覆盖 | — |
+
+> 优先级：应用内「AI 设置」保存的值 > 环境变量（`.env.local` / `.env` / 系统环境变量 / `userData/ai.env`）> 内置默认值。任一字段在应用内留空即自动回退到环境变量。
 
 ## 已知限制
 
@@ -248,7 +260,7 @@ QuickLook 预览打开时生效：
 - **拖放降级照片不可管理**：拿不到磁盘路径的拖放图片仅可预览，无法重命名 / 删除 / AI 分析。
 - **重命名遇同名会加序号**：不再覆盖，但也不会做「交换」类批量改名（如 a↔b 会得到 `a` 与 `b-1`），避免任何丢文件风险。
 - **相似检测近似匹配仍有边界**：阈值可在检测面板内调整（80%–100%，默认 ≥ 90%），但相似匹配仅在「体积 ±10%」的簇内进行，且单簇超过 150 张时只保留精确匹配（防止 O(n²) 退化）。
-- **API Key 安全**：当前通过 Vite 注入前端，存在泄露风险；个人本地单机使用可接受（计划 X1，明确延后）。
+- **API Key 明文存储**：应用内「AI 设置」保存的密钥以明文写入 `userData/ai-config.json`（仅本机、仅主进程读取，不进前端产物）。个人本地单机使用可接受（计划 X1，明确延后）。
 - **安全配置偏松**：启动时带 `no-sandbox`、窗口 `sandbox: false`、`pm://` 协议 `bypassCSP`，且无 CSP 与 IPC 路径校验（计划 X2，明确延后）。
 - **照片列表不自动恢复**：应用以「打开文件夹」为入口、不维护常驻图库，因此重启后不会自动重新扫描上次的目录（可在侧栏「最近打开」一键重开）。收藏 / 标签 / AI 结果等均按**文件路径**记录，文件被重命名或移动后会失去关联。
 - **配置记录不自动清理**：已不存在的文件对应的收藏 / 标签 / AI 结果会保留在配置里（只是不再被应用），不会自动删除，以免误删仍可能在其它目录导入的记录。

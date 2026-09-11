@@ -415,4 +415,5 @@ const Toolbar: React.FC<ToolbarProps> = ({
   );
 };
 
-export default Toolbar;
+// 与 Sidebar 同理：工具栏不需要随「点选 / QuickLook」等高频状态重渲染。
+export default React.memo(Toolbar);

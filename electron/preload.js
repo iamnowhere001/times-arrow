@@ -49,6 +49,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   /** AI 图片分析：主进程代理 DeepSeek，密钥不出主进程 */
   analyzeImage: (payload) => ipcRenderer.invoke('ai-analyze', payload),
+  /** AI 配置（API Key / Base URL / 模型）：应用内「AI 设置」读写 */
+  getAiConfig: () => ipcRenderer.invoke('ai-config-get'),
+  setAiConfig: (patch) => ipcRenderer.invoke('ai-config-set', patch),
+  /** 用草稿值测试连接（未保存也能先验证） */
+  testAiConfig: (draft) => ipcRenderer.invoke('ai-config-test', draft),
+  /** 应用菜单「AI 分析设置…」（⌘,）；返回取消订阅函数 */
+  onOpenAiSettings: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('ai-open-settings', listener);
+    return () => ipcRenderer.removeListener('ai-open-settings', listener);
+  },
 
   // 从拖放的 File 对象解析真实磁盘路径
   getFilePath: (file) => {

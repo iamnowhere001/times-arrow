@@ -279,6 +279,12 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 }) => {
   /** 展开的组（以组内最早照片 id 标识，见 groupKeyOf） */
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  /**
+   * 已经「挂载过内容」的组。收起后仍保留挂载以复用缩略图，但**从未展开过的组不会渲染卡片**。
+   * 这是本页最关键的内存优化：否则上百组 × 每组若干张会在打开页面瞬间全部挂载，
+   * 每张卡片都会立刻请求一次磁盘缩略图，造成缩略图生成风暴与内存尖峰。
+   */
+  const [mountedGroups, setMountedGroups] = useState<Set<string>>(new Set());
   /** 被勾选「待删除」的照片 id，默认空，不做任何默认选择 */
   const [markedIds, setMarkedIds] = useState<Set<string>>(new Set());
 
@@ -290,6 +296,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
     if (isProcessing && !wasProcessing) {
       setMarkedIds(new Set());
       setExpandedGroups(new Set());
+      setMountedGroups(new Set());
     } else if (!isProcessing && wasProcessing) {
       const expanded = new Set<string>();
       duplicateGroups.forEach((group, i) => {
@@ -334,7 +341,69 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
     });
   }, [duplicateGroups]);
 
+  /**
+   * 同步「已挂载组」：展开的组一律挂载；已删除的组从集合里剔除。
+   * 注意不在收起时立刻卸载 —— 收起过渡依赖内容仍然存在（grid-rows 0fr→1fr），
+   * 且重新展开时可以直接复用已解码的缩略图。
+   */
+  useEffect(() => {
+    setMountedGroups(prev => {
+      const valid = new Set<string>();
+      duplicateGroups.forEach(group => {
+        const key = groupKeyOf(group);
+        if (key) valid.add(key);
+      });
+
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach(key => {
+        if (valid.has(key)) next.add(key);
+        else changed = true;
+      });
+      expandedGroups.forEach(key => {
+        if (key && valid.has(key) && !next.has(key)) {
+          next.add(key);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [expandedGroups, duplicateGroups]);
+
   const allPhotos = useMemo(() => duplicateGroups.flatMap(g => g), [duplicateGroups]);
+
+  /**
+   * 每组一次算清「保留项 / 相似度 / 平均相似度」。
+   * 之前这些是写在渲染里的：每次点选或折叠都会对全部重复照片重跑 hammingDistance，
+   * 上千张时足够造成明显掉帧。
+   */
+  const groupMeta = useMemo(
+    () =>
+      duplicateGroups.map(group => {
+        const original = group.find(p => p.isRecommended) || group[0];
+        const sims = new Map<string, number>();
+        let sum = 0;
+        let count = 0;
+        group.forEach(p => {
+          if (p.id === original.id) {
+            sims.set(p.id, 100);
+            return;
+          }
+          const value = similarityVs(p, original);
+          if (value !== null) {
+            sims.set(p.id, value);
+            sum += value;
+            count += 1;
+          }
+        });
+        return {
+          original,
+          sims,
+          avgSim: count > 0 ? Math.round(sum / count) : null,
+        };
+      }),
+    [duplicateGroups]
+  );
 
   const markedPhotos = useMemo(
     () => allPhotos.filter(p => markedIds.has(p.id)),
@@ -725,18 +794,14 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                 {duplicateGroups.map((group, groupIndex) => {
                   const groupKey = groupKeyOf(group);
                   const isExpanded = !!groupKey && expandedGroups.has(groupKey);
+                  // 只有展开过（或当前展开）的组才渲染卡片，避免打开页面就挂载全部缩略图
+                  const shouldRenderCards = isExpanded || (!!groupKey && mountedGroups.has(groupKey));
                   const groupMarked = groupMarkedCounts[groupIndex] || 0;
                   const allMarked = groupMarked === group.length;
                   // 组内已按时间升序排列，第一张即最早的原始照片
-                  const original = group.find(p => p.isRecommended) || group[0];
-                  // 平均相似度：各拷贝相对「保留项」的百分比均值
-                  const copySims = group
-                    .filter(p => p.id !== original.id)
-                    .map(p => similarityVs(p, original))
-                    .filter((v): v is number => v !== null);
-                  const groupAvgSim = copySims.length > 0
-                    ? Math.round(copySims.reduce((sum, v) => sum + v, 0) / copySims.length)
-                    : null;
+                  const meta = groupMeta[groupIndex];
+                  const original = meta?.original ?? group[0];
+                  const groupAvgSim = meta?.avgSim ?? null;
 
                   return (
                     // content-visibility：上百组常驻 DOM 时，跳过屏外组的布局与绘制，滚动更跟手
@@ -818,30 +883,35 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                         </div>
                       </div>
 
-                      {/* Group content：常驻渲染，用 grid-template-rows 0fr → 1fr 做展开过渡。
-                          不必测量高度，收起时也不必卸载卡片（反复卸载会让缩略图重新解码） */}
+                      {/* Group content：用 grid-template-rows 0fr → 1fr 做展开过渡。
+                          仅在「已展开过」时才挂载卡片：未展开的组完全不产生 DOM 与缩略图请求，
+                          这是打开大重复库时最主要的性能与内存收益。 */}
                       <div
                         id={`duplicate-group-panel-${groupIndex}`}
                         className={`grid transition-[grid-template-rows] duration-300 ease-entrance ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
                         aria-hidden={!isExpanded}
                       >
                         <div className="overflow-hidden min-h-0">
-                          <div className="border-t border-[var(--border-subtle)] p-3">
-                            {/* 自适应列宽：卡片永远不小于 150px，避免「1 原图 + 1 拷贝」的小组里
-                                日期被截断 —— 而时间恰好是判断哪张是原图的关键信息 */}
-                            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5">
-                              {group.map((photo) => (
-                                <DuplicatePhotoCard
-                                  key={photo.id}
-                                  photo={photo}
-                                  marked={markedIds.has(photo.id)}
-                                  similarity={photo.id === original.id ? 100 : similarityVs(photo, original)}
-                                  onToggle={handleTogglePhoto}
-                                  onQuickLook={handleQuickLook}
-                                />
-                              ))}
+                          {shouldRenderCards && (
+                            <div className="border-t border-[var(--border-subtle)] p-3">
+                              {/* 自适应列宽：卡片永远不小于 150px，避免「1 原图 + 1 拷贝」的小组里
+                                  日期被截断 —— 而时间恰好是判断哪张是原图的关键信息 */}
+                              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5">
+                                {group.map((photo) => (
+                                  <DuplicatePhotoCard
+                                    key={photo.id}
+                                    photo={photo}
+                                    marked={markedIds.has(photo.id)}
+                                    similarity={
+                                      photo.id === original.id ? 100 : meta?.sims.get(photo.id) ?? null
+                                    }
+                                    onToggle={handleTogglePhoto}
+                                    onQuickLook={handleQuickLook}
+                                  />
+                                ))}
+                              </div>
                             </div>
-                          </div>
+                          )}
                         </div>
                       </div>
                     </div>

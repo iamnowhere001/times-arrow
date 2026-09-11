@@ -163,6 +163,26 @@ export interface PersistedAiCache {
   entries?: Record<string, AiCacheEntry>;
 }
 
+/** 生效中的 API Key 来源：应用内设置 / 环境变量 / 未配置 */
+export type AiKeySource = 'settings' | 'env' | 'none';
+
+/** AI 服务配置（可由应用内「AI 设置」写入 `userData/ai-config.json`） */
+export interface AiConfigPatch {
+  /** DeepSeek API Key；留空表示清除覆盖、回退到环境变量 */
+  apiKey?: string;
+  /** 接口地址；留空使用默认值 `https://api.deepseek.com` */
+  baseUrl?: string;
+  /** 模型名；留空使用默认值 `deepseek-flash` */
+  model?: string;
+}
+
+/** 「AI 设置」弹窗读取到的完整配置快照（含内置默认值供占位展示） */
+export interface AiConfigSnapshot extends AiConfigPatch {
+  /** 当前实际生效的密钥来源 */
+  keySource: AiKeySource;
+  defaults: { baseUrl: string; model: string };
+}
+
 /** 持久化到 `userData/config.json` 的数据（全部为可 JSON 序列化的原始类型） */
 export interface PersistedConfig {
   /** 配置结构版本，便于日后迁移 */

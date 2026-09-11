@@ -37,6 +37,8 @@ export interface LruCache<K, V> {
   clear(): void;
   /** 只保留 keepRatio 比例的最新条目，返回被淘汰数量 */
   trim(keepRatio: number): number;
+  /** 迭代 [key, value]（插入顺序 = LRU 顺序，末尾为最近使用） */
+  entries(): IterableIterator<[K, V]>;
   readonly size: number;
 }
 
@@ -105,6 +107,8 @@ export function createLruCache<K, V>(
       }
       return removed;
     },
+
+    entries: () => map.entries(),
 
     get size() {
       return map.size;

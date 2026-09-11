@@ -11,10 +11,18 @@
  */
 
 import { Photo, VideoMetaRecord } from '@/types';
+import { createLruCache } from '@/lib/cache/cacheManager';
 
 export type VideoMeta = VideoMetaRecord;
 
-const cache = new Map<string, VideoMeta>();
+/**
+ * 缓存上限。视频时长 / 分辨率只能在渲染进程真正解码后拿到，重算代价高，
+ * 因此标记为 sticky（仅在内存压力大时才裁剪）；但**必须有上限**，
+ * 否则长时间浏览大视频库后这个 Map 只增不减，并会被反复全量序列化进 config.json。
+ */
+const MAX_VIDEO_META = 10000;
+
+const cache = createLruCache<string, VideoMeta>('videoMeta', MAX_VIDEO_META, 'sticky');
 const listeners = new Set<(key: string, meta: VideoMeta) => void>();
 
 /** 缓存键：优先磁盘路径（跨重启稳定），无路径时退化为条目 id */
@@ -56,9 +64,9 @@ export const rekeyVideoMeta = (oldKey: string, newKey: string): boolean => {
 /** 导出当前缓存快照，供持久化使用 */
 export const snapshotVideoMeta = (): Record<string, VideoMetaRecord> => {
   const result: Record<string, VideoMetaRecord> = {};
-  cache.forEach((meta, key) => {
+  for (const [key, meta] of cache.entries()) {
     result[key] = { ...meta };
-  });
+  }
   return result;
 };
 

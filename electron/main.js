@@ -948,6 +948,19 @@ function createMenu() {
         { label: '全选', accelerator: 'CmdOrCtrl+A', role: 'selectall' },
       ],
     },
+    {
+      label: '设置',
+      submenu: [
+        {
+          label: 'AI 分析设置…',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => {
+            // 由渲染进程弹出「AI 设置」弹窗（应用内配置 API Key 等）
+            mainWindow?.webContents?.send('ai-open-settings');
+          },
+        },
+      ],
+    },
   ];
 
   const menu = Menu.buildFromTemplate(template);
@@ -1598,10 +1611,12 @@ ipcMain.handle('stat-files', async (event, filePaths) => {
 // 本地 JSON 存储
 // - config.json：收藏 / 隐藏 / 标签 / 时间修正 / 智能相簿 / 视图偏好 / 窗口尺寸
 // - ai-cache.json：AI 分析结果（体量较大，单独成文件便于限量与清理）
-// 两者都先写临时文件再 rename（原子替换），避免写入中途被打断而损坏整个文件。
+// - ai-config.json：AI 服务配置（API Key / Base URL / 模型），由应用内「AI 设置」写入
+// 都先写临时文件再 rename（原子替换），避免写入中途被打断而损坏整个文件。
 // ---------------------------------------------------------------------------
 const STORE_CONFIG = 'config.json';
 const STORE_AI_CACHE = 'ai-cache.json';
+const STORE_AI_CONFIG = 'ai-config.json';
 
 /** fileName → 解析后的对象（内存缓存，避免每次读盘） */
 const storeCache = new Map();
@@ -1692,6 +1707,30 @@ const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com';
 const DEEPSEEK_DEFAULT_MODEL = 'deepseek-flash';
 /** 单次分析超时（毫秒） */
 const AI_REQUEST_TIMEOUT = 60_000;
+/** 「测试连接」的超时：只是校验密钥 / 地址，不必等满整轮分析 */
+const AI_TEST_TIMEOUT = 20_000;
+
+/**
+ * 解析最终生效的 AI 配置。
+ * 优先级：应用内「AI 设置」保存的值 > 环境变量（.env.local / 系统环境变量 / userData/ai.env）> 内置默认值。
+ * 应用内设置为空时自动回退到环境变量，便于「只想改模型，密钥仍走 .env.local」。
+ */
+function resolveAiConfig() {
+  const stored = storeCache.get(STORE_AI_CONFIG) ?? {};
+  const storedKey = typeof stored.apiKey === 'string' ? stored.apiKey.trim() : '';
+  const envKey = (process.env.DEEPSEEK_API_KEY || '').trim();
+
+  const storedBaseUrl = typeof stored.baseUrl === 'string' ? stored.baseUrl.trim() : '';
+  const storedModel = typeof stored.model === 'string' ? stored.model.trim() : '';
+
+  return {
+    apiKey: storedKey || envKey,
+    baseUrl: (storedBaseUrl || process.env.DEEPSEEK_BASE_URL || DEEPSEEK_DEFAULT_BASE_URL).replace(/\/+$/, ''),
+    model: storedModel || process.env.DEEPSEEK_MODEL || DEEPSEEK_DEFAULT_MODEL,
+    /** 密钥来源：应用内设置 / 环境变量 / 未配置 */
+    keySource: storedKey ? 'settings' : envKey ? 'env' : 'none',
+  };
+}
 
 /** Prompt 必须包含 "json" 字样与格式示例，否则 json_object 模式可能不生效 */
 const AI_PROMPT = [
@@ -1735,13 +1774,10 @@ function parseAnalysisContent(content) {
 }
 
 async function analyzeImageWithDeepSeek(base64, mimeType) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  const { apiKey, baseUrl, model } = resolveAiConfig();
   if (!apiKey) {
-    throw new Error('未配置 DEEPSEEK_API_KEY（可在 .env.local 或系统环境变量中设置）');
+    throw new Error('未配置 DeepSeek API Key。请在详情面板「AI 设置」中填写，或通过 .env.local / 系统环境变量配置。');
   }
-
-  const baseUrl = (process.env.DEEPSEEK_BASE_URL || DEEPSEEK_DEFAULT_BASE_URL).replace(/\/+$/, '');
-  const model = process.env.DEEPSEEK_MODEL || DEEPSEEK_DEFAULT_MODEL;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT);
@@ -1806,6 +1842,85 @@ ipcMain.handle('ai-analyze', async (event, payload) => {
   } catch (error) {
     logger.error('DeepSeek analysis failed:', error);
     return { error: error.message };
+  }
+});
+
+// 读取当前生效的 AI 配置（供应用内「AI 设置」回显）
+ipcMain.handle('ai-config-get', async () => {
+  const { apiKey, baseUrl, model, keySource } = resolveAiConfig();
+  return {
+    apiKey,
+    baseUrl,
+    model,
+    keySource,
+    defaults: { baseUrl: DEEPSEEK_DEFAULT_BASE_URL, model: DEEPSEEK_DEFAULT_MODEL },
+  };
+});
+
+// 保存 AI 配置：只接受字符串字段，空串表示「清除该覆盖项，回退到环境变量 / 默认值」
+ipcMain.handle('ai-config-set', async (event, patch) => {
+  try {
+    const clean = {};
+    if (patch && typeof patch.apiKey === 'string') clean.apiKey = patch.apiKey.trim();
+    if (patch && typeof patch.baseUrl === 'string') clean.baseUrl = patch.baseUrl.trim();
+    if (patch && typeof patch.model === 'string') clean.model = patch.model.trim();
+    if (Object.keys(clean).length === 0) return { success: false, error: '没有可保存的内容' };
+
+    await mergeStore(STORE_AI_CONFIG, clean);
+    const { keySource } = resolveAiConfig();
+    return { success: true, keySource };
+  } catch (error) {
+    logger.warn('Failed to persist AI config:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * 测试连接：用最省的一次对话请求校验「密钥 + 地址 + 模型」是否可用。
+ * 支持传入尚未保存的草稿值，方便「先测通再保存」。
+ */
+ipcMain.handle('ai-config-test', async (event, draft) => {
+  const current = resolveAiConfig();
+  const pick = (value, fallback) =>
+    typeof value === 'string' && value.trim() ? value.trim() : fallback;
+
+  const apiKey = pick(draft?.apiKey, current.apiKey);
+  const baseUrl = pick(draft?.baseUrl, current.baseUrl).replace(/\/+$/, '');
+  const model = pick(draft?.model, current.model);
+
+  if (!apiKey) return { ok: false, error: '请先填写 API Key' };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_TEST_TIMEOUT);
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      return {
+        ok: false,
+        error: `请求失败（${response.status}）：${detail.slice(0, 300)}`,
+      };
+    }
+    return { ok: true, model };
+  } catch (error) {
+    if (error.name === 'AbortError') return { ok: false, error: '连接超时' };
+    return { ok: false, error: error.message };
+  } finally {
+    clearTimeout(timer);
   }
 });
 
@@ -1938,10 +2053,12 @@ app.on('ready', () => {
   pruneThumbCache().then(loadThumbKeys);
   createMenu();
   startMemoryWatchdog();
-  // 配置里含窗口尺寸与最大化状态：先读完再建窗口，避免启动时窗口跳一下
-  readStore(STORE_CONFIG)
-    .catch(() => ({}))
-    .then(() => createWindow());
+  // 配置里含窗口尺寸与最大化状态：先读完再建窗口，避免启动时窗口跳一下。
+  // AI 配置也一并预读：resolveAiConfig 走内存缓存，首次分析时才不会漏掉应用内设置。
+  Promise.all([
+    readStore(STORE_CONFIG).catch(() => ({})),
+    readStore(STORE_AI_CONFIG).catch(() => ({})),
+  ]).then(() => createWindow());
 });
 
 app.on('window-all-closed', () => {

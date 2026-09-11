@@ -117,6 +117,18 @@ declare global {
         result?: { description?: string; tags?: string[] } | null;
         error?: string;
       }>;
+      /** 读取当前生效的 AI 配置（供「AI 设置」弹窗回显） */
+      getAiConfig: () => Promise<import('@/types').AiConfigSnapshot>;
+      /** 保存 AI 配置；空字符串表示清除该覆盖项、回退到环境变量 / 默认值 */
+      setAiConfig: (
+        patch: import('@/types').AiConfigPatch
+      ) => Promise<{ success: boolean; keySource?: import('@/types').AiKeySource; error?: string }>;
+      /** 用草稿值测试连接（未保存也能先验证密钥 / 地址 / 模型） */
+      testAiConfig: (
+        draft?: import('@/types').AiConfigPatch
+      ) => Promise<{ ok: boolean; model?: string; error?: string }>;
+      /** 应用菜单「AI 分析设置…」（⌘,）；返回取消订阅函数 */
+      onOpenAiSettings: (callback: () => void) => () => void;
 
       /** 注册 ⌘O 菜单导入事件；返回取消订阅函数 */
       onImportPaths: (callback: (picked: PickedPaths) => void) => () => void;

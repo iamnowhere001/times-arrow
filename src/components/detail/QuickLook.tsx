@@ -67,6 +67,22 @@ const QuickLook: React.FC<QuickLookProps> = ({
     }
   }, [photo.id]);
 
+  // 关闭 QuickLook 时显式停止并断开视频源：仅靠移除 DOM 节点，
+  // 部分情况下解码器与网络缓冲要等到 GC 才回收，反复预览大视频会让内存持续高位。
+  useEffect(() => {
+    return () => {
+      const el = videoRef.current;
+      if (!el) return;
+      el.pause();
+      el.removeAttribute('src');
+      try {
+        el.load();
+      } catch {
+        /* 忽略：释放失败不影响关闭 */
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (imageReady || imageFailed) {
       setShowSpinner(false);

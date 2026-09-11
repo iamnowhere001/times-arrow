@@ -659,6 +659,19 @@ interface ImageCardProps {
   enterDelay?: number;
 }
 
+/**
+ * 缩略图浮层控件（选择 / 删除 / 收藏）共用同一套几何参数：
+ * 三个按钮尺寸、圆角、描边、图标盒子完全相同，任意组合下都等大、居中、水平对齐。
+ * - 28px 圆底 + 16px 图标：缩略图缩到很小时仍留有可点面积，图标也不会糊成一团；
+ * - 半透明黑底 + 1px 白描边：亮底、暗底照片上都有稳定对比度；
+ * - 选择 / 收藏平时隐藏，hover 或选中时才出现，不遮挡照片本身。
+ */
+const OVERLAY_BTN =
+  'flex items-center justify-center w-7 h-7 rounded-full border border-[rgba(255,255,255,0.3)] bg-[rgba(0,0,0,0.45)] text-white backdrop-blur-md transition-all duration-200 hover:scale-110 active:scale-90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent-blue-rgb),0.6)]';
+
+/** 图标盒子统一 16px：几何上对齐，视觉重量再靠 strokeWidth 微调 */
+const OVERLAY_ICON = 'w-4 h-4';
+
 const ImageCard = React.memo(({
   photo,
   isSelected,
@@ -738,7 +751,7 @@ const ImageCard = React.memo(({
             : 'border-[var(--border-subtle)] group-hover:border-[var(--border-hover)]'
         }`}
       >
-        {/* 圆形选择圈：入场做淡入 + 轻微放大，悬停/按下与收藏按钮同一套缩放反馈 */}
+        {/* 选择圈：入场做淡入 + 轻微放大，与右侧两个按钮同尺寸、同顶边对齐 */}
         <div className={`absolute top-1.5 left-1.5 z-10 transition-[opacity,transform] duration-200 ease-entrance ${
           isSelected ? 'opacity-100 scale-100' : 'opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100'
         }`}>
@@ -752,19 +765,20 @@ const ImageCard = React.memo(({
               e.stopPropagation();
               onSelect(photo.id, true);
             }}
-            className={`flex items-center justify-center w-6 h-6 rounded-full border-2 backdrop-blur-md cursor-pointer transition-all duration-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent-blue-rgb),0.6)] hover:scale-110 active:scale-90 ${
+            className={`${OVERLAY_BTN} cursor-pointer ${
               isSelected
                 ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)] text-[var(--accent-contrast)] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.45)]'
-                : 'border-[rgba(255,255,255,0.85)] bg-[rgba(0,0,0,0.35)] text-transparent hover:bg-[rgba(0,0,0,0.55)] hover:border-white'
+                : 'text-transparent hover:border-white hover:bg-[rgba(0,0,0,0.65)]'
             }`}
           >
-            {/* 勾选出现在圆心：从小放大 + 回弹，让「选中」这个动作看得见 */}
+            {/* 勾选出现在圆心：从小放大 + 回弹，让「选中」这个动作看得见。
+                描边比右侧线性图标粗一档，补偿实心底上的视觉重量差 */}
             <svg
-              className={`w-3.5 h-3.5 transition-transform duration-200 ease-entrance ${isSelected ? 'scale-100' : 'scale-50'}`}
+              className={`${OVERLAY_ICON} transition-transform duration-200 ease-entrance ${isSelected ? 'scale-100' : 'scale-50'}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
-              strokeWidth="3.5"
+              strokeWidth="3"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
@@ -773,25 +787,45 @@ const ImageCard = React.memo(({
           </button>
         </div>
 
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleFavorite(photo.id);
-          }}
-          className={`absolute top-1.5 right-1.5 z-10 p-2 rounded-full backdrop-blur-md transition-all duration-200 hover:scale-110 active:scale-90 ${
-            photo.isFavorite
-              ? 'text-[var(--accent-pink)] opacity-100 bg-[rgba(var(--accent-pink-rgb),0.2)] hover:bg-[rgba(var(--accent-pink-rgb),0.3)] shadow-lg shadow-[rgba(var(--accent-pink-rgb),0.25)]'
-              : isSelected
-                ? 'text-white opacity-100 bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.6)] backdrop-blur-md'
-                : 'text-white opacity-0 group-hover:opacity-100 bg-[rgba(0,0,0,0.4)] hover:bg-[rgba(0,0,0,0.6)] backdrop-blur-md'
-          }`}
-          title="收藏"
-          aria-label="收藏"
-        >
-          <svg className="w-5 h-5" fill={photo.isFavorite ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
-          </svg>
-        </button>
+        {/* 删除 + 收藏：放在同一个右对齐的 flex 行里，
+            删除按钮出现/消失时只向左扩展，收藏按钮的位置始终不变 */}
+        <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1.5">
+          {isSelected && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onShowDeleteConfirm();
+              }}
+              className={`${OVERLAY_BTN} hover:text-[var(--accent-pink)] hover:border-[rgba(var(--accent-pink-rgb),0.7)] hover:bg-[rgba(var(--accent-pink-rgb),0.28)]`}
+              title="删除"
+              aria-label="删除选中"
+            >
+              <svg className={OVERLAY_ICON} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite(photo.id);
+            }}
+            className={`${OVERLAY_BTN} ${
+              photo.isFavorite
+                ? 'border-[rgba(var(--accent-pink-rgb),0.55)] bg-[rgba(var(--accent-pink-rgb),0.25)] text-[var(--accent-pink)] shadow-lg shadow-[rgba(var(--accent-pink-rgb),0.25)] hover:bg-[rgba(var(--accent-pink-rgb),0.35)]'
+                : isSelected
+                  ? 'opacity-100 hover:border-white hover:bg-[rgba(0,0,0,0.65)]'
+                  : 'opacity-0 group-hover:opacity-100 hover:border-white hover:bg-[rgba(0,0,0,0.65)]'
+            }`}
+            title="收藏"
+            aria-label="收藏"
+          >
+            <svg className={OVERLAY_ICON} fill={photo.isFavorite ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+            </svg>
+          </button>
+        </div>
 
         {photo.isCover && (
           <div className="absolute bottom-1.5 right-1.5 z-10 flex items-center gap-1 px-2 py-1 rounded-full bg-[rgba(0,0,0,0.55)] text-white text-[10px] font-medium backdrop-blur-md shadow-lg">
@@ -800,22 +834,6 @@ const ImageCard = React.memo(({
             </svg>
             封面
           </div>
-        )}
-
-        {isSelected && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onShowDeleteConfirm();
-            }}
-            className="absolute top-1.5 right-12 z-10 p-2 rounded-full transition-all duration-200 text-white bg-[rgba(0,0,0,0.45)] border border-[rgba(255,255,255,0.3)] hover:text-[var(--accent-pink)] hover:border-[rgba(232,94,102,0.7)] hover:bg-[rgba(var(--accent-pink-rgb),0.28)] backdrop-blur-md hover:scale-110 active:scale-90"
-            title="删除"
-            aria-label="删除选中"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
         )}
 
         {(!loaded || mediaPending) && !loadError && (
@@ -1140,26 +1158,29 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
           type="button"
           onClick={onClearSelection}
           title="清除选择（Esc）"
-          className="ml-1 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-1 rounded-lg hover:bg-[var(--bg-glass-hover)] transition-all duration-200"
+          className="ml-1 flex items-center gap-1 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-1 rounded-lg hover:bg-[var(--bg-glass-hover)] transition-all duration-200"
         >
-          ✕ 清除
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5" strokeLinecap="round"><path d="M6 18L18 6M6 6l12 12"></path></svg>
+          清除
         </button>
       </div>
 
       <div className="flex-1" />
 
       <div className="flex items-center gap-1.5">
-        {!allVisibleSelected && (
-          <button
-            type="button"
-            onClick={onSelectAll}
-            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg border border-[var(--border-default)] bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200"
-            title="全选当前视图（⌘A）"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
-            全选
-          </button>
-        )}
+        {/* 常驻的「全选 / 取消全选」开关：⌘A 本来就是切换语义，
+            按钮此前在全部选中后消失，等于收走了唯一的批量撤回入口 */}
+        <button
+          type="button"
+          onClick={onSelectAll}
+          className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg border border-[var(--border-default)] bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200"
+          title={allVisibleSelected ? '取消全选（⌘A）' : '全选当前视图（⌘A）'}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d={allVisibleSelected ? 'M5 12h14' : 'M5 13l4 4L19 7'}></path>
+          </svg>
+          {allVisibleSelected ? '取消全选' : '全选'}
+        </button>
         <button
           type="button"
           onClick={onFavoriteSelected}

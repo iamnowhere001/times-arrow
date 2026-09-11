@@ -52,6 +52,18 @@ export function useThumbnailSrc(photo: Photo, targetSize: number): string | null
     if (photo.thumbnail && want <= BASE_THUMB_SIZE) return;
 
     let cancelled = false;
+    // 预加载用的 Image 必须显式释放：清空 src 才能让浏览器立刻放弃这张图的解码缓存，
+    // 否则快速滚动 / 缩放时会有大量“加载中即被弃用”的 Image 滞留在内存里。
+    let preload: HTMLImageElement | null = null;
+
+    const releasePreload = () => {
+      if (!preload) return;
+      preload.onload = null;
+      preload.onerror = null;
+      preload.src = '';
+      preload = null;
+    };
+
     const run = async () => {
       const url = await resolveThumbnail(filePath, want);
       if (cancelled) return;
@@ -62,9 +74,11 @@ export function useThumbnailSrc(photo: Photo, targetSize: number): string | null
       }
       // 先预加载，解码完成后再替换，避免出现空白闪烁
       const pre = new Image();
+      preload = pre;
       pre.decoding = 'async';
       pre.onload = () => {
-        if (!cancelled) setSrc(url);
+        if (cancelled) return;
+        setSrc(url);
       };
       pre.src = url;
     };
@@ -75,6 +89,7 @@ export function useThumbnailSrc(photo: Photo, targetSize: number): string | null
       run();
       return () => {
         cancelled = true;
+        releasePreload();
       };
     }
 
@@ -89,6 +104,7 @@ export function useThumbnailSrc(photo: Photo, targetSize: number): string | null
 
     return () => {
       cancelled = true;
+      releasePreload();
       if (hasIdle && typeof w.cancelIdleCallback === 'function') {
         w.cancelIdleCallback(handle);
       } else {

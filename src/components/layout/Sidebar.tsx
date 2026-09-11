@@ -125,6 +125,19 @@ const PlusIcon = () => (
   </svg>
 );
 
+/** 品牌标记：光圈叶片。摄影语汇里最简洁的身份符号，与「暗房」配色同源 */
+const ApertureIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="14.31" y1="8" x2="20.05" y2="17.94"></line>
+    <line x1="9.69" y1="8" x2="21.17" y2="8"></line>
+    <line x1="7.38" y1="12" x2="13.12" y2="2.06"></line>
+    <line x1="9.69" y1="16" x2="3.95" y2="6.06"></line>
+    <line x1="14.31" y1="16" x2="2.83" y2="16"></line>
+    <line x1="16.62" y1="12" x2="10.88" y2="21.94"></line>
+  </svg>
+);
+
 /** 最近打开：带指针的时钟 */
 const HistoryIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -272,8 +285,17 @@ const Sidebar: React.FC<SidebarProps> = ({
     <aside className={`${isOpen ? 'w-[220px]' : 'w-0 border-0'} bg-[var(--bg-secondary)] backdrop-blur-xl border-r border-[var(--border-subtle)] h-full select-none transition-[width] duration-300 ease-entrance overflow-hidden`}>
       {/* 抽屉式收展：外层只动宽度，内容整体滑出，避免被挤扁 */}
       <div className={`h-full flex flex-col transition-[opacity,transform] duration-200 ease-entrance ${isOpen ? 'opacity-100 translate-x-0 delay-75' : 'opacity-0 -translate-x-3'}`}>
-      {/* 顶部拖拽区：原生标题栏隐藏后为红绿灯按钮让位，同时承担窗口拖动 */}
-      <div className="app-drag h-[38px] shrink-0"></div>
+      {/* 顶部：原生标题栏隐藏后，左侧 78px 留给红绿灯按钮，右侧作为品牌区，整条同时承担窗口拖动。
+          品牌与红绿灯同高同中线（38px 带内垂直居中），原本纯空白的一条因此有了身份信息 */}
+      <div className="app-drag h-[38px] shrink-0 flex items-center gap-2 pl-[78px] pr-3">
+        <span className="shrink-0 flex items-center justify-center w-[26px] h-[26px] rounded-lg bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-sm shadow-[rgba(var(--accent-blue-rgb),0.35)]">
+          <ApertureIcon />
+        </span>
+        <span className="flex flex-col items-start justify-center leading-tight min-w-0">
+          <span className="text-[13px] font-semibold text-[var(--text-primary)] truncate">时光画框</span>
+          <span className="text-[10px] text-[var(--text-quaternary)] truncate">按时间线自动归档</span>
+        </span>
+      </div>
       <nav className="flex-1 overflow-y-auto px-3 space-y-5 custom-scrollbar">
 
         {/* 时光画廊：独立整页视图，按时间线沉浸式回顾全部记忆。
@@ -418,9 +440,11 @@ const Sidebar: React.FC<SidebarProps> = ({
             三态分段：「跟随系统」实时响应 OS 深浅色，明亮 / 暗黑为显式覆盖。 */}
         <div className="flex items-center gap-1 p-0.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
           {([
-            { id: 'system', label: '跟随系统', icon: <MonitorIcon /> },
-            { id: 'light', label: '明亮', icon: <SunIcon /> },
-            { id: 'dark', label: '暗黑', icon: <MoonIcon /> },
+            // 220px 的侧栏减去内边距后每段只有 ~61px，「跟随系统」四字加图标会溢出成省略号，
+            // 因此段内用两字短标签，完整语义交给 title / aria-label
+            { id: 'system', label: '系统', fullLabel: '跟随系统', icon: <MonitorIcon /> },
+            { id: 'light', label: '明亮', fullLabel: '明亮', icon: <SunIcon /> },
+            { id: 'dark', label: '暗黑', fullLabel: '暗黑', icon: <MoonIcon /> },
           ] as const).map((option) => {
             const active = themeMode === option.id;
             return (
@@ -429,12 +453,13 @@ const Sidebar: React.FC<SidebarProps> = ({
                 type="button"
                 onClick={() => { if (!active) onThemeModeChange(option.id); }}
                 aria-pressed={active}
+                aria-label={`外观：${option.fullLabel}`}
                 title={
                   active
-                    ? `当前为${option.label}模式`
+                    ? `当前为${option.fullLabel}模式`
                     : option.id === 'system'
                       ? '跟随系统深色 / 浅色偏好'
-                      : `切换到${option.label}模式`
+                      : `切换到${option.fullLabel}模式`
                 }
                 className={`flex-1 flex items-center justify-center gap-1 h-7 rounded-[10px] text-[12px] font-medium transition-all duration-200 min-w-0 ${
                   active
@@ -454,4 +479,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   );
 };
 
-export default Sidebar;
+// 侧栏内容随图库计数 / 相簿变化，但与「选中项、QuickLook、右键菜单」等高频状态无关。
+// 用 memo 包一层：只要父级传入的回调保持稳定引用，点选照片时就不会白重渲染整栏。
+export default React.memo(Sidebar);

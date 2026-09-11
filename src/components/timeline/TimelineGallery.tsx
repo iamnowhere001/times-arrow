@@ -487,22 +487,24 @@ const MonthBlockBase: React.FC<MonthBlockProps> = ({
   const blockRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
 
+  // 双向惰性挂载：进入 900px 预载区挂载，离开后卸载。
+  // 之前只挂载不卸载（一次性闩锁），浏览完整条时间线后每个月份的照片卡片、缩略图与
+  // 它们的 IntersectionObserver 都会常驻，DOM 与内存随时间只增不减。
+  // 卸载后用等高骨架占位，滚动条长度不变，因此不会造成滚动位置漂移。
   useEffect(() => {
-    if (mounted) return;
     const el = blockRef.current;
     if (!el) return;
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          setMounted(true);
-          io.disconnect();
-        }
+        const entry = entries[entries.length - 1];
+        if (!entry) return;
+        setMounted(entry.isIntersecting);
       },
       { rootMargin: '900px 0px' }
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [mounted]);
+  }, []);
 
   // 同一个 ref 回调要同时服务两件事：惰性挂载的观察目标 + 年/月跳转的锚点。
   // 漏掉任一边都会让这个月区块一直停在骨架态。
