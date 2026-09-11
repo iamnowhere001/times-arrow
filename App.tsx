@@ -18,11 +18,15 @@ import {
   type DuplicateScanProgress,
 } from './utils';
 import {
-  createLruCache,
   installMemoryPressureListener,
   releaseMemory,
   startHeapWatch,
 } from './cacheManager';
+import { groupPhotos, sortPhotosByTimeline } from './photoGrouping';
+import { createThumbnail, clearDragThumbnailCache } from './dragThumbnail';
+import { joinPath, sanitizeFilename } from './pathUtils';
+import { deriveLibraryViewState } from './libraryViewState';
+import { buildContextMenuActions } from './contextMenuActions';
 import {
   MEDIA_FILTER_LABELS,
   applyPhotoFilters,
@@ -61,8 +65,11 @@ import DuplicateDetector, {
   similarityToDistance,
 } from './components/DuplicateDetector';
 import ExportModal from './components/ExportModal';
+import TimelineGallery from './components/TimelineGallery';
 import { clearThumbnailCache } from './components/ThumbnailImage';
 import ErrorBoundary from './components/ErrorBoundary';
+import DragOverlay from './components/DragOverlay';
+import LoadingOverlay from './components/LoadingOverlay';
 import ActiveFiltersBar from './components/ActiveFiltersBar';
 import AdjustDateModal, { type DateAdjustment } from './components/AdjustDateModal';
 import SaveAlbumModal from './components/SaveAlbumModal';
@@ -72,8 +79,8 @@ import { logger } from './logger';
 /** 外观模式：明亮 / 暗黑 / 跟随系统（后两者可实时响应 OS 深浅色偏好） */
 type Theme = 'dark' | 'light' | 'system';
 
-/** 主内容区的顶层视图：图库 / 重复图片检测（整页视图，而非弹窗） */
-type MainView = 'library' | 'duplicates';
+/** 主内容区的顶层视图：图库 / 时光画廊 / 重复图片检测（整页视图，而非弹窗） */
+type MainView = 'library' | 'timeline' | 'duplicates';
 
 /** 导入所需的最小文件信息（来自主进程扫描 / stat） */
 interface FileInfo {
@@ -87,57 +94,6 @@ interface FileInfo {
 
 /** 卡片塌陷动画时长：与 ImageGrid 中卡片淡出的 duration 保持一致 */
 const EXIT_DURATION = 200;
-
-/**
- * 日期分组 key 缓存。
- * toLocaleDateString 每次都会构造 Intl 格式化器，几千张照片时是明显的 CPU 热点，
- * 而同一天的照片分组 key 完全相同，因此按「天」缓存。
- */
-const dateKeyCache = createLruCache<number, string>('dateGroupKey', 5000, 'volatile');
-let dateKeyCacheDay = '';
-
-function getDateGroupKey(timestamp: number, todayKey: string, yesterdayKey: string): string {
-  if (!timestamp || Number.isNaN(timestamp)) return 'Unknown Date';
-
-  // 跨天时缓存失效
-  if (todayKey !== dateKeyCacheDay) {
-    dateKeyCache.clear();
-    dateKeyCacheDay = todayKey;
-  }
-
-  const date = new Date(timestamp);
-  // 用「本地日历日」（yyyymmdd）做 key。
-  // 不能用 floor(ts / 86400000)：那是 UTC 日界，东八区里同一天 23:00 与次日 01:00
-  // 会落进同一个 UTC 日，导致两天被错误地合并为同一组。
-  const dayKey = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
-  const cached = dateKeyCache.get(dayKey);
-  if (cached !== undefined) return cached;
-
-  const dateKey = date.toDateString();
-  let key: string;
-  if (dateKey === todayKey) {
-    key = 'Today';
-  } else if (dateKey === yesterdayKey) {
-    key = 'Yesterday';
-  } else {
-    key = date.toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'long',
-    });
-  }
-
-  dateKeyCache.set(dayKey, key);
-  return key;
-}
-
-/**
- * 拖放降级路径（拿不到磁盘路径）的缩略图缓存。
- * 值是 base64 dataURL，体积远大于 pm:// 地址，必须限量；
- * 有磁盘路径的照片走主进程磁盘缩略图，不会进这里。
- */
-const dragThumbCache = createLruCache<string, Map<number, string>>('dragThumbnail', 120, 'volatile');
 
 const App: React.FC = () => {
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -303,6 +259,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const [mainView, setMainView] = useState<MainView>('library');
   /** 重复检测页是否在前台：键盘快捷键与参数重跑逻辑据此让行 */
   const isDuplicateDetectorOpen = mainView === 'duplicates';
+  /** 时光画廊是否在前台：工具栏 / 详情面板据此让行 */
+  const isTimelineOpen = mainView === 'timeline';
   const [duplicateGroups, setDuplicateGroups] = useState<Photo[][]>([]);
   const [isProcessingDuplicates, setIsProcessingDuplicates] = useState(false);
   const [duplicateProgress, setDuplicateProgress] = useState<DuplicateScanProgress | null>(null);
@@ -719,7 +677,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     setFilters(createEmptyFilters());
     setSearchQuery('');
     importedPathsRef.current.clear();
-    dragThumbCache.clear();
+    clearDragThumbnailCache();
     clearThumbnailCache();
     // 重置图库后指纹也失去意义，一并释放（否则切库后缓存只增不减）
     clearImageHashCache();
@@ -878,106 +836,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     setQuickLookPhoto(quickLookList[quickLookIndex - 1]);
   };
 
-  // Helper function to create a smaller thumbnail using canvas with optimized settings for speed
-  const createThumbnail = async (input: File | string, maxSize: number = 200): Promise<string> => {
-    // Convert File object to base64 first if needed
-    let base64Data: string;
-    let cacheKey: string;
-    
-    if (input instanceof File) {
-      // For File objects, use a combination of name and last modified time as cache key
-      cacheKey = `${input.name}-${input.lastModified}`;
-      base64Data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(input);
-      });
-    } else {
-      // For string URLs, use the URL as cache key
-      cacheKey = input;
-      base64Data = input;
-    }
-
-    // Check if thumbnail already exists in cache
-    const sizeKey = Math.round(maxSize); // Round to nearest integer to avoid cache misses
-    const sizeCache = dragThumbCache.get(cacheKey);
-    if (sizeCache?.has(sizeKey)) {
-      return sizeCache.get(sizeKey)!;
-    }
-
-    const remember = (value: string) => {
-      const bucket = dragThumbCache.get(cacheKey) ?? new Map<number, string>();
-      bucket.set(sizeKey, value);
-      dragThumbCache.set(cacheKey, bucket);
-    };
-
-    // Create thumbnail from base64 data
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous'; // Enable CORS for external images if needed
-      img.onload = () => {
-        // 尺寸已经够小：仍走一次 canvas，保证进缓存的是「缩略图」而不是整份原图 base64
-        if (img.width <= maxSize && img.height <= maxSize) {
-          remember(base64Data);
-          resolve(base64Data);
-          return;
-        }
-
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(base64Data); // Fallback to original if canvas fails
-          return;
-        }
-
-        // Calculate dimensions maintaining aspect ratio
-        let width = img.width;
-        let height = img.height;
-        if (width > height) {
-          if (width > maxSize) {
-            height *= maxSize / width;
-            width = maxSize;
-          }
-        } else {
-          if (height > maxSize) {
-            width *= maxSize / height;
-            height = maxSize;
-          }
-        }
-
-        // Ensure dimensions are integers to avoid rendering artifacts
-        width = Math.round(width);
-        height = Math.round(height);
-
-        canvas.width = width;
-        canvas.height = height;
-
-        // Draw image to canvas with optimized settings for speed
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'low';
-        ctx.drawImage(img, 0, 0, width, height);
-
-        const isJPEG = base64Data.startsWith('data:image/jpeg') || base64Data.startsWith('data:image/jpg');
-        const thumbnail = canvas.toDataURL(isJPEG ? 'image/jpeg' : 'image/png', isJPEG ? 0.7 : 0.75);
-
-        remember(thumbnail);
-
-        // Clean up immediately to free memory
-        canvas.width = 0;
-        canvas.height = 0;
-        canvas.remove();
-
-        resolve(thumbnail);
-      };
-      img.onerror = () => {
-        logger.warn('Thumbnail generation failed, using original image');
-        resolve(base64Data); // Fallback to original if image fails to load
-      };
-      img.src = base64Data;
-    });
-  };
-
   // 打开目录：主进程递归扫描（可取消）→ 统一导入管线（同样可取消）
   const loadDirectory = useCallback(async (dirPath: string) => {
     if (!window.electronAPI) return;
@@ -1110,52 +968,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     }));
   }, []);
 
-  // Grouping Logic
-  const groupedPhotos = useMemo(() => {
-    const sortedPhotos = [...photos].sort((a, b) => {
-      if (sortConfig.key === 'dateModified' || sortConfig.key === 'dateTaken') {
-        const dateA = a.dateTaken || a.lastModified || 0;
-        const dateB = b.dateTaken || b.lastModified || 0;
-        return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
-      }
-      if (sortConfig.key === 'dateCreated') {
-        const dateA = a.dateCreated || a.lastModified || 0;
-        const dateB = b.dateCreated || b.lastModified || 0;
-        return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
-      }
-      if (sortConfig.key === 'name') {
-        return sortConfig.direction === 'asc' 
-          ? a.name.localeCompare(b.name) 
-          : b.name.localeCompare(a.name);
-      }
-      if (sortConfig.key === 'size') {
-        return sortConfig.direction === 'asc' ? a.size - b.size : b.size - a.size;
-      }
-      return 0;
-    });
-
-    if (sortConfig.key !== 'dateModified' && sortConfig.key !== 'dateTaken') {
-      return [{ key: 'all', photos: sortedPhotos }];
-    }
-
-    const groups: Record<string, Photo[]> = {};
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const todayKey = today.toDateString();
-    const yesterdayKey = yesterday.toDateString();
-
-    sortedPhotos.forEach(photo => {
-      const key = getDateGroupKey(photo.dateTaken || photo.lastModified, todayKey, yesterdayKey);
-
-      if (!groups[key]) {
-        groups[key] = [];
-      }
-      groups[key].push(photo);
-    });
-
-    return Object.entries(groups).map(([key, photos]) => ({ key, photos }));
-  }, [photos, sortConfig]);
+  // Grouping Logic：排序 + 日期分组（实现见 photoGrouping.ts）
+  const groupedPhotos = useMemo(() => groupPhotos(photos, sortConfig), [photos, sortConfig]);
 
   // Get sorted photos for display
   // groupedPhotos 内部已完成排序，这里直接展开，避免对同一份数据重复排序
@@ -1163,6 +977,10 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     () => groupedPhotos.flatMap(group => group.photos),
     [groupedPhotos]
   );
+
+  // 时光画廊：按拍摄时间升序排列的全部照片（忽略筛选 / 搜索），
+  // 是「沿时间线回顾整段记忆」的数据源。缺失时间戳的条目排到末尾。
+  const timelinePhotos = useMemo(() => sortPhotosByTimeline(photos), [photos]);
 
   // 实况照片需要「同目录同名视频配对」上下文，随照片集合变化预计算一次
   const livePhotoIds = useMemo(() => buildLivePhotoIds(photos), [photos]);
@@ -1192,11 +1010,16 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
   /**
    * QuickLook 的翻页范围跟随当前视图：
-   * 图库里按可见列表翻页，重复检测页只在检测结果内翻页。
+   * 图库里按可见列表翻页，重复检测页只在检测结果内翻页，
+   * 时光画廊按时间排序的全部照片翻页。
    */
   const quickLookList = useMemo(
-    () => (isDuplicateDetectorOpen ? duplicateGroups.flatMap(group => group) : visiblePhotos),
-    [isDuplicateDetectorOpen, duplicateGroups, visiblePhotos]
+    () => {
+      if (isDuplicateDetectorOpen) return duplicateGroups.flatMap(group => group);
+      if (isTimelineOpen) return timelinePhotos;
+      return visiblePhotos;
+    },
+    [isDuplicateDetectorOpen, isTimelineOpen, duplicateGroups, visiblePhotos, timelinePhotos]
   );
 
   // QuickLook 当前索引：缓存结果，避免每次渲染对大列表做线性查找
@@ -1434,30 +1257,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   };
 
   // 日期格式化统一由 utils.formatDateForNaming 提供（与 RenameModal 预览共用同一实现）
-
-  // Helper function to safely join directory and filename, compatible with both Unix and Windows paths
-  const joinPath = (dirPath: string, filename: string): string => {
-    // Check if path uses backslashes (Windows)
-    if (dirPath.includes('\\')) {
-      // Remove any trailing backslashes
-      dirPath = dirPath.replace(/\\+$/, '');
-      return `${dirPath}\\${filename}`;
-    } else {
-      // Remove any trailing slashes
-      dirPath = dirPath.replace(/\/+$/, '');
-      return `${dirPath}/${filename}`;
-    }
-  };
-
-  // Helper function to sanitize filename by removing or replacing invalid characters
-  const sanitizeFilename = (filename: string): string => {
-    // Remove or replace invalid characters for filenames
-    // Invalid characters on Windows: < > : " / \ | ? *
-    // Invalid characters on Unix: /
-    return filename
-      .replace(/[<>:"|?*]/g, '') // Remove invalid Windows characters
-      .replace(/\//g, '-'); // Replace slashes with dashes
-  };
 
   // Handle batch rename
   const handleBatchRename = async (options: RenameOptions) => {
@@ -2071,116 +1870,31 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     }
   };
 
-  // Context Menu Actions
-  const contextMenuActions = useMemo((): ContextMenuItem[] => {
-    // 空白区右键：图库级操作
-    if (!contextMenu?.photo) {
-      return [
-        {
-          label: '导入图片、视频或文件夹…',
-          shortcut: '⌘O',
-          onClick: () => handleImport(),
-        },
-        { separator: true },
-        {
-          label: '全选',
-          shortcut: '⌘A',
-          disabled: visiblePhotos.length === 0,
-          onClick: () => handleSelectAllVisible(),
-        },
-        {
-          label: '检测相似照片',
-          disabled: photos.length === 0,
-          onClick: () => handleCheckDuplicates(),
-        },
-        ...(photos.length > 0 ? [{ separator: true } as ContextMenuItem, {
-          label: '重置列表',
-          onClick: () => handleResetList(),
-        }] : []),
-      ];
-    }
-
-    // 条目右键：单张 + 选中集操作
-    const photo = contextMenu.photo;
-    const isVideo = isVideoPhoto(photo);
-
-    // 右键的条目若在选中集内，则对整组生效（与重命名 / 删除一致）
-    const targetIds = selectedIds.has(photo.id) && selectedIds.size > 1 ? [...selectedIds] : [photo.id];
-    const allHidden = targetIds.every(id => photosRef.current.find(p => p.id === id)?.isHidden);
-    const hideLabel =
-      targetIds.length > 1
-        ? `${allHidden ? '取消隐藏' : '隐藏'} ${targetIds.length} 项`
-        : allHidden
-          ? '取消隐藏'
-          : '隐藏';
-
-    return [
-      {
-        label: isVideo ? '播放' : '打开',
-        shortcut: '␣',
-        onClick: () => setQuickLookPhoto(photo),
-      },
-      {
-        label: photo.isFavorite ? '取消收藏' : '收藏',
-        shortcut: '⌘⇧F',
-        onClick: () => toggleFavorite(photo.id),
-      },
-      {
-        label: hideLabel,
-        onClick: () => setHidden(targetIds, !allHidden),
-      },
-      { separator: true },
-      // 视频无法写入图片剪贴板
-      ...(isVideo ? [] : [{
-        label: '复制图片',
-        onClick: () => handleCopyImage(photo),
-      } as ContextMenuItem]),
-      {
-        label: '在访达中显示',
-        onClick: () => handleShowInFolder(photo),
-      },
-      {
-        label: '复制路径',
-        onClick: () => handleCopyPath(photo),
-      },
-      {
-        label: '用默认应用打开',
-        onClick: () => handleOpenInEditor(photo),
-      },
-      {
-        label: photo.isCover ? '取消封面' : '设为封面',
-        onClick: () => handleToggleCover(photo),
-      },
-      // 导出走 canvas 重编码，仅图片可用
-      ...(isVideo ? [] : [{
-        label: `导出${selectedIds.size > 1 ? ` ${selectedIds.size} 张` : '…'}`,
-        onClick: () => handleExportSelected(),
-      } as ContextMenuItem]),
-      {
-        label: targetIds.length > 1 ? `移动 ${targetIds.length} 项到…` : '移动到…',
-        onClick: () => handleMoveSelected(
-          targetIds
-            .map(id => photosRef.current.find(p => p.id === id))
-            .filter((p): p is Photo => Boolean(p))
-        ),
-      },
-      { separator: true },
-      {
-        label: '调整日期与时间…',
-        onClick: () => setIsAdjustDateModalOpen(true),
-      },
-      {
-        label: selectedIds.size > 1 ? `重命名 ${selectedIds.size} 项…` : '重命名…',
-        onClick: () => setIsRenameModalOpen(true),
-      },
-      {
-        label: selectedIds.size > 1 ? `删除 ${selectedIds.size} 项` : '删除',
-        shortcut: '⌫',
-        danger: true,
-        onClick: () => setIsDeleteModalOpen(true),
-      },
-    ];
-  }, [contextMenu, visiblePhotos.length, photos.length, selectedIds, toggleFavorite, setHidden, handleCopyImage, handleShowInFolder, handleCopyPath, handleOpenInEditor, handleToggleCover, handleExportSelected, handleMoveSelected, handleSelectAllVisible, handleCheckDuplicates, handleResetList, handleImport]);
+  // Context Menu Actions（菜单项构造逻辑见 contextMenuActions.ts）
+  const contextMenuActions = useMemo((): ContextMenuItem[] => buildContextMenuActions({
+    contextPhoto: contextMenu?.photo ?? null,
+    visibleCount: visiblePhotos.length,
+    photoCount: photos.length,
+    selectedIds,
+    getPhotoById: (id) => photosRef.current.find(p => p.id === id),
+    onImport: handleImport,
+    onSelectAllVisible: handleSelectAllVisible,
+    onCheckDuplicates: handleCheckDuplicates,
+    onResetList: handleResetList,
+    onOpenQuickLook: setQuickLookPhoto,
+    onToggleFavorite: toggleFavorite,
+    onSetHidden: setHidden,
+    onCopyImage: handleCopyImage,
+    onShowInFolder: handleShowInFolder,
+    onCopyPath: handleCopyPath,
+    onOpenInEditor: handleOpenInEditor,
+    onToggleCover: handleToggleCover,
+    onExportSelected: handleExportSelected,
+    onMovePhotos: handleMoveSelected,
+    onOpenAdjustDate: () => setIsAdjustDateModalOpen(true),
+    onOpenRename: () => setIsRenameModalOpen(true),
+    onOpenDelete: () => setIsDeleteModalOpen(true),
+  }), [contextMenu, visiblePhotos.length, photos.length, selectedIds, toggleFavorite, setHidden, handleCopyImage, handleShowInFolder, handleCopyPath, handleOpenInEditor, handleToggleCover, handleExportSelected, handleMoveSelected, handleSelectAllVisible, handleCheckDuplicates, handleResetList, handleImport]);
 
   // 计算媒体统计数据（侧栏「图库 / 媒体类型」与顶部筛选共用）
   // 隐藏项不计入任何常规分类，只计入「已隐藏」，与 macOS 照片一致
@@ -2335,6 +2049,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         }
         return;
       }
+      // 时光画廊：Esc 返回图库（预览层打开时让行给它）
+      if (isTimelineOpen) {
+        if (e.key === 'Escape' && !quickLookPhoto) {
+          e.preventDefault();
+          setMainView('library');
+        }
+        return;
+      }
       if (quickLookPhoto || isRenameModalOpen || isDeleteModalOpen || isExportModalOpen) return;
 
       const target = e.target as HTMLElement | null;
@@ -2402,7 +2124,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
-    quickLookPhoto, isRenameModalOpen, isDeleteModalOpen, isDuplicateDetectorOpen, isExportModalOpen,
+    quickLookPhoto, isRenameModalOpen, isDeleteModalOpen, isDuplicateDetectorOpen, isTimelineOpen, isExportModalOpen,
     isShortcutsOpen,
     contextMenu, visiblePhotos, selectedIds,
     handleSelectAllVisible, handleFavoriteSelected, handleArrowNavigation, handleExitDuplicates,
@@ -2610,52 +2332,27 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     })();
   }, [clearLoading, createThumbnail, ingestFiles, showToast]);
 
-  // 空状态 / 情境条文案：区分「完全为空」「全部已隐藏」「收藏夹为空」「搜索无结果」「筛选无结果」「媒体筛选为空」
-  const isEmptyLibrary = photos.length === 0;
-  const isHiddenView = activeCategory === 'hidden';
-  const isSearchEmpty = !isEmptyLibrary && !!searchQuery.trim() && visiblePhotos.length === 0;
-  /** 非「已隐藏」视图下，所有项目都被隐藏了 */
-  const isAllHidden =
-    !isEmptyLibrary &&
-    !isHiddenView &&
-    counts.hidden === photos.length &&
-    !searchQuery.trim() &&
-    !hasAdvancedFilters(filters) &&
-    !filters.favoritesOnly &&
-    mediaFilter === 'all';
-  /** 「已隐藏」视图自身为空 */
-  const isHiddenEmpty = !isEmptyLibrary && isHiddenView && !isSearchEmpty && visiblePhotos.length === 0;
-  const isFilterEmpty =
-    !isEmptyLibrary &&
-    !isSearchEmpty &&
-    !isAllHidden &&
-    !isHiddenEmpty &&
-    hasAdvancedFilters(filters) &&
-    visiblePhotos.length === 0;
-  const isFavoritesEmpty =
-    !isEmptyLibrary &&
-    !isSearchEmpty &&
-    !isFilterEmpty &&
-    !isHiddenEmpty &&
-    filters.favoritesOnly &&
-    visiblePhotos.length === 0;
-  const isMediaFilterEmpty =
-    !isEmptyLibrary &&
-    !isSearchEmpty &&
-    !isFilterEmpty &&
-    !isFavoritesEmpty &&
-    !isHiddenEmpty &&
-    !isAllHidden &&
-    mediaFilter !== 'all' &&
-    visiblePhotos.length === 0;
-  const gridViewTitle =
-    activeCategory === 'hidden'
-      ? '已隐藏'
-      : activeCategory === 'favorites'
-        ? '收藏夹'
-        : mediaFilter === 'all'
-          ? '所有媒体'
-          : MEDIA_FILTER_LABELS[mediaFilter];
+  // 空状态 / 情境条文案派生（实现见 libraryViewState.ts）。
+  // 与重构前一致：每次渲染直接计算，不做 memo。
+  const {
+    isEmptyLibrary,
+    isSearchEmpty,
+    isAllHidden,
+    isHiddenEmpty,
+    isFilterEmpty,
+    isFavoritesEmpty,
+    isMediaFilterEmpty,
+    gridViewTitle,
+  } = deriveLibraryViewState({
+    photoCount: photos.length,
+    hiddenCount: counts.hidden,
+    visibleCount: visiblePhotos.length,
+    searchQuery,
+    activeCategory,
+    mediaFilter,
+    hasAdvancedFilters: hasAdvancedFilters(filters),
+    favoritesOnly: filters.favoritesOnly,
+  });
 
   return (
     <div className={`app-container flex h-screen ${isLight ? 'light-theme' : ''}`}
@@ -2664,19 +2361,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       onDrop={handleDrop}
     >
       {/* Drag and Drop Overlay */}
-      {isDragOverlayMounted && (
-        <div className={`fixed inset-0 z-50 bg-[var(--bg-overlay)] backdrop-blur-xl flex items-center justify-center pointer-events-none transition-opacity duration-200 ease-entrance ${isDragOverlayActive ? 'opacity-100' : 'opacity-0'}`}>
-          <div className={`bg-[var(--bg-modal)] backdrop-blur-xl rounded-3xl shadow-2xl p-14 border border-[var(--border-default)] text-center transition-[transform,opacity] duration-200 ease-entrance ${isDragOverlayActive ? 'scale-100 opacity-100' : 'scale-[0.98] opacity-0'}`}>
-            <div className="w-24 h-24 mx-auto mb-8 rounded-full bg-[rgba(var(--accent-blue-rgb),0.12)] flex items-center justify-center shadow-xl shadow-[rgba(var(--accent-blue-rgb),0.15)]">
-              <svg className="w-12 h-12 text-[var(--accent-blue)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-              </svg>
-            </div>
-            <h3 className="text-2xl font-semibold text-[var(--text-primary)] mb-3 tracking-wide">拖放图片或视频到此处</h3>
-            <p className="text-sm text-[var(--text-tertiary)]">支持 JPG、PNG、WEBP、HEIC 与 MP4、MOV、WEBM、MKV 等格式</p>
-          </div>
-        </div>
-      )}
+      <DragOverlay mounted={isDragOverlayMounted} active={isDragOverlayActive} />
       <Sidebar
         counts={counts}
         activeCategory={activeCategory}
@@ -2690,81 +2375,20 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         onRequestSaveAlbum={() => setIsSaveAlbumModalOpen(true)}
         recentDirectories={recentDirectories}
         onSelectRecentFolder={handleSelectRecentFolder}
+        onSelectTimeline={() => setMainView('timeline')}
+        isTimelineActive={isTimelineOpen}
         isOpen={isLeftPaneOpen}
         themeMode={theme}
         onThemeModeChange={setTheme}
       />
       {/* Loading Overlay for Large File Operations */}
       {loading && (
-        <div className="fixed inset-0 bg-[var(--bg-overlay)] backdrop-blur-2xl z-[100] flex items-center justify-center">
-          <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-blue)]/20 via-transparent to-[var(--accent-purple)]/20 rounded-3xl blur-3xl animate-pulse"></div>
-            
-            <div className="relative bg-[var(--bg-modal)] backdrop-blur-xl rounded-3xl shadow-2xl p-8 w-80 border border-[var(--border-default)]">
-              <div className="flex flex-col items-center">
-                <div className="relative w-20 h-20 mb-6">
-                  <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)] opacity-20 animate-ping"></div>
-                  <div className="absolute inset-2 rounded-full bg-[var(--bg-modal)]"></div>
-                  <div className="absolute inset-0 rounded-full border-2 border-[var(--border-default)]"></div>
-                  <div className="absolute inset-0 rounded-full border-t-2 border-r-2 border-[var(--accent-blue)] animate-spin" style={{ animationDuration: '1.5s' }}></div>
-                  <div className="absolute inset-1 rounded-full border-b-2 border-l-2 border-[var(--accent-purple)] animate-spin" style={{ animationDuration: '2s', animationDirection: 'reverse' }}></div>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <svg className="w-8 h-8 text-[var(--accent-cyan)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                </div>
-
-                <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-4 tracking-wide">
-                  {loadingTotal > 0 ? '正在处理媒体' : '正在扫描文件夹'}
-                </h3>
-
-                <div className="w-full space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[var(--text-tertiary)]">{loadingTotal > 0 ? '进度' : '状态'}</span>
-                    <span className="font-medium bg-gradient-to-r from-[var(--accent-cyan)] to-[var(--accent-purple)] bg-clip-text text-transparent">
-                      {loadingTotal > 0 ? `${Math.round((loadingProgress / loadingTotal) * 100)}%` : '扫描中'}
-                    </span>
-                  </div>
-
-                  <div className="relative h-2.5 bg-[var(--bg-glass-hover)] rounded-full overflow-hidden">
-                    {loadingTotal > 0 ? (
-                      <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-[var(--accent-blue)] via-[var(--accent-cyan)] to-[var(--accent-purple)] rounded-full transition-all duration-500 ease-out shadow-lg"
-                        style={{ width: `${Math.max(5, (loadingProgress / loadingTotal) * 100)}%` }}>
-                      </div>
-                    ) : (
-                      // 扫描阶段无法预知总数：用不确定态动画，避免误导性的百分比
-                      <div
-                        className="absolute inset-y-0 rounded-full bg-gradient-to-r from-transparent via-[var(--accent-cyan)] to-transparent"
-                        style={{ width: '33%', animation: 'loadingSlide 1.4s ease-in-out infinite' }}
-                      />
-                    )}
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-[var(--text-quaternary)] font-mono">
-                      {loadingTotal > 0 ? `${loadingProgress} / ${loadingTotal}` : '—'}
-                    </span>
-                    <span className="text-xs text-[var(--text-quaternary)]">{loadingTotal > 0 ? '个项目' : '请稍候'}</span>
-                  </div>
-
-                  <div className="h-8 mt-2 px-3 py-1.5 bg-[var(--bg-glass)] rounded-xl border border-[var(--border-subtle)] flex items-center justify-center overflow-hidden">
-                    <p className="text-xs text-[var(--text-tertiary)] truncate">
-                      {loadingCurrentFile || '等待处理...'}
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={handleCancelLoading}
-                    className="w-full mt-1 py-2 text-sm font-medium rounded-xl border border-[var(--border-default)] bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200 active:scale-[0.98]"
-                  >
-                    取消添加
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <LoadingOverlay
+          total={loadingTotal}
+          progress={loadingProgress}
+          currentFile={loadingCurrentFile}
+          onCancel={handleCancelLoading}
+        />
       )}
       <div className="main-content flex-1 flex flex-col bg-transparent">
         {/* 重复检测：整页接管主内容区，侧边栏与整窗外壳保持不变 */}
@@ -2799,6 +2423,31 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               onSimilarityChange={setDuplicateSimilarity}
               scope={duplicateScope}
               onScopeChange={setDuplicateScope}
+              isLeftPaneOpen={isLeftPaneOpen}
+            />
+          </ErrorBoundary>
+        ) : mainView === 'timeline' ? (
+          <ErrorBoundary
+            label="时光画廊"
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-8 text-center">
+                <div>
+                  <p className="text-sm font-medium text-[var(--text-primary)] mb-1">时光画廊渲染出错</p>
+                  <p className="text-xs text-[var(--text-tertiary)] mb-4">图库内容仍然完好，可返回图库继续浏览。</p>
+                  <button
+                    onClick={() => setMainView('library')}
+                    className="px-4 py-2 text-sm font-medium rounded-xl text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    返回图库
+                  </button>
+                </div>
+              </div>
+            }
+          >
+            <TimelineGallery
+              photos={timelinePhotos}
+              onQuickLook={setQuickLookPhoto}
+              onBack={() => setMainView('library')}
               isLeftPaneOpen={isLeftPaneOpen}
             />
           </ErrorBoundary>

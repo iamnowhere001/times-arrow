@@ -35,6 +35,10 @@ interface SidebarProps {
   /** 最近打开过的目录（新在前），用于一键重新打开 */
   recentDirectories: string[];
   onSelectRecentFolder: (path: string) => void;
+  /** 打开时光画廊（整页时间线视图） */
+  onSelectTimeline: () => void;
+  /** 当前是否处于时光画廊视图 */
+  isTimelineActive: boolean;
   isOpen: boolean;
   /** 当前外观模式 */
   themeMode: Theme;
@@ -102,6 +106,16 @@ const AlbumIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="7" width="14" height="12" rx="2"></rect>
     <path d="M7 7V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2"></path>
+  </svg>
+);
+
+/** 时光画廊：时钟 + 胶片，表达「沿时间线回顾记忆」 */
+const TimelineIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9"></circle>
+    <polyline points="12 7 12 12 15.5 14"></polyline>
+    <rect x="3.2" y="10.5" width="2.2" height="3" rx="0.6" fill="currentColor" stroke="none" opacity="0.55"></rect>
+    <rect x="18.6" y="10.5" width="2.2" height="3" rx="0.6" fill="currentColor" stroke="none" opacity="0.55"></rect>
   </svg>
 );
 
@@ -174,6 +188,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onRequestSaveAlbum,
   recentDirectories,
   onSelectRecentFolder,
+  onSelectTimeline,
+  isTimelineActive,
   isOpen,
   themeMode,
   onThemeModeChange,
@@ -259,6 +275,35 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* 顶部拖拽区：原生标题栏隐藏后为红绿灯按钮让位，同时承担窗口拖动 */}
       <div className="app-drag h-[38px] shrink-0"></div>
       <nav className="flex-1 overflow-y-auto px-3 space-y-5 custom-scrollbar">
+
+        {/* 时光画廊：独立整页视图，按时间线沉浸式回顾全部记忆。
+            放在图库分类之前，用专属渐变底与时钟图标突出「换一种方式看照片」。 */}
+        <div>
+          <button
+            type="button"
+            onClick={onSelectTimeline}
+            aria-current={isTimelineActive ? 'page' : undefined}
+            className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-[13px] font-semibold transition-all duration-200 ${
+              isTimelineActive
+                ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-purple))] text-[var(--accent-contrast)] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.32)]'
+                : 'bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            <span className={`shrink-0 flex items-center justify-center w-8 h-8 rounded-xl transition-all duration-200 ${
+              isTimelineActive
+                ? 'bg-[rgba(var(--accent-contrast),0.18)] text-[var(--accent-contrast)]'
+                : 'bg-[rgba(var(--accent-blue-rgb),0.12)] text-[var(--accent-blue)]'
+            }`}>
+              <TimelineIcon />
+            </span>
+            <span className="flex flex-col items-start leading-tight min-w-0">
+              <span className="truncate">时光画廊</span>
+              <span className={`text-[10.5px] font-normal mt-0.5 truncate ${
+                isTimelineActive ? 'text-[rgba(var(--accent-contrast),0.72)]' : 'text-[var(--text-quaternary)]'
+              }`}>沿时间线回顾全部记忆</span>
+            </span>
+          </button>
+        </div>
 
         <div>
           <h2 className="px-2.5 text-[11px] font-semibold text-[var(--text-quaternary)] tracking-wider mb-2.5 transition-colors">图库</h2>
