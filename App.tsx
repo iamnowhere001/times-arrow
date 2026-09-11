@@ -1,13 +1,10 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { AiCacheEntry, DuplicateScope, MediaFilter, PersistedConfig, Photo, PhotoFilters, SmartAlbum, SortConfig, ViewMode, RenameOptions, SortKey } from './types';
+import { AiCacheEntry, MediaFilter, PersistedConfig, Photo, PhotoFilters, SmartAlbum, SortConfig, ViewMode, RenameOptions, SortKey } from './types';
 import {
-  findDuplicatePhotos,
-  isDuplicateScanAbort,
   isImageName,
   isVideoName,
   isVideoPhoto,
   mapWithConcurrency,
-  markRecommended,
   mediaKindOf,
   clearImageHashCache,
   mediaMimeType,
@@ -15,7 +12,6 @@ import {
   formatDateForNaming,
   folderOfPath,
   repairFileName,
-  type DuplicateScanProgress,
 } from './utils';
 import {
   installMemoryPressureListener,
@@ -27,6 +23,10 @@ import { createThumbnail, clearDragThumbnailCache } from './dragThumbnail';
 import { joinPath, sanitizeFilename } from './pathUtils';
 import { deriveLibraryViewState } from './libraryViewState';
 import { buildContextMenuActions } from './contextMenuActions';
+import { movePhotosToTrash } from './fileOperations';
+import { useToasts } from './hooks/useToasts';
+import { useThemeMode } from './hooks/useThemeMode';
+import { useDuplicateDetection } from './hooks/useDuplicateDetection';
 import {
   MEDIA_FILTER_LABELS,
   applyPhotoFilters,
@@ -56,13 +56,11 @@ import DetailsPane from './components/DetailsPane';
 import RenameModal from './components/RenameModal';
 import DeleteConfirmModal from './components/DeleteConfirmModal';
 import QuickLook from './components/QuickLook';
-import Toast, { ToastData, type ToastType } from './components/Toast';
+import Toast from './components/Toast';
 import ContextMenu, { ContextMenuItem } from './components/ContextMenu';
 import DuplicateDetector, {
-  DUPLICATE_SIMILARITY_DEFAULT,
   DUPLICATE_SIMILARITY_MAX,
   DUPLICATE_SIMILARITY_MIN,
-  similarityToDistance,
 } from './components/DuplicateDetector';
 import ExportModal from './components/ExportModal';
 import TimelineGallery from './components/TimelineGallery';
@@ -75,9 +73,6 @@ import AdjustDateModal, { type DateAdjustment } from './components/AdjustDateMod
 import SaveAlbumModal from './components/SaveAlbumModal';
 import ShortcutsOverlay from './components/ShortcutsOverlay';
 import { logger } from './logger';
-
-/** 外观模式：明亮 / 暗黑 / 跟随系统（后两者可实时响应 OS 深浅色偏好） */
-type Theme = 'dark' | 'light' | 'system';
 
 /** 主内容区的顶层视图：图库 / 时光画廊 / 重复图片检测（整页视图，而非弹窗） */
 type MainView = 'library' | 'timeline' | 'duplicates';
@@ -147,52 +142,11 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const [isDetailsPaneOpen, setIsDetailsPaneOpen] = useState(true); // Control details pane visibility
   // 左栏承载分类导航（含图片 / 视频筛选）与文件夹来源，默认展开
   const [isLeftPaneOpen, setIsLeftPaneOpen] = useState(true); // Control sidebar visibility
-  // 外观模式：明亮 / 暗黑 / 跟随系统，默认跟随系统
-  const [theme, setTheme] = useState<Theme>('system');
-  // 系统当前深浅色（仅 theme === 'system' 时生效）：用 matchMedia 监听，Electron 与浏览器通用
-  const [systemDark, setSystemDark] = useState<boolean>(() =>
-    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-      ? window.matchMedia('(prefers-color-scheme: dark)').matches
-      : false
-  );
-  // 解析出的实际主题：跟随系统时取系统偏好，否则取用户显式选择
-  const resolvedTheme: 'dark' | 'light' = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
-  const isLight = resolvedTheme === 'light';
-  // 主题切换过渡的卸载计时器：连续切换时只保留最后一次
-  const themeTransitionTimerRef = useRef<number | null>(null);
-  const isFirstThemeApply = useRef(true);
+  // 外观模式（明亮 / 暗黑 / 跟随系统）与系统深浅色监听：见 hooks/useThemeMode
+  const { theme, setTheme, isLight } = useThemeMode();
 
-  // 监听系统深浅色偏好变化，跟随系统时实时切换
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
-    setSystemDark(mq.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-
-  // 主题真正变化的那一刻才挂上全局颜色过渡，播完立刻摘掉：
-  // 常驻 transition 会拖慢所有 hover / 按下的响应；首次渲染不播，避免开局幻跳
-  useEffect(() => {
-    if (isFirstThemeApply.current) {
-      isFirstThemeApply.current = false;
-      return;
-    }
-    if (themeTransitionTimerRef.current !== null) {
-      window.clearTimeout(themeTransitionTimerRef.current);
-    }
-    document.documentElement.classList.add('theme-transition');
-    themeTransitionTimerRef.current = window.setTimeout(() => {
-      document.documentElement.classList.remove('theme-transition');
-      themeTransitionTimerRef.current = null;
-    }, 240);
-  }, [resolvedTheme]);
-  
-  // New state for UI Feedback & File System
-  // Toast 队列：支持多条同时展示，错误级常驻
-  const [toasts, setToasts] = useState<ToastData[]>([]);
-  const toastIdRef = useRef(0);
+  // Toast 队列：支持多条同时展示，错误级常驻（见 hooks/useToasts）
+  const { toasts, showToast, dismissToast } = useToasts();
 
   // 搜索（文件名 / 相机 / 格式）
   const [searchQuery, setSearchQuery] = useState('');
@@ -249,29 +203,66 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     exitTimersRef.current = [];
   }, []);
 
+  /** 卡片塌陷动画结束后执行回调（复用 exitTimersRef，卸载时统一清理） */
+  const scheduleAfterExit = useCallback((callback: () => void) => {
+    const timer = window.setTimeout(() => {
+      exitTimersRef.current = exitTimersRef.current.filter(t => t !== timer);
+      callback();
+    }, EXIT_DURATION);
+    exitTimersRef.current.push(timer);
+  }, []);
+
+  /** 从当前选中集中移除指定 id（保留其它选中项） */
+  const removeIdsFromSelection = useCallback((ids: Set<string>) => {
+    setSelectedIds(prev => {
+      if (prev.size === 0) return prev;
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      return next;
+    });
+  }, []);
+
   // 导入取消：目录扫描（主进程 scanId）与分批入库（AbortController）都可中断
   const activeScanIdRef = useRef<string | null>(null);
   const importAbortRef = useRef<AbortController | null>(null);
   const cancelRequestedRef = useRef(false);
   
-  // Duplicate detection state
   /** 主内容区当前视图：重复检测是独立整页，而非弹窗 */
   const [mainView, setMainView] = useState<MainView>('library');
   /** 重复检测页是否在前台：键盘快捷键与参数重跑逻辑据此让行 */
   const isDuplicateDetectorOpen = mainView === 'duplicates';
   /** 时光画廊是否在前台：工具栏 / 详情面板据此让行 */
   const isTimelineOpen = mainView === 'timeline';
-  const [duplicateGroups, setDuplicateGroups] = useState<Photo[][]>([]);
-  const [isProcessingDuplicates, setIsProcessingDuplicates] = useState(false);
-  const [duplicateProgress, setDuplicateProgress] = useState<DuplicateScanProgress | null>(null);
-  // 可调检测参数：相似度阈值（百分比 80–100）与比对范围
-  const [duplicateSimilarity, setDuplicateSimilarity] = useState(DUPLICATE_SIMILARITY_DEFAULT);
-  const [duplicateScope, setDuplicateScope] = useState<DuplicateScope>('all');
-  /** 最近一次实际生效的检测参数：用于判断参数变化后是否需要自动重跑 */
-  const lastDuplicateOptionsRef = useRef<{ similarity: number; scope: DuplicateScope } | null>(null);
-  const duplicateRecheckTimerRef = useRef<number | null>(null);
-  /** 进行中的重复检测：取消时 abort，检测管线会在下一个分片边界停下并释放 */
-  const duplicateAbortRef = useRef<AbortController | null>(null);
+
+  // 主视图切换回调需保持稳定：Hook 内 effect 依赖它，避免每次渲染重建导致防抖被反复重置
+  const enterDuplicatesView = useCallback(() => setMainView('duplicates'), []);
+  const exitDuplicatesView = useCallback(() => setMainView('library'), []);
+
+  // 重复检测领域状态与流程（见 hooks/useDuplicateDetection）
+  const {
+    duplicateGroups,
+    isProcessingDuplicates,
+    duplicateProgress,
+    duplicateSimilarity,
+    setDuplicateSimilarity,
+    duplicateScope,
+    setDuplicateScope,
+    handleCheckDuplicates,
+    handleCancelDuplicates,
+    handleExitDuplicates,
+    handleDeleteDuplicates,
+    pruneDuplicateGroups,
+  } = useDuplicateDetection({
+    photos,
+    showToast,
+    isConfigLoaded,
+    isDuplicateDetectorOpen,
+    onEnterDuplicates: enterDuplicatesView,
+    onExitDuplicates: exitDuplicatesView,
+    removeWithCollapse,
+    removeIdsFromSelection,
+    scheduleAfterExit,
+  });
   
   // 已导入的路径集合：重复打开同一目录时直接跳过，避免重复条目
   const importedPathsRef = useRef<Set<string>>(new Set());
@@ -470,43 +461,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     isDetailsPaneOpen,
   ]);
 
-  // 重复检测参数变更 → 延迟写盘（拖动阈值滑块时同样会连续触发）
-  const duplicatePrefsTimerRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!isConfigLoaded) return;
-
-    if (duplicatePrefsTimerRef.current !== null) window.clearTimeout(duplicatePrefsTimerRef.current);
-    duplicatePrefsTimerRef.current = window.setTimeout(() => {
-      duplicatePrefsTimerRef.current = null;
-      void savePersistedConfig({ duplicate: { similarity: duplicateSimilarity, scope: duplicateScope } });
-    }, 600);
-
-    return () => {
-      if (duplicatePrefsTimerRef.current !== null) {
-        window.clearTimeout(duplicatePrefsTimerRef.current);
-        duplicatePrefsTimerRef.current = null;
-      }
-    };
-  }, [isConfigLoaded, duplicateSimilarity, duplicateScope]);
+  // 重复检测参数持久化已随 hooks/useDuplicateDetection 一并迁出
 
   // Selected photo for details pane
   const selectedPhotos = useMemo(() => {
     return photos.filter(p => selectedIds.has(p.id));
   }, [photos, selectedIds]);
-
-  const showToast = useCallback((
-    message: string,
-    type: ToastType = 'info',
-    /** 可选操作按钮（如「重试」）：带按钮的 Toast 不会自动消失 */
-    action?: { label: string; onClick: () => void }
-  ) => {
-    const id = ++toastIdRef.current;
-    setToasts(prev => [...prev.slice(-3), { id, message, type, action }]); // 最多同时 4 条
-  }, []);
-
-  const dismissToast = useCallback((id: number) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  }, []);
 
   // ---------------- 收藏 / 隐藏 / 标签 / 拍摄时间修正 / 智能相簿 ----------------
 
@@ -1452,40 +1412,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     }
   };
 
-  /** 批量移入回收站：返回成功删除的 id、失败照片与错误说明（失败项可用于重试） */
-  const movePhotosToTrash = async (targets: Photo[]) => {
-    const deletedIds = new Set<string>();
-    const failedPhotos: Photo[] = [];
-    const errors: string[] = [];
-
-    for (const photo of targets) {
-      if (!window.electronAPI) {
-        failedPhotos.push(photo);
-        errors.push(`「${photo.name}」：电子 API 不可用`);
-        continue;
-      }
-      if (!photo.path) {
-        failedPhotos.push(photo);
-        errors.push(`「${photo.name}」缺少文件路径`);
-        continue;
-      }
-      try {
-        const result = await window.electronAPI.deleteFile(photo.path);
-        if (result?.error) {
-          failedPhotos.push(photo);
-          errors.push(`「${photo.name}」：${result.error}`);
-        } else {
-          deletedIds.add(photo.id);
-        }
-      } catch (err) {
-        failedPhotos.push(photo);
-        errors.push(`「${photo.name}」：${(err as Error).message}`);
-      }
-    }
-
-    return { deletedIds, failedPhotos, errors };
-  };
-
   /** 执行删除并反馈结果；失败项可在 Toast 上点「重试」再删一次 */
   const runDelete = async (targets: Photo[]) => {
     if (targets.length === 0) return;
@@ -1501,12 +1427,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       // 卡片先淡出再摘除：磁盘上的文件已经没了，但界面上要让人看见它离开
       removeWithCollapse(deletedIds);
       setSelectedIds(new Set());
-      setDuplicateGroups(prev =>
-        prev
-          .map(group => group.filter(p => !deletedIds.has(p.id)))
-          .filter(group => group.length > 1)
-          .map(markRecommended)
-      );
+      // 重复检测分组同步收敛（实现见 hooks/useDuplicateDetection）
+      pruneDuplicateGroups(deletedIds);
     }
 
     if (failedPhotos.length === 0) {
@@ -1715,160 +1637,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     })();
   };
 
-  // Handle duplicate detection：支持传入阈值 / 范围覆盖（参数变化时自动重跑）
-  const handleCheckDuplicates = useCallback(async (override?: { similarity?: number; scope?: DuplicateScope }) => {
-    // 重复检测只针对图片：视频逐帧比对既慢又无意义
-    const imagePhotos = photos.filter(p => !isVideoPhoto(p));
-    if (imagePhotos.length === 0) {
-      showToast(photos.length > 0 ? '相似检测仅支持图片' : '没有照片可检查相似项', 'info');
-      return;
-    }
-
-    const runSimilarity = override?.similarity ?? duplicateSimilarity;
-    const runScope = override?.scope ?? duplicateScope;
-
-    // 上一轮还在跑就先取消：两轮重叠会同时占用 CPU 与内存，是列表卡顿的主要来源
-    duplicateAbortRef.current?.abort();
-    const controller = new AbortController();
-    duplicateAbortRef.current = controller;
-
-    // 检测是整页流程：先把主内容区切到重复检测页，再开始扫描
-    setMainView('duplicates');
-    setIsProcessingDuplicates(true);
-    setDuplicateGroups([]);
-    setDuplicateProgress({
-      processed: 0,
-      total: imagePhotos.length,
-      candidates: 0,
-      cached: 0,
-      skipped: 0,
-      elapsedMs: 0,
-      phase: 'hashing',
-    });
-
-    try {
-      // 复用同一套检测管线；哈希有跨调用缓存，调参后重跑主要是重新分组
-      const detectedDuplicates = await findDuplicatePhotos(
-        imagePhotos,
-        // 界面用相似度百分比，检测管线仍以汉明距离（bit）为准
-        { threshold: similarityToDistance(runSimilarity), sameFolderOnly: runScope === 'sameFolder', signal: controller.signal },
-        setDuplicateProgress
-      );
-      setDuplicateGroups(detectedDuplicates);
-      lastDuplicateOptionsRef.current = { similarity: runSimilarity, scope: runScope };
-
-      if (detectedDuplicates.length > 0) {
-        showToast(`找到 ${detectedDuplicates.length} 组相似照片`, 'info');
-      } else {
-        showToast('未找到相似照片', 'success');
-      }
-    } catch (error) {
-      // 取消是用户主动行为而非故障：静默收尾，不弹错误
-      if (isDuplicateScanAbort(error)) {
-        setDuplicateGroups([]);
-        return;
-      }
-      logger.error('Error detecting duplicates:', error);
-      showToast('检测相似照片失败', 'error');
-    } finally {
-      if (duplicateAbortRef.current === controller) duplicateAbortRef.current = null;
-      setIsProcessingDuplicates(false);
-      setDuplicateProgress(prev =>
-        prev ? { ...prev, processed: prev.total, etaMs: undefined, phase: 'done' } : prev
-      );
-      // 检测结束（或取消）后回收易失缓存，把峰值内存还回去
-      releaseMemory('soft', 'duplicate-scan-done');
-    }
-  }, [photos, duplicateSimilarity, duplicateScope, showToast]);
-
-  /** 取消进行中的重复检测 */
-  const handleCancelDuplicates = useCallback(() => {
-    if (!duplicateAbortRef.current) return;
-    duplicateAbortRef.current.abort();
-    duplicateAbortRef.current = null;
-    showToast('已取消重复检测', 'info');
-  }, [showToast]);
-
-  /** 离开重复检测页：先取消，避免任务在后台继续跑导致图库卡顿 */
-  const handleExitDuplicates = useCallback(() => {
-    handleCancelDuplicates();
-    setMainView('library');
-  }, [handleCancelDuplicates]);
-
-  // 卸载时中断仍在跑的检测，防止任务残留在后台
-  useEffect(() => () => duplicateAbortRef.current?.abort(), []);
-
-  // 阈值 / 范围调整后自动重新分组（防抖 300ms，避免拖动滑块时反复触发）
-  useEffect(() => {
-    if (!isDuplicateDetectorOpen || isProcessingDuplicates) return;
-    const last = lastDuplicateOptionsRef.current;
-    if (!last) return; // 尚未检测过：等用户主动触发
-    if (last.similarity === duplicateSimilarity && last.scope === duplicateScope) return;
-
-    if (duplicateRecheckTimerRef.current !== null) {
-      window.clearTimeout(duplicateRecheckTimerRef.current);
-    }
-    duplicateRecheckTimerRef.current = window.setTimeout(() => {
-      duplicateRecheckTimerRef.current = null;
-      handleCheckDuplicates({ similarity: duplicateSimilarity, scope: duplicateScope });
-    }, 300);
-
-    return () => {
-      if (duplicateRecheckTimerRef.current !== null) {
-        window.clearTimeout(duplicateRecheckTimerRef.current);
-        duplicateRecheckTimerRef.current = null;
-      }
-    };
-  }, [duplicateSimilarity, duplicateScope, isDuplicateDetectorOpen, isProcessingDuplicates, handleCheckDuplicates]);
-
-  // 删除用户在重复检测面板中手动勾选的照片；
-  // 删除后同步收敛检测结果，并重算每组的「推荐保留」项，弹窗保持打开以便继续处理
-  const handleDeleteDuplicates = async (photosToDelete: Photo[]) => {
-    if (photosToDelete.length === 0) return;
-
-    if (!window.electronAPI) {
-      showToast('电子API不可用，无法执行删除操作', 'error');
-      return;
-    }
-
-    const { deletedIds, failedPhotos, errors } = await movePhotosToTrash(photosToDelete);
-
-    if (deletedIds.size > 0) {
-      removeWithCollapse(deletedIds);
-      setSelectedIds(prev => {
-        if (prev.size === 0) return prev;
-        const next = new Set(prev);
-        deletedIds.forEach(id => next.delete(id));
-        return next;
-      });
-      // 分组与图库同步延后收敛，避免「列表先空一格、分组后跳一下」的错位
-      const timer = window.setTimeout(() => {
-        exitTimersRef.current = exitTimersRef.current.filter(t => t !== timer);
-        setDuplicateGroups(prev =>
-          prev
-            .map(group => group.filter(p => !deletedIds.has(p.id)))
-            .filter(group => group.length > 1)
-            .map(group => markRecommended(group))
-        );
-      }, EXIT_DURATION);
-      exitTimersRef.current.push(timer);
-    }
-
-    if (failedPhotos.length === 0) {
-      showToast(`已将 ${deletedIds.size} 张相似照片移至回收站`, 'success');
-      return;
-    }
-
-    errors.forEach(error => logger.error('删除重复照片失败：', error));
-    const detail = errors[0] + (errors.length > 1 ? ` 等 ${errors.length} 项` : '');
-    const retryAction = { label: '重试', onClick: () => { void handleDeleteDuplicates(failedPhotos); } };
-
-    if (deletedIds.size > 0) {
-      showToast(`已删除 ${deletedIds.size} 张，${failedPhotos.length} 张失败：${detail}`, 'warning', retryAction);
-    } else {
-      showToast(`删除失败：${detail}`, 'error', retryAction);
-    }
-  };
+  // 重复检测的完整流程（检测 / 取消 / 退出 / 结果内删除）已迁至 hooks/useDuplicateDetection
 
   // Context Menu Actions（菜单项构造逻辑见 contextMenuActions.ts）
   const contextMenuActions = useMemo((): ContextMenuItem[] => buildContextMenuActions({

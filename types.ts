@@ -131,7 +131,8 @@ export interface VideoMetaRecord {
  * 与照片数据无关，全部是原始类型，直接写进 config.json。
  */
 export interface ViewPreferences {
-  theme?: 'light' | 'dark';
+  /** 外观模式；'system' 表示跟随系统（加载端显式接受该值） */
+  theme?: 'light' | 'dark' | 'system';
   viewMode?: ViewMode;
   sortKey?: SortKey;
   sortDirection?: SortDirection;
