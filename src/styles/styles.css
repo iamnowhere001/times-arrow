@@ -151,6 +151,10 @@
   --shadow-glow-cyan: 0 0 24px rgba(227, 184, 113, 0.18);
   --shadow-inner: inset 0 1px 0 rgba(255, 246, 232, 0.05);
 
+  /* 顶部工具带：只留一条贴近的柔和落差 + 一道极细的顶缘高光。
+     原先的 shadow-lg 在暖色玻璃上是一团横向灰雾，顶带看起来是「脏」而不是「浮起」。 */
+  --shadow-toolbar: 0 1px 0 rgba(255, 246, 232, 0.03), 0 8px 20px -16px rgba(0, 0, 0, 0.7);
+
   --radius-xs: 4px;
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -245,6 +249,8 @@
   --shadow-glow-purple: 0 0 20px rgba(140, 90, 43, 0.16);
   --shadow-glow-cyan: 0 0 20px rgba(138, 106, 42, 0.16);
   --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  /* 浅色下纸张本身不发亮，顶缘高光要收着用，只留一条贴合的分界 */
+  --shadow-toolbar: 0 1px 0 rgba(255, 255, 255, 0.7), 0 8px 20px -18px rgba(26, 22, 17, 0.5);
 
   --scroll-thumb: rgba(26, 22, 17, 0.18);
   --scroll-thumb-hover: rgba(26, 22, 17, 0.32);

@@ -23,7 +23,16 @@ function formatDayCapsule(timestamp?: number): string | null {
 export interface VirtualGridHandle {
   /** 滚动到指定照片（键盘导航跟随视口） */
   scrollToItem: (id: string) => void;
+  /** 上下键导航：返回相邻行中水平位置最接近的项 id；已在首 / 末行时返回 null */
+  getVerticalNeighbor: (id: string, direction: 'up' | 'down') => string | null;
 }
+
+/**
+ * 记住上次离开时的滚动位置：图库 ↔ 时光画廊 / 重复检测来回切换不丢进度。
+ * 沿用时光画廊已验证的模块级变量模式（两个视图形态各记一份，互不干扰）。
+ */
+let savedGridScrollTop = 0;
+let savedListScrollTop = 0;
 
 /* ---------------------------------------------------------------------------
  * 网格卡片尺寸常量
@@ -154,7 +163,7 @@ function findRowAt(rows: GridRow[], y: number): number {
  * 额外支持：
  *  - onBlankClick：点击卡片间隙的空白 → 取消选择（Photos 式行为）
  *  - stickyDay：滚动时在顶部贴住当前首行照片对应的日期标签（可点击 → 只看这一天）
- *  - onColumnsChange：每行张数上报（App 用于方向键导航步长）
+ *  - onColumnsChange：每行张数上报（仅供外部参考）
  */
 const VirtualGrid = forwardRef<VirtualGridHandle, {
   items: Photo[];
@@ -197,6 +206,8 @@ const VirtualGrid = forwardRef<VirtualGridHandle, {
   const rafRef = useRef(0);
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const top = e.currentTarget.scrollTop;
+    // 顺手记录最后位置：卸载时可能已读不到 DOM，这里持续写最稳
+    savedGridScrollTop = top;
     if (rafRef.current) return;
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = 0;
@@ -214,13 +225,70 @@ const VirtualGrid = forwardRef<VirtualGridHandle, {
   );
   const { rows, rowOfItem, totalHeight } = layout;
 
+  // 恢复上次离开图库时的滚动位置。
+  // 必须等布局算出内容高度（totalHeight > 0）再落一次：首帧容器宽度还没量到，
+  // 内容高度为 0，此时写 scrollTop 会被浏览器夹回 0。
+  const scrollRestoredRef = useRef(false);
+  useEffect(() => {
+    if (scrollRestoredRef.current || totalHeight <= 0) return;
+    scrollRestoredRef.current = true;
+    const el = scrollRef.current;
+    if (el && savedGridScrollTop > 0) el.scrollTop = savedGridScrollTop;
+  }, [totalHeight]);
+
+  /* -------------------------------------------------------------------------
+   * K18 · 元数据回填时保持滚动锚点
+   * 入库时还不知道 dimensions，首屏按 4:3 兜底铺排；随后每批回填真实尺寸，
+   * 行高与行数都会变。若放任不管，正在看的照片会被上方高度的变化顶走。
+   * 做法：持续记录「视口顶部那一行」及其相对偏移，等同一批照片（id 顺序不变）
+   * 因尺寸变化重排后，把这一行重新对回原来的位置。
+   * 只在「同一批照片的几何变化」时出手，排序 / 筛选导致的换序不去干预。
+   * ----------------------------------------------------------------------- */
+  const prevItemsRef = useRef<Photo[] | null>(null);
+  const geometryChanged = useMemo(() => {
+    const prev = prevItemsRef.current;
+    const same = !!prev && prev.length === items.length && prev.every((p, i) => p.id === items[i].id);
+    prevItemsRef.current = items;
+    return same;
+  }, [items]);
+  const pendingAnchorFixRef = useRef(false);
+  if (geometryChanged) pendingAnchorFixRef.current = true;
+
+  const anchorRef = useRef<{ id: string; offset: number } | null>(null);
+
+  // 回正要在「记录新锚点」之前跑（effect 按声明顺序执行），
+  // 否则会先被新布局覆盖掉旧锚点，失去参照。
+  useLayoutEffect(() => {
+    if (!pendingAnchorFixRef.current) return;
+    pendingAnchorFixRef.current = false;
+    const el = scrollRef.current;
+    const anchor = anchorRef.current;
+    if (!el || !anchor) return;
+    const index = items.findIndex(p => p.id === anchor.id);
+    if (index < 0) return;
+    const row = rows[rowOfItem[index]];
+    if (!row) return;
+    const desired = Math.max(0, row.top - anchor.offset);
+    if (Math.abs(el.scrollTop - desired) > 1) el.scrollTop = desired;
+  }, [rows, rowOfItem, items]);
+
+  // 读 DOM 真实 scrollTop：程序化滚动不会立刻反映到 state 上
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || rows.length === 0) return;
+    const top = el.scrollTop;
+    const row = rows[findRowAt(rows, top)];
+    const first = row?.cells[0];
+    if (first) anchorRef.current = { id: first.photo.id, offset: row.top - top };
+  }, [scrollTop, rows]);
+
   const startRow = rows.length > 0 ? Math.max(0, findRowAt(rows, scrollTop) - overscan) : 0;
   const endRow =
     rows.length > 0
       ? Math.min(rows.length, findRowAt(rows, scrollTop + (viewport.height || 600)) + overscan + 1)
       : 0;
 
-  // 每行张数上报：App 的方向键导航需要「↓ = 下一行」的步长
+  // 每行张数上报（仅参考用；方向键导航已按真实行几何计算）
   const itemsPerRow = rows[0]?.cells.length ?? 1;
   useEffect(() => {
     onColumnsChange?.(itemsPerRow);
@@ -241,6 +309,31 @@ const VirtualGrid = forwardRef<VirtualGridHandle, {
       if (targetTop < el.scrollTop || targetTop + cardHeight > el.scrollTop + el.clientHeight) {
         el.scrollTo({ top: targetTop, behavior: 'auto' });
       }
+    },
+    /**
+     * 上下键的落点：justified 布局每行张数随照片宽高比变化，固定列数步进会跳错列。
+     * 因此按真实行几何找「下一行里水平中心最接近当前项」的那张。
+     */
+    getVerticalNeighbor: (id: string, direction: 'up' | 'down') => {
+      const index = items.findIndex(p => p.id === id);
+      if (index < 0) return null;
+      const rowIndex = rowOfItem[index];
+      const currentRow = rows[rowIndex];
+      const targetRow = rows[direction === 'up' ? rowIndex - 1 : rowIndex + 1];
+      if (!currentRow || !targetRow || targetRow.cells.length === 0) return null;
+
+      const currentCell = currentRow.cells.find(c => c.photo.id === id);
+      const centerX = currentCell ? currentCell.left + currentCell.width / 2 : 0;
+      let bestId: string | null = null;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (const cell of targetRow.cells) {
+        const distance = Math.abs(cell.left + cell.width / 2 - centerX);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestId = cell.photo.id;
+        }
+      }
+      return bestId;
     },
   }), [items, rows, rowOfItem]);
 
@@ -511,11 +604,21 @@ const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(({
     return () => observer.disconnect();
   }, []);
 
+  // 恢复上次离开图库时的列表滚动位置（占位行已给出内容高度，可直接落）
+  const scrollRestoredRef = useRef(false);
+  useEffect(() => {
+    if (scrollRestoredRef.current || items.length === 0) return;
+    scrollRestoredRef.current = true;
+    const el = scrollRef.current;
+    if (el && savedListScrollTop > 0) el.scrollTop = savedListScrollTop;
+  }, [items.length]);
+
   // rAF 节流：滚动事件频率远高于刷新率，直接 setState 会产生无效重渲染
   const rafRef = useRef(0);
   const pendingTopRef = useRef(0);
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     pendingTopRef.current = e.currentTarget.scrollTop;
+    savedListScrollTop = pendingTopRef.current;
     if (rafRef.current) return;
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = 0;
@@ -527,7 +630,17 @@ const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(({
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
   }, []);
 
-  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - LIST_OVERSCAN_TOP);
+  /**
+   * 窗口起点必须夹取到有效范围（K24）。
+   * 深度滚动后筛选 / 搜索把列表缩短时，scrollTop 还停在旧的大值上，
+   * 若不夹取：`items.slice(大起点, 小终点)` 为空 → 整屏空白，
+   * 而占位行仍按旧起点撑高，浏览器也就不会把 scrollTop 夹回去。
+   * 夹到最后一行的起点，至少渲染末尾一行，内容高度随之收缩，滚动条会自然回落。
+   */
+  const startIndex = Math.min(
+    Math.max(0, items.length - 1),
+    Math.max(0, Math.floor(scrollTop / rowHeight) - LIST_OVERSCAN_TOP)
+  );
   const endIndex = Math.min(
     items.length,
     startIndex + Math.ceil((viewportHeight || 600) / rowHeight) + LIST_OVERSCAN_TOP + LIST_OVERSCAN_BOTTOM
@@ -610,6 +723,8 @@ VirtualList.displayName = 'VirtualList';
 /** ImageGrid 对外暴露的命令式句柄：滚动定位到某张照片（网格 / 列表通用） */
 export interface ImageGridHandle {
   scrollToPhoto: (id: string) => void;
+  /** 网格视图上下键导航：返回目标行中最接近的项 id；列表视图返回 null（由调用方顺序步进） */
+  getVerticalNeighbor: (id: string, direction: 'up' | 'down') => string | null;
 }
 
 interface ImageGridProps {
@@ -635,7 +750,7 @@ interface ImageGridProps {
   onMoveSelected?: () => void;
   /** 导出选中项（批量转换格式） */
   onExportSelected?: () => void;
-  /** 列数变化上报：App 用于方向键导航步长 */
+  /** 每行张数变化上报（仅供外部参考；方向键导航已改为按真实行几何计算，不再依赖它） */
   onColumnsChange?: (columns: number) => void;
   /** 点击顶部日期胶囊 → 只看这一天（由 App 落到日期筛选条件上） */
   onFilterByDate?: (timestamp: number) => void;
@@ -1033,6 +1148,9 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
         virtualGridRef.current?.scrollToItem(id);
       }
     },
+    getVerticalNeighbor: (id, direction) => (
+      viewMode === 'list' ? null : (virtualGridRef.current?.getVerticalNeighbor(id, direction) ?? null)
+    ),
   }), [viewMode, photos]);
 
   // 「全选」语义：只针对当前视图中出现的照片计算
@@ -1089,12 +1207,22 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
     handlersRef.current.onClearSelection();
   }, []);
 
+  // 列表被清空（清空列表 / 重新打开目录）时丢弃记忆的滚动位置，
+  // 否则下次挂载会把新内容直接滚到旧偏移处
+  useEffect(() => {
+    if (photos.length === 0) {
+      savedGridScrollTop = 0;
+      savedListScrollTop = 0;
+    }
+  }, [photos.length]);
+
   /**
    * 首屏导入后的交错入场。只做一次：播完就把标记撤掉，
    * 否则卡片滚出视口再滚回来时（虚拟化重挂载）会反复重播淡入。
    */
   const [introDelays, setIntroDelays] = useState<Map<string, number>>(NO_INTRO_DELAYS);
   const introDoneRef = useRef(false);
+  const introTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (introDoneRef.current || photos.length === 0) return;
     introDoneRef.current = true;
@@ -1103,9 +1231,18 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
     photos.slice(0, INTRO_COUNT).forEach((p, i) => delays.set(p.id, i * INTRO_STAGGER_MS));
     setIntroDelays(delays);
 
-    const timer = window.setTimeout(() => setIntroDelays(NO_INTRO_DELAYS), INTRO_CLEAR_MS);
-    return () => window.clearTimeout(timer);
+    // 定时器只在这里创建、只在卸载时清理。
+    // 之前把 clearTimeout 放在本 effect 的清理函数里：photos 一变（元数据回填 / 收藏切换等）
+    // 定时器就被清掉，而 introDoneRef 已置位又不会再建新的 —— 入场标记永远撤不掉，
+    // 卡片滚出视口再滚回来（虚拟化重挂载）就会反复重播淡入动画。
+    introTimerRef.current = window.setTimeout(() => {
+      introTimerRef.current = null;
+      setIntroDelays(NO_INTRO_DELAYS);
+    }, INTRO_CLEAR_MS);
   }, [photos]);
+  useEffect(() => () => {
+    if (introTimerRef.current !== null) window.clearTimeout(introTimerRef.current);
+  }, []);
 
   const renderCard = useCallback((photo: Photo, _style: React.CSSProperties, itemWidth: number) => (
     <ImageCard
@@ -1239,7 +1376,7 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
           type="button"
           onClick={onShowDeleteConfirm}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-pink),var(--accent-pink-deep))] hover:brightness-110 rounded-lg shadow-lg shadow-[rgba(var(--accent-pink-rgb),0.25)] transition-all duration-200 active:scale-[0.98]"
-          title="移至回收站（Delete）"
+          title="移至回收站（⌘⌫）"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path></svg>
           <span className="hidden sm:inline">删除</span>
@@ -1472,9 +1609,10 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
             <div className="flex-1" />
 
             {/* 网格大小：从顶栏移到情境条，与排序同属「浏览视图」控制；
-                列表视图不渲染此条，因此天然只在网格模式出现 */}
+                列表视图不渲染此条，因此天然只在网格模式出现。
+                断点只留 sm：此前 hidden lg 让窄窗口（< 1024px）完全没有网格大小入口 */}
             <div
-              className="hidden lg:flex items-center gap-2 h-8 pl-2.5 pr-2 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)]"
+              className="hidden sm:flex items-center gap-2 h-8 pl-2.5 pr-2 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)]"
               title="调整网格大小"
             >
               <ResizeIcon className="w-3.5 h-3.5 text-[var(--text-tertiary)] shrink-0" />

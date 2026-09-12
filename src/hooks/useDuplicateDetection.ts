@@ -49,13 +49,21 @@ export interface UseDuplicateDetectionParams {
 export interface DuplicateDetectionResult {
   duplicateGroups: Photo[][];
   isProcessingDuplicates: boolean;
+  /** 仅按新参数重新分组中（指纹已缓存）：保留结果列表，只显示细进度 */
+  isRepartitioningDuplicates: boolean;
   duplicateProgress: DuplicateScanProgress | null;
   duplicateSimilarity: number;
   setDuplicateSimilarity: Dispatch<SetStateAction<number>>;
   duplicateScope: DuplicateScope;
   setDuplicateScope: Dispatch<SetStateAction<DuplicateScope>>;
-  /** 启动检测；支持传入阈值 / 范围覆盖（参数变化时自动重跑） */
-  handleCheckDuplicates: (override?: { similarity?: number; scope?: DuplicateScope }) => Promise<void>;
+  /**
+   * 启动检测；支持传入阈值 / 范围覆盖（参数变化时自动重跑）。
+   * mode='repartition' 表示已有结果、指纹可复用，保留结果列表做轻量重分组。
+   */
+  handleCheckDuplicates: (
+    override?: { similarity?: number; scope?: DuplicateScope },
+    mode?: 'full' | 'repartition'
+  ) => Promise<void>;
   handleCancelDuplicates: () => void;
   handleExitDuplicates: () => void;
   handleDeleteDuplicates: (photosToDelete: Photo[]) => Promise<void>;
@@ -78,7 +86,16 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
 
   const [duplicateGroups, setDuplicateGroups] = useState<Photo[][]>([]);
   const [isProcessingDuplicates, setIsProcessingDuplicates] = useState(false);
+  /**
+   * K22：仅「按新参数重新分组」的轻量重算（指纹已缓存）。
+   * 与首次全量扫描分开：此时不摘掉已有结果，只叠一条细进度，
+   * 用户才能连续拖动阈值微调，而不是每动一下就整页闪回进度视图。
+   */
+  const [isRepartitioningDuplicates, setIsRepartitioningDuplicates] = useState(false);
   const [duplicateProgress, setDuplicateProgress] = useState<DuplicateScanProgress | null>(null);
+  /** 供回调读取最新的分组结果（判断是否值得走「保留结果的重新分组」），避免把分组塞进依赖 */
+  const duplicateGroupsRef = useRef<Photo[][]>([]);
+  duplicateGroupsRef.current = duplicateGroups;
   // 可调检测参数：相似度阈值（百分比 80–100）与比对范围
   const [duplicateSimilarity, setDuplicateSimilarity] = useState(DUPLICATE_SIMILARITY_DEFAULT);
   const [duplicateScope, setDuplicateScope] = useState<DuplicateScope>('all');
@@ -108,7 +125,10 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
   }, [isConfigLoaded, duplicateSimilarity, duplicateScope]);
 
   // 检测：支持传入阈值 / 范围覆盖（参数变化时自动重跑）
-  const handleCheckDuplicates = useCallback(async (override?: { similarity?: number; scope?: DuplicateScope }) => {
+  const handleCheckDuplicates = useCallback(async (
+    override?: { similarity?: number; scope?: DuplicateScope },
+    mode: 'full' | 'repartition' = 'full'
+  ) => {
     // 重复检测只针对图片：视频逐帧比对既慢又无意义。
     // 已隐藏项同样排除：隐藏是跨视图的语义，不该因为进到检测页就重新可见（还能被删掉）
     const imagePhotos = photos.filter(p => !isVideoPhoto(p) && !p.isHidden);
@@ -127,8 +147,13 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
 
     // 检测是整页流程：先把主内容区切到重复检测页，再开始扫描
     onEnterDuplicates();
-    setIsProcessingDuplicates(true);
-    setDuplicateGroups([]);
+
+    // 已有结果 + 明确要求重分组 → 走轻量路径：保留列表，只叠一条细进度。
+    // 没有结果可保留时（首次扫描 / 上次无结果）仍按全量处理。
+    const isRepartition = mode === 'repartition' && duplicateGroupsRef.current.length > 0;
+    setIsProcessingDuplicates(!isRepartition);
+    setIsRepartitioningDuplicates(isRepartition);
+    if (!isRepartition) setDuplicateGroups([]);
     setDuplicateProgress({
       processed: 0,
       total: imagePhotos.length,
@@ -157,7 +182,8 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
     } catch (error) {
       // 取消是用户主动行为而非故障：静默收尾，不弹错误
       if (isDuplicateScanAbort(error)) {
-        setDuplicateGroups([]);
+        // 重新分组被新一轮取代时不能清空：旧结果还要继续撑着界面
+        if (!isRepartition) setDuplicateGroups([]);
         return;
       }
       logger.error('Error detecting duplicates:', error);
@@ -169,6 +195,7 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
       lastDuplicateOptionsRef.current = { similarity: runSimilarity, scope: runScope };
       if (duplicateAbortRef.current === controller) duplicateAbortRef.current = null;
       setIsProcessingDuplicates(false);
+      setIsRepartitioningDuplicates(false);
       setDuplicateProgress(prev =>
         prev ? { ...prev, processed: prev.total, etaMs: undefined, phase: 'done' } : prev
       );
@@ -194,9 +221,11 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
   // 卸载时中断仍在跑的检测，防止任务残留在后台
   useEffect(() => () => duplicateAbortRef.current?.abort(), []);
 
-  // 阈值 / 范围调整后自动重新分组（防抖 300ms，避免拖动滑块时反复触发）
+  // 阈值 / 范围调整后自动重新分组（防抖 300ms，避免拖动滑块时反复触发）。
+  // 走 repartition 模式：指纹已有缓存，只按新参数重新分组，结果列表不闪走。
+  // 已有一次重分组在跑时不叠加，等它结束后依赖变化会再排一次。
   useEffect(() => {
-    if (!isDuplicateDetectorOpen || isProcessingDuplicates) return;
+    if (!isDuplicateDetectorOpen || isProcessingDuplicates || isRepartitioningDuplicates) return;
     const last = lastDuplicateOptionsRef.current;
     if (!last) return; // 尚未检测过：等用户主动触发
     if (last.similarity === duplicateSimilarity && last.scope === duplicateScope) return;
@@ -206,7 +235,7 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
     }
     duplicateRecheckTimerRef.current = window.setTimeout(() => {
       duplicateRecheckTimerRef.current = null;
-      handleCheckDuplicates({ similarity: duplicateSimilarity, scope: duplicateScope });
+      handleCheckDuplicates({ similarity: duplicateSimilarity, scope: duplicateScope }, 'repartition');
     }, 300);
 
     return () => {
@@ -215,7 +244,7 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
         duplicateRecheckTimerRef.current = null;
       }
     };
-  }, [duplicateSimilarity, duplicateScope, isDuplicateDetectorOpen, isProcessingDuplicates, handleCheckDuplicates]);
+  }, [duplicateSimilarity, duplicateScope, isDuplicateDetectorOpen, isProcessingDuplicates, isRepartitioningDuplicates, handleCheckDuplicates]);
 
   /** 按删除结果收敛检测分组：去掉已删条目、丢弃不足 2 张的组、重算推荐保留项 */
   const pruneDuplicateGroups = useCallback((ids: Set<string>) => {
@@ -272,6 +301,7 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
   return {
     duplicateGroups,
     isProcessingDuplicates,
+    isRepartitioningDuplicates,
     duplicateProgress,
     duplicateSimilarity,
     setDuplicateSimilarity,

@@ -1037,10 +1037,15 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
 
       const boundaryTop = el.getBoundingClientRect().top + 150;
       let current: string | null = null;
-      // Map 保持插入序（年份倒序、月份升序），取最后一个越过边界的区块即为当前区块
-      monthAnchorsRef.current.forEach((node, key) => {
+      // 按渲染顺序（orderedMonthKeys）逐月判定，取最后一个越过边界的区块即为当前区块。
+      // 不能依赖 Map 的插入序：新增照片会挂载新月份区块并追加到 Map 末尾，
+      // 但它的 DOM 位置在上方，「取最后一个」就会把当前月份判成那个新块。
+      for (const key of orderedMonthKeys) {
+        const node = monthAnchorsRef.current.get(key);
+        if (!node) continue;
         if (node.getBoundingClientRect().top <= boundaryTop) current = key;
-      });
+        else break;
+      }
       if (!current && orderedMonthKeys.length > 0) current = orderedMonthKeys[0];
       setActiveMonthKey((prev) => (prev === current ? prev : current));
 

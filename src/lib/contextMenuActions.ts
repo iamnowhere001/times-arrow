@@ -166,7 +166,7 @@ export function buildContextMenuActions(deps: ContextMenuActionsDeps): ContextMe
     },
     {
       label: selectedIds.size > 1 ? `删除 ${selectedIds.size} 项` : '删除',
-      shortcut: '⌫',
+      shortcut: '⌘⌫',
       danger: true,
       onClick: () => onOpenDelete(),
     },

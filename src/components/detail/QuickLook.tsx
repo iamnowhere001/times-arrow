@@ -1,8 +1,13 @@
-
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Photo } from '@/types';
-import { isVideoPhoto } from '@/utils';
-import { reportVideoMetaFromElement, videoMetaKeyOf } from '@/lib/media/videoMeta';
+import { formatVideoDuration, isVideoPhoto, isVideoPlaybackUncertain } from '@/utils';
+import VideoPlayer, { VideoPlayerHandle } from '@/components/detail/VideoPlayer';
 
 interface QuickLookProps {
   photo: Photo;
@@ -18,11 +23,31 @@ interface QuickLookProps {
   totalCount?: number;
   /** 收藏切换 */
   onToggleFavorite?: (id: string) => void;
+  /**
+   * 相邻条目的原图地址：提前预热解码，翻页时不再看到「从黑到亮」的过程。
+   * 由调用方按当前翻页范围给出（通常只有前后各一张）。
+   */
+  preloadSources?: string[];
 }
 
 /** 幻灯片自动播放间隔 */
 const SLIDESHOW_INTERVAL = 3000;
+/** 缩放范围：1 = 适应窗口 */
+const MIN_SCALE = 0.25;
+const MAX_SCALE = 8;
+/** 滚轮 / 触控板捏合的缩放灵敏度 */
+const WHEEL_ZOOM_SENSITIVITY = 0.0016;
 
+const clampScale = (value: number): number => Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
+
+/**
+ * 全屏预览（QuickLook）。
+ *
+ * 图片与视频共用同一层外壳（顶栏 / 翻页 / 收藏 / 幻灯片），
+ * 媒体本身分别交给图片查看逻辑与 `VideoPlayer`：
+ * - 图片：缩略图占位 → 原图淡入、滚轮锚点缩放、拖动边界约束；
+ * - 视频：自定义控制条、缓冲反馈、倍速 / 画质 / 音量 / 循环 / PiP / 全屏。
+ */
 const QuickLook: React.FC<QuickLookProps> = ({
   photo,
   onClose,
@@ -33,7 +58,8 @@ const QuickLook: React.FC<QuickLookProps> = ({
   hasPrev,
   currentIndex,
   totalCount,
-  onToggleFavorite
+  onToggleFavorite,
+  preloadSources,
 }) => {
   const [scale, setScale] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -48,40 +74,33 @@ const QuickLook: React.FC<QuickLookProps> = ({
   const [showSpinner, setShowSpinner] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mediaRef = useRef<HTMLDivElement>(null);
+  const controlsTimeoutRef = useRef<number | null>(null);
+  const videoControlRef = useRef<VideoPlayerHandle | null>(null);
 
   const isVideo = isVideoPhoto(photo);
+  /** 容器可能不被内置解码器支持：给出一次性的提示（而非长期占据画面） */
+  const playbackUncertain = isVideo ? isVideoPlaybackUncertain(photo.name) : false;
+  const [showCodecHint, setShowCodecHint] = useState(playbackUncertain);
 
   const imageReady = mediaStatus?.id === photo.id && mediaStatus.state === 'ready';
   const imageFailed = mediaStatus?.id === photo.id && mediaStatus.state === 'error';
+  /** 缩略图占位：先铺一层模糊小图，原图解码完成后再无缝替换 */
+  const placeholderSrc = !isVideo ? photo.thumbnail || '' : '';
+
+  // 兼容性提示只出现一次，8 秒后自动退场，不干扰观看
+  useEffect(() => {
+    if (!playbackUncertain) return;
+    setShowCodecHint(true);
+    const timer = window.setTimeout(() => setShowCodecHint(false), 8000);
+    return () => window.clearTimeout(timer);
+  }, [photo.id, playbackUncertain]);
 
   useEffect(() => {
     setScale(1);
     setRotation(0);
     setPosition({ x: 0, y: 0 });
-    // 切换条目时停止上一个视频的播放
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.currentTime = 0;
-    }
   }, [photo.id]);
-
-  // 关闭 QuickLook 时显式停止并断开视频源：仅靠移除 DOM 节点，
-  // 部分情况下解码器与网络缓冲要等到 GC 才回收，反复预览大视频会让内存持续高位。
-  useEffect(() => {
-    return () => {
-      const el = videoRef.current;
-      if (!el) return;
-      el.pause();
-      el.removeAttribute('src');
-      try {
-        el.load();
-      } catch {
-        /* 忽略：释放失败不影响关闭 */
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (imageReady || imageFailed) {
@@ -92,28 +111,129 @@ const QuickLook: React.FC<QuickLookProps> = ({
     return () => window.clearTimeout(timer);
   }, [imageReady, imageFailed, photo.id]);
 
-  const handleZoom = (delta: number) => {
-    setScale(prev => {
-      const newScale = Math.max(0.1, Math.min(5, prev + delta));
-      if (newScale <= 1) setPosition({ x: 0, y: 0 });
-      return newScale;
-    });
-  };
+  /* ------------------------------ 缩放 / 平移 ------------------------------ */
+
+  /**
+   * 以某个屏幕点为中心缩放：该点下方的画面内容保持不动。
+   * 这是图片查看器最关键的「手感」——只做中心缩放时，放大人脸需要反复来回拖。
+   */
+  const zoomTo = useCallback(
+    (next: number, clientX?: number, clientY?: number) => {
+      const target = clampScale(next);
+      const container = containerRef.current;
+      if (!container || target <= 1 || scale <= 0) {
+        setScale(target);
+        if (target <= 1) setPosition({ x: 0, y: 0 });
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const px = clientX ?? cx;
+      const py = clientY ?? cy;
+      // 光标下的内容在「未缩放坐标系」中的位置
+      const ux = (px - cx - position.x) / scale;
+      const uy = (py - cy - position.y) / scale;
+
+      setScale(target);
+      setPosition({
+        x: px - cx - ux * target,
+        y: py - cy - uy * target,
+      });
+    },
+    [position.x, position.y, scale]
+  );
+
+  const handleZoom = useCallback((delta: number) => zoomTo(scale + delta), [scale, zoomTo]);
 
   /** 双击在 1x 与 2x 之间切换（Photos.app 习惯） */
   const handleToggleZoom = useCallback(() => {
-    setScale(prev => {
-      if (prev > 1) {
-        setPosition({ x: 0, y: 0 });
-        return 1;
+    if (scale > 1) {
+      setScale(1);
+      setPosition({ x: 0, y: 0 });
+    } else {
+      setScale(2);
+    }
+  }, [scale]);
+
+  /** 把位移约束在「画面边缘不越过视口」的范围内，避免把照片拖出屏幕再也找不回来 */
+  const clampPosition = useCallback(
+    (pos: { x: number; y: number }, s: number, rot: number) => {
+      const container = containerRef.current;
+      const media = mediaRef.current;
+      if (!container || !media) return pos;
+
+      const cRect = container.getBoundingClientRect();
+      const mRect = media.getBoundingClientRect();
+      const current = scale || 1;
+      let baseW = mRect.width / current;
+      let baseH = mRect.height / current;
+      // 旋转 90° / 270° 时长宽互换
+      if (Math.abs(Math.round(rot / 90)) % 2 === 1) {
+        const swap = baseW;
+        baseW = baseH;
+        baseH = swap;
       }
-      return 2;
-    });
+
+      const maxX = Math.max(0, (baseW * s - cRect.width) / 2);
+      const maxY = Math.max(0, (baseH * s - cRect.height) / 2);
+      return {
+        x: Math.min(maxX, Math.max(-maxX, pos.x)),
+        y: Math.min(maxY, Math.max(-maxY, pos.y)),
+      };
+    },
+    [scale]
+  );
+
+  // 缩放 / 旋转后重新约束位置
+  useEffect(() => {
+    if (isVideo) return;
+    setPosition(prev => clampPosition(prev, scale, rotation));
+  }, [scale, rotation, isVideo, clampPosition]);
+
+  // 滚轮 / 触控板捏合缩放：必须用非 passive 监听才能 preventDefault（否则会触发整页缩放）
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || isVideo) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * WHEEL_ZOOM_SENSITIVITY);
+      zoomTo(scale * factor, e.clientX, e.clientY);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [isVideo, scale, zoomTo]);
+
+  const handleRotate = useCallback((deg: number) => {
+    setRotation(prev => prev + deg);
   }, []);
 
-  const handleRotate = (deg: number) => {
-    setRotation(prev => prev + deg);
-  };
+  const resetView = useCallback(() => {
+    setScale(1);
+    setRotation(0);
+    setPosition({ x: 0, y: 0 });
+  }, []);
+
+  /* ------------------------------ 相邻预加载 ------------------------------ */
+  const preloadKey = (preloadSources ?? []).join('|');
+  useEffect(() => {
+    if (isVideo || !preloadKey) return;
+    const images = preloadKey.split('|').filter(Boolean).map(src => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = src;
+      return img;
+    });
+    return () => {
+      // 显式断引用与取消挂载，避免为「已翻过去」的图片保留解码结果
+      images.forEach(img => {
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+      });
+    };
+  }, [isVideo, preloadKey]);
 
   const toggleFavorite = useCallback(() => {
     onToggleFavorite?.(photo.id);
@@ -126,10 +246,15 @@ const QuickLook: React.FC<QuickLookProps> = ({
     }
   }, [photo.path]);
 
-  // 幻灯片播放：每 3.2s 自动前进，末尾回到第一张（视频不参与自动轮播）
+  const resetViewAll = useCallback(() => {
+    resetView();
+    videoControlRef.current?.resetView();
+  }, [resetView]);
+
+  /* ------------------------------ 幻灯片 ------------------------------ */
   useEffect(() => {
     if (!isSlideshow || isVideo) return;
-    const timer = setInterval(() => {
+    const timer = window.setInterval(() => {
       if (hasNext) {
         onNext();
       } else if (onFirst) {
@@ -138,7 +263,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
         setIsSlideshow(false);
       }
     }, SLIDESHOW_INTERVAL);
-    return () => clearInterval(timer);
+    return () => window.clearInterval(timer);
   }, [isSlideshow, isVideo, hasNext, onNext, onFirst]);
 
   // 切到视频时自动退出幻灯片模式
@@ -146,106 +271,131 @@ const QuickLook: React.FC<QuickLookProps> = ({
     if (isVideo && isSlideshow) setIsSlideshow(false);
   }, [isVideo, isSlideshow]);
 
-  /** 空格：图片切换幻灯片，视频切换播放 / 暂停 */
-  const toggleVideoPlayback = useCallback(() => {
-    const el = videoRef.current;
-    if (!el) return;
-    if (el.paused) {
-      void el.play().catch(() => {});
-    } else {
-      el.pause();
-    }
-  }, []);
+  /* ------------------------------ 键盘 ------------------------------ */
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      // 带修饰键的组合留给系统 / 应用级快捷键：否则 ⌘F 会被当成「收藏」、
+      // ⌘R 旋转图片、⌘0 重置缩放，与系统习惯直接冲突
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-  // 幻灯片播放期间保持控制条可见，方便暂停
-  useEffect(() => {
-    if (isSlideshow) {
-      setShowControls(true);
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-        controlsTimeoutRef.current = null;
-      }
-    }
-  }, [isSlideshow]);
+      // 全屏时 Esc 交给浏览器退出全屏，不能让预览被一并关掉
+      if (e.key === 'Escape' && document.fullscreenElement) return;
 
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    // 带修饰键的组合留给系统 / 应用级快捷键：否则 ⌘F 会被当成「收藏」、
-    // ⌘R 旋转图片、⌘0 重置缩放，与系统习惯直接冲突
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      e.preventDefault();
-    }
-
-    switch (e.key) {
-      case 'ArrowRight':
-      case 'l':
-      case 'PageDown':
-        if (hasNext) onNext();
-        break;
-      case 'ArrowLeft':
-      case 'h':
-      case 'PageUp':
-        if (hasPrev) onPrev();
-        break;
-      case 'Escape':
-      case 'q':
-        onClose();
-        break;
-      case '+':
-      case '=':
-        handleZoom(0.25);
-        break;
-      case '-':
-      case '_':
-        handleZoom(-0.25);
-        break;
-      case '0':
-        setScale(1);
-        setRotation(0);
-        setPosition({ x: 0, y: 0 });
-        break;
-      case 'r':
-      case 'R':
-        handleRotate(e.shiftKey ? -90 : 90);
-        break;
-      case 'f':
-      case 'F':
-        toggleFavorite();
-        break;
-      case ' ':
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
-        if (isVideo) toggleVideoPlayback();
-        else setIsSlideshow(prev => !prev);
-        break;
-      default:
-        break;
-    }
-  }, [onClose, onNext, onPrev, hasNext, hasPrev, handleZoom, handleRotate, toggleFavorite, isVideo, toggleVideoPlayback]);
+      }
+
+      const videoHandle = videoControlRef.current;
+
+      switch (e.key) {
+        // 翻页：视频模式下 H 仍可上一张，L 让位给「快进」
+        case 'ArrowRight':
+        case 'PageDown':
+          if (hasNext) onNext();
+          break;
+        case 'l':
+          if (isVideo) videoHandle?.seekBy(10);
+          else if (hasNext) onNext();
+          break;
+        case 'ArrowLeft':
+        case 'PageUp':
+          if (hasPrev) onPrev();
+          break;
+        case 'h':
+        case 'H':
+          if (hasPrev) onPrev();
+          break;
+        case 'j':
+        case 'J':
+          if (isVideo) videoHandle?.seekBy(-10);
+          break;
+        case 'k':
+        case 'K':
+          if (isVideo) videoHandle?.togglePlay();
+          break;
+        case 'm':
+        case 'M':
+          if (isVideo) videoHandle?.toggleMute();
+          break;
+        case 'ArrowUp':
+          if (isVideo) { e.preventDefault(); videoHandle?.nudgeVolume(0.05); }
+          break;
+        case 'ArrowDown':
+          if (isVideo) { e.preventDefault(); videoHandle?.nudgeVolume(-0.05); }
+          break;
+        case 'Escape':
+        case 'q':
+        case 'Q':
+          onClose();
+          break;
+        case '+':
+        case '=':
+          if (!isVideo) handleZoom(0.25);
+          break;
+        case '-':
+        case '_':
+          if (!isVideo) handleZoom(-0.25);
+          break;
+        case '0':
+          resetViewAll();
+          break;
+        case 'r':
+        case 'R':
+          if (!isVideo) handleRotate(e.shiftKey ? -90 : 90);
+          break;
+        case 'f':
+        case 'F':
+          toggleFavorite();
+          break;
+        case ' ':
+          e.preventDefault();
+          if (isVideo) videoHandle?.togglePlay();
+          else setIsSlideshow(prev => !prev);
+          break;
+        default:
+          break;
+      }
+    },
+    [
+      onClose,
+      onNext,
+      onPrev,
+      hasNext,
+      hasPrev,
+      handleZoom,
+      handleRotate,
+      toggleFavorite,
+      isVideo,
+      resetViewAll,
+    ]
+  );
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  const resetControlsTimeout = () => {
-    if (isSlideshow) return;
+  /* ------------------------------ 控制条显隐 ------------------------------ */
+  const resetControlsTimeout = useCallback(() => {
     setShowControls(true);
-    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-    controlsTimeoutRef.current = setTimeout(() => {
+    if (controlsTimeoutRef.current !== null) window.clearTimeout(controlsTimeoutRef.current);
+    // 幻灯片播放期间顶栏常显，方便随时暂停
+    if (isSlideshow) return;
+    controlsTimeoutRef.current = window.setTimeout(() => {
       if (scale === 1) setShowControls(false);
     }, 3000);
-  };
+  }, [isSlideshow, scale]);
 
   useEffect(() => {
     window.addEventListener('mousemove', resetControlsTimeout);
     resetControlsTimeout();
     return () => {
       window.removeEventListener('mousemove', resetControlsTimeout);
-      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+      if (controlsTimeoutRef.current !== null) window.clearTimeout(controlsTimeoutRef.current);
     };
-  }, [scale, isSlideshow]);
+  }, [resetControlsTimeout]);
 
+  /* ------------------------------ 图片拖动 ------------------------------ */
   const handleMouseDown = (e: React.MouseEvent) => {
     if (scale > 1) {
       setIsDragging(true);
@@ -255,78 +405,90 @@ const QuickLook: React.FC<QuickLookProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isDragging) {
-      setPosition({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y
-      });
-    }
+    if (!isDragging) return;
+    setPosition(
+      clampPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }, scale, rotation)
+    );
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
+  const handleMouseUp = () => setIsDragging(false);
+
+  /* ------------------------------ 顶栏信息 ------------------------------ */
+  const dims = photo.dimensions;
+  /** 宽高比：用于按比例撑开占位容器（缺失时退化为不做占位） */
+  const aspectRatio = dims?.width && dims?.height ? dims.width / dims.height : 0;
+  const durationText = isVideo ? formatVideoDuration(photo.duration) : '';
+  const chromeClass = showControls ? 'opacity-100' : 'opacity-0 pointer-events-none';
+
+  const videoMetaText = useMemo(() => {
+    if (!isVideo) return '';
+    const parts = ['视频'];
+    if (dims?.width && dims?.height) parts.push(`${dims.width}×${dims.height}`);
+    if (durationText) parts.push(durationText);
+    return parts.join(' · ');
+  }, [dims?.height, dims?.width, durationText, isVideo]);
 
   return (
     <div
       className="fixed inset-0 z-[100] bg-[rgba(0,0,0,0.95)] backdrop-blur-xl flex flex-col animate-fadeIn overflow-hidden select-none"
       onClick={onClose}
     >
+      {/* 顶栏：文件名 / 序号 / 缩放或视频信息 */}
       <div
-        className={`absolute top-6 left-0 right-0 flex justify-center z-30 transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute top-6 left-0 right-0 flex justify-center z-30 transition-opacity duration-500 ${chromeClass}`}
         onClick={(e) => e.stopPropagation()}
       >
-         <div className="bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] px-6 py-2 rounded-full shadow-2xl flex items-center gap-4 text-sm font-medium text-[rgba(255,255,255,0.95)]">
-             <span className="truncate max-w-[280px]">{photo.name}</span>
-             {typeof currentIndex === 'number' && currentIndex >= 0 && typeof totalCount === 'number' && (
-               <>
-                 <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]"></div>
-                 <span className="text-[rgba(255,255,255,0.6)] font-mono text-xs">{currentIndex + 1} / {totalCount}</span>
-               </>
-             )}
-             {!isVideo && (
-               <>
-                 <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]"></div>
-                 <span className="text-[rgba(255,255,255,0.6)] font-mono text-xs">{Math.round(scale * 100)}%</span>
-               </>
-             )}
-             {isVideo && (
-               <>
-                 <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]"></div>
-                 <span className="flex items-center gap-1.5 text-[var(--accent-cyan)] text-xs">
-                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                   视频
-                 </span>
-               </>
-             )}
-             {isSlideshow && (
-               <>
-                 <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]"></div>
-                 <span className="flex items-center gap-1.5 text-[var(--accent-cyan)] text-xs">
-                   <span className="relative flex h-2 w-2">
-                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent-cyan)] opacity-60"></span>
-                     <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent-cyan)]"></span>
-                   </span>
-                   幻灯片播放中
-                 </span>
-               </>
-             )}
-         </div>
+        <div className="max-w-[min(72vw,560px)] bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] px-6 py-2 rounded-full shadow-2xl flex items-center gap-4 text-sm font-medium text-[rgba(255,255,255,0.95)]">
+          <span className="truncate max-w-[280px]">{photo.name}</span>
+          {typeof currentIndex === 'number' && currentIndex >= 0 && typeof totalCount === 'number' && (
+            <>
+              <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
+              <span className="text-[rgba(255,255,255,0.6)] font-mono text-xs whitespace-nowrap">{currentIndex + 1} / {totalCount}</span>
+            </>
+          )}
+          {!isVideo && (
+            <>
+              <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
+              <span className="text-[rgba(255,255,255,0.6)] font-mono text-xs whitespace-nowrap">{Math.round(scale * 100)}%</span>
+            </>
+          )}
+          {isVideo && (
+            <>
+              <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
+              <span className="flex items-center gap-1.5 text-[var(--accent-cyan)] text-xs whitespace-nowrap">
+                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                {videoMetaText}
+              </span>
+            </>
+          )}
+          {isSlideshow && (
+            <>
+              <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
+              <span className="flex items-center gap-1.5 text-[var(--accent-cyan)] text-xs whitespace-nowrap">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent-cyan)] opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent-cyan)]" />
+                </span>
+                幻灯片播放中
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
       <button
-          onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className={`absolute top-6 right-6 z-30 w-10 h-10 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl hover:bg-[rgba(50,50,60,0.9)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] transition-all duration-300 border border-[rgba(255,255,255,0.1)] hover:scale-105 active:scale-95 ${showControls ? 'opacity-100' : 'opacity-0'}`}
-          title="关闭（Esc）"
-          aria-label="关闭预览"
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        className={`absolute top-6 right-6 z-30 w-10 h-10 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl hover:bg-[rgba(50,50,60,0.9)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] transition-all duration-300 border border-[rgba(255,255,255,0.1)] hover:scale-105 active:scale-95 ${chromeClass}`}
+        title="关闭（Esc）"
+        aria-label="关闭预览"
       >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
       </button>
 
       {onToggleFavorite && (
         <button
           onClick={(e) => { e.stopPropagation(); toggleFavorite(); }}
-          className={`absolute top-6 right-20 z-30 w-10 h-10 backdrop-blur-xl rounded-full flex items-center justify-center transition-all duration-300 border hover:scale-105 active:scale-95 ${showControls ? 'opacity-100' : 'opacity-0'} ${
+          className={`absolute top-6 right-20 z-30 w-10 h-10 backdrop-blur-xl rounded-full flex items-center justify-center transition-all duration-300 border hover:scale-105 active:scale-95 ${chromeClass} ${
             photo.isFavorite
               ? 'bg-[rgba(var(--accent-pink-rgb),0.25)] border-[rgba(var(--accent-pink-rgb),0.4)] text-[var(--accent-pink)]'
               : 'bg-[rgba(30,30,40,0.85)] border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.9)] hover:text-[var(--accent-pink)]'
@@ -340,6 +502,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
         </button>
       )}
 
+      {/* 媒体区 */}
       <div
         className="flex-1 relative flex items-center justify-center w-full h-full overflow-hidden"
         ref={containerRef}
@@ -347,181 +510,201 @@ const QuickLook: React.FC<QuickLookProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        {/* 大图解码期间给出明确反馈，避免整屏黑屏像是卡死 */}
-        {showSpinner && !imageFailed && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-            <div className="w-12 h-12 rounded-full border-2 border-[rgba(255,255,255,0.18)] border-t-[rgba(255,255,255,0.9)] animate-spin" />
-          </div>
-        )}
-        {imageFailed && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 px-8 text-center pointer-events-none">
-            <svg className="w-10 h-10 text-[rgba(255,255,255,0.4)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
-            <p className="text-sm font-medium text-[rgba(255,255,255,0.85)]">
-              {isVideo ? '无法播放这段视频' : '无法显示这张图片'}
-            </p>
-            <p className="text-xs text-[rgba(255,255,255,0.5)] truncate max-w-full">
-              {isVideo ? `${photo.name}（编码格式可能不受支持）` : photo.name}
-            </p>
-            {isVideo && photo.path && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  revealInFinder();
-                }}
-                className="mt-2 pointer-events-auto px-3.5 py-1.5 text-xs font-medium rounded-lg text-[rgba(255,255,255,0.9)] bg-[rgba(255,255,255,0.12)] border border-[rgba(255,255,255,0.22)] hover:bg-[rgba(255,255,255,0.2)] transition-all duration-200 active:scale-[0.98]"
-              >
-                在访达中打开
-              </button>
+        {isVideo ? (
+          <VideoPlayer photo={photo} controlRef={videoControlRef} onRevealInFinder={revealInFinder} />
+        ) : (
+          <>
+            {/* 大图解码期间给出明确反馈，避免整屏黑屏像是卡死 */}
+            {showSpinner && !imageFailed && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                <div className="w-12 h-12 rounded-full border-2 border-[rgba(255,255,255,0.18)] border-t-[rgba(255,255,255,0.9)] animate-spin" />
+              </div>
             )}
-          </div>
+            {imageFailed && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 px-8 text-center pointer-events-none">
+                <svg className="w-10 h-10 text-[rgba(255,255,255,0.4)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <p className="text-sm font-medium text-[rgba(255,255,255,0.85)]">无法显示这张图片</p>
+                <p className="text-xs text-[rgba(255,255,255,0.5)] truncate max-w-full">{photo.name}</p>
+              </div>
+            )}
+
+            <div
+              ref={mediaRef}
+              className={`grid place-items-center transition-transform will-change-transform ${isDragging ? 'duration-0 ease-linear' : 'duration-500 ease-[cubic-bezier(0.19,1,0.22,1)]'}`}
+              style={{
+                transform: `translate(${position.x}px, ${position.y}px) rotate(${rotation}deg) scale(${scale})`,
+                cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                handleToggleZoom();
+              }}
+              onMouseDown={handleMouseDown}
+            >
+              {/* 缩略图占位（模糊）：原图就绪前提供画面，避免纯黑等待。
+                  容器按照片宽高比显式撑开，缩略图不会被当成布局基准导致原图变小。 */}
+              {placeholderSrc && aspectRatio > 0 ? (
+                <div
+                  className="relative"
+                  style={{
+                    aspectRatio: String(aspectRatio),
+                    width: `min(90vw, calc(85vh * ${aspectRatio}))`,
+                  }}
+                >
+                  <img
+                    src={placeholderSrc}
+                    alt=""
+                    aria-hidden
+                    draggable={false}
+                    className={`absolute inset-0 w-full h-full object-contain rounded-lg blur-xl transition-opacity duration-500 ${imageReady ? 'opacity-0' : 'opacity-80'}`}
+                  />
+                  <img
+                    src={photo.url}
+                    alt={photo.name}
+                    draggable={false}
+                    decoding="async"
+                    onLoad={() => setMediaStatus({ id: photo.id, state: 'ready' })}
+                    onError={() => setMediaStatus({ id: photo.id, state: 'error' })}
+                    className={`absolute inset-0 w-full h-full object-contain shadow-2xl rounded-lg border border-[rgba(255,255,255,0.1)] transition-opacity duration-300 ${
+                      imageFailed ? 'opacity-0' : imageReady ? 'opacity-100' : 'opacity-0'
+                    }`}
+                  />
+                </div>
+              ) : (
+                <img
+                  src={photo.url}
+                  alt={photo.name}
+                  draggable={false}
+                  decoding="async"
+                  onLoad={() => setMediaStatus({ id: photo.id, state: 'ready' })}
+                  onError={() => setMediaStatus({ id: photo.id, state: 'error' })}
+                  className={`max-w-[90vw] max-h-[85vh] object-contain shadow-2xl rounded-lg border border-[rgba(255,255,255,0.1)] transition-opacity duration-300 ${
+                    imageFailed ? 'opacity-0' : imageReady ? 'opacity-100' : 'opacity-0'
+                  }`}
+                />
+              )}
+            </div>
+          </>
         )}
 
         {hasPrev && (
           <div
-             className="absolute left-0 inset-y-0 w-24 z-20 flex items-center justify-start pl-4 group cursor-pointer hover:bg-gradient-to-r hover:from-[rgba(0,0,0,0.4)] hover:to-transparent transition-all"
-             onClick={(e) => { e.stopPropagation(); onPrev(); }}
+            className={`absolute left-0 z-20 group cursor-pointer transition-opacity duration-300 ${chromeClass} ${
+              isVideo ? 'top-1/2 -translate-y-1/2 -mt-3 p-3 pl-4' : 'inset-y-0 w-24 flex items-center justify-start pl-4 hover:bg-gradient-to-r hover:from-[rgba(0,0,0,0.4)] hover:to-transparent'
+            }`}
+            onClick={(e) => { e.stopPropagation(); onPrev(); }}
           >
-             <button className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform -translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg" title="上一张（←）" aria-label="上一张">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-             </button>
+            <button className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform -translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg" title="上一张（←）" aria-label="上一张">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
           </div>
         )}
 
         {hasNext && (
           <div
-             className="absolute right-0 inset-y-0 w-24 z-20 flex items-center justify-end pr-4 group cursor-pointer hover:bg-gradient-to-l hover:from-[rgba(0,0,0,0.4)] hover:to-transparent transition-all"
-             onClick={(e) => { e.stopPropagation(); onNext(); }}
+            className={`absolute right-0 z-20 group cursor-pointer transition-opacity duration-300 ${chromeClass} ${
+              isVideo ? 'top-1/2 -translate-y-1/2 -mt-3 p-3 pr-4' : 'inset-y-0 w-24 flex items-center justify-end pr-4 hover:bg-gradient-to-l hover:from-[rgba(0,0,0,0.4)] hover:to-transparent'
+            }`}
+            onClick={(e) => { e.stopPropagation(); onNext(); }}
           >
-             <button className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg" title="下一张（→）" aria-label="下一张">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
-             </button>
+            <button className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg" title="下一张（→）" aria-label="下一张">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
           </div>
         )}
+      </div>
 
+      {/* 视频自带的控制条已足够完整，这里只在图片模式下给底部工具栏 */}
+      {!isVideo && (
         <div
-          className={`relative transition-transform will-change-transform ${isDragging ? 'duration-0 ease-linear' : 'duration-500 ease-[cubic-bezier(0.19,1,0.22,1)]'}`}
-          style={{
-            transform: `translate(${position.x}px, ${position.y}px) rotate(${rotation}deg) scale(${scale})`,
-            cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
-          }}
+          className={`absolute bottom-8 left-0 right-0 flex justify-center z-30 pointer-events-none transition-all duration-500 transform ${showControls ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
           onClick={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            if (!isVideo) handleToggleZoom();
-          }}
-          onMouseDown={handleMouseDown}
         >
-          {isVideo ? (
-            <video
-              ref={videoRef}
-              src={photo.url}
-              controls
-              autoPlay
-              playsInline
-              preload="metadata"
-              onLoadedMetadata={e => reportVideoMetaFromElement(videoMetaKeyOf(photo), e.currentTarget)}
-              onLoadedData={() => setMediaStatus({ id: photo.id, state: 'ready' })}
-              onError={() => setMediaStatus({ id: photo.id, state: 'error' })}
-              className={`max-w-[90vw] max-h-[85vh] w-auto h-auto object-contain shadow-2xl rounded-lg border border-[rgba(255,255,255,0.1)] bg-black ${
-                imageFailed ? 'opacity-0' : ''
+          <div className="bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-2xl px-2 py-2 flex items-center gap-1 shadow-2xl pointer-events-auto">
+            {onToggleFavorite && (
+              <>
+                <button
+                  onClick={toggleFavorite}
+                  className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all active:scale-90 ${
+                    photo.isFavorite
+                      ? 'text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.15)]'
+                      : 'text-[rgba(255,255,255,0.8)] hover:text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.12)]'
+                  }`}
+                  title={photo.isFavorite ? '取消收藏（F）' : '收藏（F）'}
+                >
+                  <svg width="20" height="20" fill={photo.isFavorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
+                </button>
+                <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1" />
+              </>
+            )}
+
+            <div className="flex items-center">
+              <button onClick={() => handleZoom(-0.25)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="缩小（-）">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><line x1="8" y1="11" x2="14" y2="11" /></svg>
+              </button>
+              <button onClick={() => zoomTo(1)} className="px-2 h-10 flex items-center justify-center text-xs font-semibold tabular-nums text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="适应窗口（0）">
+                {Math.round(scale * 100)}%
+              </button>
+              <button onClick={() => handleZoom(0.25)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="放大（+）">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><line x1="11" y1="8" x2="11" y2="14" /><line x1="8" y1="11" x2="14" y2="11" /></svg>
+              </button>
+            </div>
+
+            <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1" />
+
+            <div className="flex items-center">
+              <button onClick={() => handleRotate(-90)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="向左旋转（⇧R）">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+              </button>
+              <button onClick={() => handleRotate(90)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="向右旋转（R）">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+              </button>
+            </div>
+
+            <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1" />
+
+            <button
+              onClick={() => setIsSlideshow(prev => !prev)}
+              className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all active:scale-90 ${
+                isSlideshow
+                  ? 'text-[var(--accent-cyan)] bg-[rgba(var(--accent-cyan-rgb),0.15)]'
+                  : 'text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)]'
               }`}
-            />
-          ) : (
-            <img
-              src={photo.url}
-              alt={photo.name}
-              draggable={false}
-              onLoad={() => setMediaStatus({ id: photo.id, state: 'ready' })}
-              onError={() => setMediaStatus({ id: photo.id, state: 'error' })}
-              className={`max-w-[90vw] max-h-[85vh] object-contain shadow-2xl rounded-lg border border-[rgba(255,255,255,0.1)] ${
-                imageFailed ? 'opacity-0' : ''
-              }`}
-            />
-          )}
+              title={isSlideshow ? '暂停幻灯片（空格）' : '幻灯片播放（空格）'}
+            >
+              {isSlideshow ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+              )}
+            </button>
+
+            <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1" />
+
+            <button
+              onClick={resetViewAll}
+              className="px-4 h-10 text-xs font-semibold uppercase tracking-wider text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90"
+              title="重置缩放与旋转（0）"
+            >
+              重置
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div
-        className={`absolute bottom-8 left-0 right-0 flex justify-center z-30 pointer-events-none transition-all duration-500 transform ${showControls ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-2xl px-2 py-2 flex items-center gap-1 shadow-2xl pointer-events-auto">
-
-           {onToggleFavorite && (
-             <>
-               <button
-                 onClick={toggleFavorite}
-                 className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all active:scale-90 ${
-                   photo.isFavorite
-                     ? 'text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.15)]'
-                     : 'text-[rgba(255,255,255,0.8)] hover:text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.12)]'
-                 }`}
-                 title={photo.isFavorite ? '取消收藏（F）' : '收藏（F）'}
-               >
-                 <svg width="20" height="20" fill={photo.isFavorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
-               </button>
-               <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1"></div>
-             </>
-           )}
-
-           {/* 缩放 / 旋转 / 幻灯片 / 重置：仅对图片有意义 */}
-           {!isVideo && (<>
-           <div className="flex items-center">
-             <button onClick={() => handleZoom(-0.25)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="缩小（-）">
-               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
-             </button>
-             <button onClick={() => handleZoom(0.25)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="放大（+）">
-               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
-             </button>
-           </div>
-
-           <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1"></div>
-
-           <div className="flex items-center">
-             <button onClick={() => handleRotate(-90)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="向左旋转（⇧R）">
-               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
-             </button>
-             <button onClick={() => handleRotate(90)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="向右旋转（R）">
-               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path></svg>
-             </button>
-           </div>
-
-           <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1"></div>
-
-           {/* 幻灯片播放 / 暂停 */}
-           <button
-             onClick={() => setIsSlideshow(prev => !prev)}
-             className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all active:scale-90 ${
-               isSlideshow
-                 ? 'text-[var(--accent-cyan)] bg-[rgba(var(--accent-cyan-rgb),0.15)]'
-                 : 'text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)]'
-             }`}
-             title={isSlideshow ? '暂停幻灯片（空格）' : '幻灯片播放（空格）'}
-           >
-             {isSlideshow ? (
-               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>
-             ) : (
-               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-             )}
-           </button>
-
-           <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1"></div>
-
-           <button
-             onClick={() => { setScale(1); setRotation(0); setPosition({x:0, y:0}); }}
-             className="px-4 h-10 text-xs font-semibold uppercase tracking-wider text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90"
-             title="重置缩放与旋转（0）"
-           >
-             重置
-           </button>
-           </>) }
-           </div>
-      </div>
+      {/* 视频兼容性提示：容器可能不被内置解码器支持时提前给出预期管理 */}
+      {isVideo && showCodecHint && (
+        <div className="absolute bottom-32 left-0 right-0 flex justify-center z-20 pointer-events-none px-4">
+          <span className="max-w-[min(80vw,520px)] px-3 py-1.5 rounded-full text-[11px] text-center font-medium text-[rgba(255,255,255,0.82)] bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.12)] animate-fadeInUp">
+            该容器格式可能无法在应用内播放，若没有画面可用「在访达中打开」
+          </span>
+        </div>
+      )}
     </div>
   );
 };

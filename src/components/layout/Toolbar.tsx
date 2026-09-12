@@ -86,7 +86,7 @@ const SearchIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
 );
 
 const FunnelIcon = () => (
-  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
     <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"></path>
   </svg>
 );
@@ -108,6 +108,19 @@ interface ToolButtonProps {
   size?: 'sm' | 'md';
 }
 
+/**
+ * 顶带内的「软激活」：浅琥珀底 + 琥珀图标 + 一圈细边框。
+ *
+ * 实心渐变只留给「导入」一处主操作。顶带里一旦出现第二个实心色块，
+ * 眼睛就不知道该先落在哪儿 —— 而「视图切成网格」和「导入照片」本就不该同等重要。
+ * 软激活同时让分段控件（视图 / 外观）与独立开关（筛选 / 详情）共用一套选中语言。
+ *
+ * 边框放在 SOFT_ACTIVE 里、由各处的基类预置 `border-transparent`：
+ * 这样选中与未选中共用同一套盒模型，切换时不会有 1px 的跳动。
+ */
+const SOFT_ACTIVE =
+  'border-[rgba(var(--accent-blue-rgb),0.32)] bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--accent-blue)]';
+
 const ToolButton: React.FC<ToolButtonProps> = ({
   onClick,
   icon,
@@ -119,7 +132,9 @@ const ToolButton: React.FC<ToolButtonProps> = ({
   size = 'md',
 }) => {
   const [hovered, setHovered] = useState(false);
-  const dim = size === 'sm' ? 'w-8 h-8' : 'w-9 h-9';
+  /** 顶带统一一条 40px 的高度，控件随之收成 28 / 32 两档 */
+  const dim = size === 'sm' ? 'w-7 h-7' : 'w-8 h-8';
+  const radius = size === 'sm' ? 'rounded-lg' : 'rounded-[10px]';
   const tint = !disabled && !active && !danger && hovered ? hoverColor : undefined;
 
   return (
@@ -131,13 +146,13 @@ const ToolButton: React.FC<ToolButtonProps> = ({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         aria-label={title}
-        className={`flex items-center justify-center ${dim} rounded-xl transition-all duration-200 ${
+        className={`flex items-center justify-center ${dim} ${radius} border border-transparent transition-all duration-200 ${
           disabled
             ? 'opacity-30 cursor-not-allowed text-[var(--text-quaternary)]'
             : danger
               ? 'text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.12)] active:bg-[rgba(var(--accent-pink-rgb),0.2)]'
               : active
-                ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.35)]'
+                ? SOFT_ACTIVE
                 : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
         }`}
         style={tint ? { color: tint } : undefined}
@@ -176,9 +191,9 @@ const ActionButton: React.FC<{
     onClick={onClick}
     title={title}
     aria-label={title}
-    className={`flex items-center h-9 pl-2 pr-2.5 gap-1.5 rounded-xl shrink-0 transition-all duration-200 active:scale-[0.98] ${
+    className={`flex items-center h-8 pl-2 pr-2.5 gap-1.5 rounded-[10px] shrink-0 transition-all duration-200 active:scale-[0.98] ${
       variant === 'solid'
-        ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)] hover:brightness-110'
+        ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-[0_2px_10px_-3px_rgba(var(--accent-blue-rgb),0.65)] hover:brightness-110'
         : 'border border-[var(--border-default)] bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] hover:border-[var(--border-hover)]'
     }`}
   >
@@ -224,19 +239,21 @@ const Toolbar: React.FC<ToolbarProps> = ({
   const advancedFilterCount = countAdvancedFilters(filters);
 
   return (
-    <header className={`app-drag bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 sticky top-0 py-2 shadow-lg shadow-[rgba(0,0,0,0.15)] ${isLeftPaneOpen ? 'px-3' : 'pl-[78px] pr-3'}`}>
-      <div className="app-no-drag flex items-center gap-2 h-9">
+    <header className={`app-drag h-10 shrink-0 bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] shadow-[var(--shadow-toolbar)] z-20 sticky top-0 ${isLeftPaneOpen ? 'px-3' : 'pl-[78px] pr-3'}`}>
+      <div className="app-no-drag flex items-center gap-2 h-full">
 
         {/* ===== 左：主要导航与常用操作 ===== */}
-        <div className="flex items-center gap-1 shrink-0 min-w-0">
-          {/* 侧边栏开关：常驻浅色圆角底（参照系统照片应用），收起后紧邻红绿灯 */}
+        <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+          {/* 侧边栏开关：常驻浅色圆角底（参照系统照片应用），收起后紧邻红绿灯。
+              与搜索框共用同一档容器语言（32px 高 / 10px 圆角 / 输入底色），
+              整条顶带才像同一套零件拼出来的 */}
           <button
             type="button"
             onClick={() => setIsLeftPaneOpen(!isLeftPaneOpen)}
             title={isLeftPaneOpen ? '隐藏侧边栏' : '显示侧边栏'}
             aria-label={isLeftPaneOpen ? '隐藏侧边栏' : '显示侧边栏'}
             aria-expanded={isLeftPaneOpen}
-            className="flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] hover:border-[var(--border-hover)] active:scale-[0.98] transition-all duration-200 shrink-0"
+            className="flex items-center justify-center w-8 h-8 rounded-[10px] bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] hover:border-[var(--border-hover)] active:scale-[0.97] transition-all duration-200 shrink-0"
           >
             <SidebarIcon />
           </button>
@@ -252,10 +269,10 @@ const Toolbar: React.FC<ToolbarProps> = ({
         </div>
 
         {/* ===== 中：搜索（⌘F 聚焦，Esc 清空）+ 筛选 ===== */}
-        <div className="flex-1 min-w-0 flex justify-center items-center gap-1.5 px-1">
+        <div className="flex-1 min-w-0 flex justify-center items-center gap-1.5 px-2">
           <div className="relative w-full min-w-[124px] xl:min-w-[140px] max-w-[420px] group">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-quaternary)] group-focus-within:text-[var(--accent-cyan)] transition-colors">
-              <SearchIcon />
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-quaternary)] group-focus-within:text-[var(--accent-cyan)] transition-colors">
+              <SearchIcon className="w-[15px] h-[15px]" />
             </span>
             <input
               ref={searchInputRef}
@@ -274,7 +291,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                   searchInputRef.current?.blur();
                 }
               }}
-              className="w-full h-9 pl-9 pr-9 xl:pr-16 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[13px] text-[var(--text-primary)] placeholder-[var(--text-quaternary)] outline-hidden transition-all duration-200 focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] hover:border-[var(--border-hover)]"
+              className="w-full h-8 pl-9 pr-8 xl:pr-14 rounded-[10px] bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[13px] text-[var(--text-primary)] placeholder-[var(--text-quaternary)] outline-hidden transition-all duration-200 focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.2)] hover:border-[var(--border-hover)]"
               placeholder="搜索照片、相机、格式…"
               aria-label="搜索照片"
             />
@@ -285,15 +302,15 @@ const Toolbar: React.FC<ToolbarProps> = ({
                   onSearchQueryChange('');
                   searchInputRef.current?.focus();
                 }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all"
+                className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-[18px] h-[18px] rounded-full text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all"
                 title="清除搜索"
                 aria-label="清除搜索"
               >
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             ) : (
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 hidden xl:flex items-center pointer-events-none">
-                <span className="kbd !h-5 !min-w-[20px] !text-[10px]">⌘F</span>
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 hidden xl:flex items-center pointer-events-none">
+                <span className="kbd !h-[18px] !min-w-[18px] !px-1 !text-[10px]">⌘F</span>
               </span>
             )}
           </div>
@@ -307,15 +324,15 @@ const Toolbar: React.FC<ToolbarProps> = ({
               title="筛选条件"
               aria-label="筛选条件"
               aria-expanded={isFilterOpen}
-              className={`relative flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-200 ${
+              className={`relative flex items-center justify-center w-8 h-8 rounded-[10px] border border-transparent transition-all duration-200 ${
                 advancedFilterCount > 0 || isFilterOpen
-                  ? 'bg-[rgba(var(--accent-blue-rgb),0.14)] text-[var(--accent-blue)] border border-[rgba(var(--accent-blue-rgb),0.35)]'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)] border border-transparent'
+                  ? SOFT_ACTIVE
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
               }`}
             >
               <FunnelIcon />
               {advancedFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--accent-blue)] text-[var(--accent-contrast)] text-[10px] font-semibold leading-4 text-center border border-[var(--bg-elevated)]">
+                <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-[var(--accent-blue)] text-[var(--accent-contrast)] text-[10px] font-semibold leading-[15px] text-center border border-[var(--bg-elevated)]">
                   {advancedFilterCount}
                 </span>
               )}
@@ -338,8 +355,8 @@ const Toolbar: React.FC<ToolbarProps> = ({
         </div>
 
         {/* ===== 右：视图与辅助控制 ===== */}
-        <div className="flex items-center gap-1 shrink-0">
-          <div className="flex items-center gap-0.5 h-9 p-0.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-0.5 h-8 p-0.5 rounded-[10px] bg-[var(--bg-input)] border border-[var(--border-subtle)]">
             <ToolButton
               onClick={() => setViewMode('grid')}
               icon={<GridIcon />}

@@ -69,39 +69,45 @@ export interface TrashResult {
   pathlessRemoved: number;
 }
 
-/** 批量移入回收站：返回成功删除的 id、失败照片与错误说明（失败项可用于重试） */
-export const movePhotosToTrash = async (targets: Photo[]): Promise<TrashResult> => {
+/**
+ * 批量移入回收站：返回成功删除的 id、失败照片与错误说明（失败项可用于重试）。
+ * onProgress 逐项回调（含跳过 / 失败项），供调用方展示批量删除进度。
+ */
+export const movePhotosToTrash = async (
+  targets: Photo[],
+  onProgress?: (done: number, total: number) => void
+): Promise<TrashResult> => {
   const deletedIds = new Set<string>();
   const failedPhotos: Photo[] = [];
   const errors: string[] = [];
   let pathlessRemoved = 0;
 
-  for (const photo of targets) {
+  for (let i = 0; i < targets.length; i++) {
+    const photo = targets[i];
     if (!window.electronAPI) {
       failedPhotos.push(photo);
       errors.push(`「${photo.name}」：电子 API 不可用`);
-      continue;
-    }
-    if (!photo.path) {
+    } else if (!photo.path) {
       // 拖放降级条目（只有 blob: 预览、磁盘上没有文件）：
       // 「移入回收站」无处可移，从列表中移除即为唯一有意义的操作。
       // 视为删除成功，交由调用方 removeWithCollapse 顺带回收 blob URL。
       deletedIds.add(photo.id);
       pathlessRemoved += 1;
-      continue;
-    }
-    try {
-      const result = await window.electronAPI.deleteFile(photo.path);
-      if (result?.error) {
+    } else {
+      try {
+        const result = await window.electronAPI.deleteFile(photo.path);
+        if (result?.error) {
+          failedPhotos.push(photo);
+          errors.push(`「${photo.name}」：${humanizeFsError(result.error)}`);
+        } else {
+          deletedIds.add(photo.id);
+        }
+      } catch (err) {
         failedPhotos.push(photo);
-        errors.push(`「${photo.name}」：${humanizeFsError(result.error)}`);
-      } else {
-        deletedIds.add(photo.id);
+        errors.push(`「${photo.name}」：${humanizeFsError((err as Error).message)}`);
       }
-    } catch (err) {
-      failedPhotos.push(photo);
-      errors.push(`「${photo.name}」：${humanizeFsError((err as Error).message)}`);
     }
+    onProgress?.(i + 1, targets.length);
   }
 
   return { deletedIds, failedPhotos, errors, pathlessRemoved };

@@ -6,6 +6,8 @@ interface DeleteConfirmModalProps {
   isDiskOperation: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  /** K19：删除进行中 —— 按钮置灰、Enter / Esc 不响应，避免重复提交 */
+  isBusy?: boolean;
 }
 
 const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({ 
@@ -13,13 +15,14 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   count, 
   isDiskOperation, 
   onClose, 
-  onConfirm 
+  onConfirm,
+  isBusy = false,
 }) => {
   const confirmRef = useRef<HTMLButtonElement>(null);
 
-  // Esc 关闭、Enter 确认：保持与系统弹窗一致的键盘习惯
+  // Esc 关闭、Enter 确认：保持与系统弹窗一致的键盘习惯；执行中不响应
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || isBusy) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -31,7 +34,7 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose, onConfirm]);
+  }, [isOpen, isBusy, onClose, onConfirm]);
 
   // 焦点落到主操作按钮上：键盘用户一眼能看出回车会落在哪
   useEffect(() => {
@@ -72,16 +75,18 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
         <div className="flex justify-end gap-3">
           <button 
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] rounded-lg transition-colors"
+            disabled={isBusy}
+            className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             取消
           </button>
           <button 
             ref={confirmRef}
             onClick={onConfirm}
-            className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-pink)] hover:opacity-90 rounded-lg transition-opacity"
+            disabled={isBusy}
+            className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-pink)] hover:opacity-90 rounded-lg transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {isDiskOperation ? '移至回收站' : '移除'}
+            {isBusy ? '处理中…' : (isDiskOperation ? '移至回收站' : '移除')}
           </button>
         </div>
       </div>

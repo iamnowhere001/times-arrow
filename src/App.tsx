@@ -23,7 +23,7 @@ import { createThumbnail, clearDragThumbnailCache } from '@/lib/cache/dragThumbn
 import { joinPath, sanitizeFilename } from '@/lib/fs/pathUtils';
 import { deriveLibraryViewState } from '@/lib/filter/libraryViewState';
 import { buildContextMenuActions } from '@/lib/contextMenuActions';
-import { humanizeFsError, movePhotosToTrash, isFileGoneError } from '@/lib/fs/fileOperations';
+import { humanizeFsError, movePhotosToTrash, isFileGoneError, type TrashResult } from '@/lib/fs/fileOperations';
 import { createFsErrorReporter } from '@/lib/fs/ipcGuard';
 import { useToasts } from '@/hooks/useToasts';
 import { useThemeMode } from '@/hooks/useThemeMode';
@@ -184,9 +184,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   /** 实际进入导出流程的条目（视频不走重编码导出，会被排除） */
   const [exportTargets, setExportTargets] = useState<Photo[]>([]);
 
-  // 网格句柄与列数：方向键导航需要 scrollToPhoto + 步长
+  // 网格句柄：方向键导航需要 scrollToPhoto + 按真实行几何取上下邻居
   const gridRef = useRef<ImageGridHandle>(null);
-  const [gridColumns, setGridColumns] = useState(6);
   
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; photo?: Photo } | null>(null);
@@ -196,6 +195,17 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingTotal, setLoadingTotal] = useState(0);
   const [loadingCurrentFile, setLoadingCurrentFile] = useState('');
+
+  // K19：批量文件操作（重命名 / 删除 / 移动）的状态。
+  // isFileOpBusy 同步置位 → 弹层主按钮置灰；fileOpOverlay 延迟升起 → 小批量不闪遮罩。
+  const [isFileOpBusy, setIsFileOpBusy] = useState(false);
+  const [fileOpOverlay, setFileOpOverlay] = useState<{
+    title: string;
+    hint: string;
+    total: number;
+    done: number;
+    file: string;
+  } | null>(null);
 
   // 已从磁盘删除、正在播塌陷动画的条目：卡片还在，但已淡出且不可交互
   const [exitingIds, setExitingIds] = useState<Set<string>>(new Set());
@@ -295,6 +305,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const {
     duplicateGroups,
     isProcessingDuplicates,
+    isRepartitioningDuplicates,
     duplicateProgress,
     duplicateSimilarity,
     setDuplicateSimilarity,
@@ -798,6 +809,49 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     setLoadingProgress(0);
     setLoadingTotal(0);
     setLoadingCurrentFile('');
+  }, []);
+
+  /* ---------------------------------------------------------------------------
+   * K19 · 批量文件操作的统一反馈
+   * 重命名 / 删除 / 移动都要等一段时间，此前除导出外都没有反馈，用户容易以为卡死而重复点击。
+   * beginFileOp 同步置 busy（弹层按钮置灰、提交锁之外的二道防线），
+   * 超过 320ms 才升起遮罩（小批量瞬间完成就不闪），endFileOp 一并收起。
+   * ------------------------------------------------------------------------- */
+  const fileOpTimerRef = useRef<number | null>(null);
+  const fileOpLatestRef = useRef({ done: 0, file: '' });
+
+  const beginFileOp = useCallback((title: string, hint: string, total: number) => {
+    setIsFileOpBusy(true);
+    fileOpLatestRef.current = { done: 0, file: '' };
+    if (fileOpTimerRef.current !== null) window.clearTimeout(fileOpTimerRef.current);
+    fileOpTimerRef.current = window.setTimeout(() => {
+      fileOpTimerRef.current = null;
+      setFileOpOverlay({
+        title,
+        hint,
+        total,
+        done: fileOpLatestRef.current.done,
+        file: fileOpLatestRef.current.file,
+      });
+    }, 320);
+  }, []);
+
+  const reportFileOp = useCallback((done: number, file: string) => {
+    fileOpLatestRef.current = { done, file };
+    setFileOpOverlay(prev => (prev ? { ...prev, done, file } : prev));
+  }, []);
+
+  const endFileOp = useCallback(() => {
+    if (fileOpTimerRef.current !== null) {
+      window.clearTimeout(fileOpTimerRef.current);
+      fileOpTimerRef.current = null;
+    }
+    setIsFileOpBusy(false);
+    setFileOpOverlay(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (fileOpTimerRef.current !== null) window.clearTimeout(fileOpTimerRef.current);
   }, []);
 
   // 小文件夹扫描通常一瞬间完成，延迟出现遮罩可避免「闪一下」的糟糕观感
@@ -1474,6 +1528,18 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     [quickLookPhoto, quickLookList]
   );
 
+  /**
+   * 预览层的前后预加载源：只预热紧邻的图片（视频由播放器自行管理），
+   * 翻页时直接命中已解码的位图，避免每张都出现「黑屏 → 亮起」。
+   */
+  const quickLookPreloadSources = useMemo(() => {
+    if (quickLookIndex < 0) return [];
+    const neighbors = [quickLookList[quickLookIndex - 1], quickLookList[quickLookIndex + 1]];
+    return neighbors
+      .filter((item): item is Photo => Boolean(item) && !isVideoPhoto(item))
+      .map(item => item.url);
+  }, [quickLookIndex, quickLookList]);
+
   // Shift 区间选择：从锚点一路选到目标照片（在当前可见列表的顺序中取区间）
   const handleRangeSelect = useCallback((targetId: string) => {
     const anchor = selectionAnchorRef.current ?? targetId;
@@ -1756,10 +1822,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       // 只留首个失败原因，结束后给一条统一汇总
       let firstError: string | null = null;
 
+      // K19：批量重命名较慢时给出进度，避免看起来像卡死
+      beginFileOp('正在重命名', '个项目', sortedPhotos.length);
+
       for (let i = 0; i < sortedPhotos.length; i++) {
         const photo = sortedPhotos[i];
         if (!photo) continue;
-        
+        reportFileOp(i, photo.name);
+
         // Check if photo has a valid path
         if (!photo.path || photo.path === '') {
           logger.error('Cannot rename photo without path:', photo.name);
@@ -1950,6 +2020,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       logger.error('Error batch renaming photos:', err);
       showToast(`批量重命名照片失败：${(err as Error).message}`, 'error');
     } finally {
+      endFileOp();
       fileOpLockRef.current = false;
       flushPendingWatcherEvents();
     }
@@ -1966,7 +2037,15 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     // 回环防护：删除会让 watcher 看到一波 removed，登记后由双保险过滤掉
     markPathsTouched(targets.map(p => p.path));
 
-    const { deletedIds, failedPhotos, errors, pathlessRemoved } = await movePhotosToTrash(targets);
+    // K19：逐项回收站操作有真实进度可报，大库批量删除不再像卡死
+    beginFileOp('正在移至回收站', '个项目', targets.length);
+    let trash: TrashResult;
+    try {
+      trash = await movePhotosToTrash(targets, (done) => reportFileOp(done, ''));
+    } finally {
+      endFileOp();
+    }
+    const { deletedIds, failedPhotos, errors, pathlessRemoved } = trash;
 
     // 同步收敛状态：列表、选中项、重复检测结果
     if (deletedIds.size > 0) {
@@ -2210,9 +2289,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   ) => {
     if (fileOpLockRef.current) return;
     fileOpLockRef.current = true;
+    // K19：移动由主进程一次性完成，无法回报逐项进度，用不确定态说明「在处理 N 项」
+    beginFileOp('正在移动文件', `${targets.length} 个项目`, 0);
     try {
       await doRunMove(targets, targetDir, priorTargets);
     } finally {
+      endFileOp();
       fileOpLockRef.current = false;
       flushPendingWatcherEvents();
     }
@@ -2403,7 +2485,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     return () => window.removeEventListener('pointerdown', onPointerDown, true);
   }, []);
 
-  // 方向键导航：移动单个选中项并让视口跟随（上下键按网格列数跳步）
+  // 方向键导航：移动单个选中项并让视口跟随（网格上下键按真实行几何找落点）
   const handleArrowNavigation = useCallback((key: string) => {
     if (visiblePhotos.length === 0) return;
     const ids = visiblePhotos.map(p => p.id);
@@ -2419,25 +2501,35 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       return;
     }
 
-    // 上下键在网格里按「一行」跳步；列表视图没有列的概念，一次只移动一行
-    const verticalStep = viewMode === 'list' ? 1 : Math.max(1, gridColumns);
-
+    // 左右键在任意视图里都是顺序步进。
+    // 上下键：列表视图一次一行；网格视图交给布局按真实行几何找目标 ——
+    // justified 布局每行张数随照片宽高比变化，固定列数硬跳会跳错列。
     let nextIndex = currentIndex;
-    if (key === 'ArrowLeft') nextIndex = Math.max(0, currentIndex - 1);
-    else if (key === 'ArrowRight') nextIndex = Math.min(ids.length - 1, currentIndex + 1);
-    else if (key === 'ArrowUp') nextIndex = Math.max(0, currentIndex - verticalStep);
-    else if (key === 'ArrowDown') nextIndex = Math.min(ids.length - 1, currentIndex + verticalStep);
+    if (key === 'ArrowLeft') {
+      nextIndex = Math.max(0, currentIndex - 1);
+    } else if (key === 'ArrowRight') {
+      nextIndex = Math.min(ids.length - 1, currentIndex + 1);
+    } else if (viewMode === 'list') {
+      nextIndex = key === 'ArrowUp'
+        ? Math.max(0, currentIndex - 1)
+        : Math.min(ids.length - 1, currentIndex + 1);
+    } else {
+      const neighbor = gridRef.current?.getVerticalNeighbor(ids[currentIndex], key === 'ArrowUp' ? 'up' : 'down');
+      const neighborIndex = neighbor ? ids.indexOf(neighbor) : -1;
+      // 已在首 / 末行（没有相邻行）时保持原位，不再用固定列数硬跳
+      if (neighborIndex >= 0) nextIndex = neighborIndex;
+    }
 
     if (nextIndex === currentIndex && selectedIds.size === 1) return;
     const nextId = ids[nextIndex];
     setSelectedIds(new Set([nextId]));
     selectionAnchorRef.current = nextId;
     gridRef.current?.scrollToPhoto(nextId);
-  }, [visiblePhotos, gridColumns, selectedIds.size, viewMode]);
+  }, [visiblePhotos, selectedIds.size, viewMode]);
 
   // 主视图键盘闭环：
   // 空格 / Enter → QuickLook；⌘A → 全选当前视图；⌘⇧F → 批量收藏；⌘F → 聚焦搜索；
-  // 方向键 → 单选移动；Delete / ⌫ → 删除确认；Esc → 关闭右键菜单，其次清除选择。
+  // 方向键 → 单选移动；⌘⌫ / Delete → 删除确认；Esc → 关闭右键菜单，其次清除选择。
   // 弹层打开或焦点在输入框内时全部让行。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -2544,7 +2636,9 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         handleArrowNavigation(e.key);
         return;
       }
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      // 破坏性操作对齐 macOS 习惯：⌘⌫ 删除（Finder 语义），Delete 键保留兼容。
+      // 单按 ⌫ 不再触发删除，避免与「重命名」等肌肉记忆冲突导致误删。
+      if (e.key === 'Delete' || (cmd && e.key === 'Backspace')) {
         if (selectedIds.size > 0) {
           e.preventDefault();
           setIsDeleteModalOpen(true);
@@ -2882,6 +2976,16 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onCancel={handleCancelLoading}
         />
       )}
+      {/* K19：批量文件操作（重命名 / 删除 / 移动）的大操作遮罩 —— 延迟升起，覆盖弹层防连点 */}
+      {fileOpOverlay && (
+        <LoadingOverlay
+          total={fileOpOverlay.total}
+          progress={fileOpOverlay.done}
+          currentFile={fileOpOverlay.file}
+          title={fileOpOverlay.title}
+          hint={fileOpOverlay.hint}
+        />
+      )}
       <div className="main-content flex-1 flex flex-col bg-transparent">
         {/* 重复检测：整页接管主内容区；左栏在整页视图里不渲染（见 isLeftPaneVisible） */}
         {mainView === 'duplicates' ? (
@@ -2907,6 +3011,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               duplicateGroups={duplicateGroups}
               onDeleteDuplicates={handleDeleteDuplicates}
               isProcessing={isProcessingDuplicates}
+              isRepartitioning={isRepartitioningDuplicates}
               progress={duplicateProgress}
               onQuickLook={setQuickLookPhoto}
               onRecheck={() => handleCheckDuplicates()}
@@ -3020,7 +3125,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onBatchRename={() => setIsRenameModalOpen(true)}
           onMoveSelected={() => handleMoveSelected()}
           onExportSelected={handleExportSelected}
-          onColumnsChange={setGridColumns}
           onFilterByDate={handleFilterByDate}
           viewTitle={gridViewTitle}
           emptyTitle={
@@ -3117,6 +3221,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onConfirm={handleBatchRename}
           photos={photos.filter(p => selectedIds.has(p.id))}
           count={selectedIds.size}
+          isBusy={isFileOpBusy}
         />
       )}
       {isDeleteModalOpen && (
@@ -3126,6 +3231,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           isDiskOperation={true}
           onClose={() => setIsDeleteModalOpen(false)}
           onConfirm={handleConfirmDelete}
+          isBusy={isFileOpBusy}
         />
       )}
       {/* 清空照片列表二次确认：侧栏底部入口与右键菜单都走这里 */}
@@ -3214,6 +3320,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           currentIndex={quickLookIndex}
           totalCount={quickLookList.length}
           onToggleFavorite={toggleFavorite}
+          preloadSources={quickLookPreloadSources}
         />
       )}
     </div>

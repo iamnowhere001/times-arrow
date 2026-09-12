@@ -310,8 +310,8 @@ const SectionLabel: React.FC<{ children: React.ReactNode; action?: React.ReactNo
  * 3. 分隔线只出现在「内容类型改变」处（视图→分类→媒体类型→我的内容），
  *    不再每段一条，避免把导航读成一串互不相干的清单。
  * 4. 彩色与体量只留给当前选中行，其余一律退到文字层级里。
- * 5. 底部是「除了整理照片之外的事」：外观、快捷键参考、清空列表，
- *    以及全局偏好，都不作用于当前视图。
+ * 5. 底部收成一条全局工具带：外观、快捷键参考、清空列表都不作用于
+ *    当前视图，同一行排开，不与导航争夺纵向空间。
  */
 const Sidebar: React.FC<SidebarProps> = ({
   counts,
@@ -369,9 +369,13 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* 抽屉式收展：外层只动宽度，内容整体滑出，避免被挤扁 */}
       <div className={`h-full flex flex-col transition-[opacity,transform] duration-200 ease-entrance ${isOpen ? 'opacity-100 translate-x-0 delay-75' : 'opacity-0 -translate-x-3'}`}>
       {/* 顶部：原生标题栏隐藏后，左侧 78px 留给红绿灯按钮，右侧作为品牌区，整条同时承担窗口拖动。
-          品牌与红绿灯同高同中线（38px 带内垂直居中），原本纯空白的一条因此有了身份信息 */}
-      <div className="app-drag h-[38px] shrink-0 flex items-center gap-2 pl-[78px] pr-3">
-        <span className="shrink-0 flex items-center justify-center w-[26px] h-[26px] rounded-lg bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-sm shadow-[rgba(var(--accent-blue-rgb),0.35)]">
+          品牌与红绿灯同高同中线（40px 带内垂直居中），原本纯空白的一条因此有了身份信息。
+
+          这一条刻意与右邻的 Toolbar 用同一套高度、材质、底线与投影：
+          两者本是同一条顶带被侧栏的分隔线切开，若材质或高度差一档，
+          左上角就会露出一个台阶，整页的「齐」感就是从那里开始崩的。 */}
+      <div className="app-drag h-10 shrink-0 flex items-center gap-2 pl-[78px] pr-3 bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)]">
+        <span className="shrink-0 flex items-center justify-center w-6 h-6 rounded-[7px] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-[0_2px_8px_-3px_rgba(var(--accent-blue-rgb),0.8)]">
           <ApertureIcon />
         </span>
         <span className="flex flex-col items-start justify-center leading-tight min-w-0">
@@ -459,10 +463,21 @@ const Sidebar: React.FC<SidebarProps> = ({
             智能相簿
           </SectionLabel>
 
+          {/* 空态不是说明文字，而是一条可直接点的幽灵行：把「读提示 → 找 + → 再点」
+              压成一步。没有筛选条件时弹窗自己会拦截（见 SaveAlbumModal 的 canSave），
+              所以这里不必提前判断 */}
           {albums.length === 0 ? (
-            <p className="px-2.5 text-[11px] leading-relaxed text-[var(--text-quaternary)]">
-              设好筛选条件后按「+」存为相簿
-            </p>
+            <button
+              type="button"
+              onClick={onRequestSaveAlbum}
+              title="把当前筛选条件存为相簿，之后一键回到同样的筛选"
+              className="group/empty mt-0.5 w-full flex items-center gap-2.5 h-8 px-2.5 rounded-[10px] border border-dashed border-[var(--border-default)] text-[12.5px] text-[var(--text-quaternary)] hover:border-[var(--border-hover)] hover:text-[var(--text-tertiary)] hover:bg-[var(--bg-glass-hover)] transition-colors duration-150"
+            >
+              <span className="shrink-0 flex items-center justify-center w-[18px] transition-colors duration-150 group-hover/empty:text-[var(--accent-cyan)]">
+                <PlusIcon />
+              </span>
+              <span className="truncate">把当前筛选存为相簿</span>
+            </button>
           ) : (
             <ul className="space-y-[2px]">
               {albums.map(album => {
@@ -530,28 +545,33 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
       </nav>
 
-      <div className="px-3 py-2.5 border-t border-[var(--border-subtle)] bg-[var(--bg-glass)] backdrop-blur-xs space-y-2">
-        {/* 底部第一行：全局偏好的两项 —— 外观与快捷键参考。
-            快捷键不再是顶栏的独立图标：它不作用于当前视图，与外观同属
-            「除了整理照片之外的事」。并进同一行，因此不额外增加底栏高度；
-            右侧留一个与分段控件等高的方钮，替代顶栏里那个孤立的「?」 */}
+      {/* 底部：一条全局工具带。外观 / 快捷键参考 / 清空列表都不作用于当前视图，
+          收进同一行后底栏高度减半，导航区多出两行呼吸空间。
+          低频偏好不再用带文字的大分段（每段 ~52px 必然截断），收成仅图标的三态分段；
+          语义全部交给 title / aria。 */}
+      <div className="px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--bg-glass)] backdrop-blur-xs">
         <div className="flex items-center gap-1">
-          {/* 外观：三态分段。「跟随系统」实时响应 OS 深浅色，明亮 / 暗黑为显式覆盖 */}
-          <div className="flex-1 min-w-0 flex items-center gap-1 p-0.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+          {/* 外观：三态分段。「跟随系统」实时响应 OS 深浅色，明亮 / 暗黑为显式覆盖。
+              图标是这三态的通用词汇（显示器 / 太阳 / 月亮），全称悬停可读。
+              选中态与顶带共用同一套「软激活」：实心琥珀只留给当前导航项 ——
+              「我现在在看哪一类照片」才是这一栏里唯一值得抢眼的信息。 */}
+          <div
+            role="radiogroup"
+            aria-label="外观模式"
+            className="flex items-center gap-0.5 p-0.5 rounded-[10px] bg-[var(--bg-input)] border border-[var(--border-subtle)]"
+          >
             {([
-              // 分段被右侧快捷键钮挤窄后每段只有 ~52px，「跟随系统」四字加图标会溢出成省略号，
-              // 因此段内用两字短标签，完整语义交给 title / aria-label
-              { id: 'system', label: '系统', fullLabel: '跟随系统', icon: <MonitorIcon /> },
-              { id: 'light', label: '明亮', fullLabel: '明亮', icon: <SunIcon /> },
-              { id: 'dark', label: '暗黑', fullLabel: '暗黑', icon: <MoonIcon /> },
+              { id: 'system', fullLabel: '跟随系统', icon: <MonitorIcon /> },
+              { id: 'light', fullLabel: '明亮', icon: <SunIcon /> },
+              { id: 'dark', fullLabel: '暗黑', icon: <MoonIcon /> },
             ] as const).map((option) => {
               const active = themeMode === option.id;
               return (
                 <button
                   key={option.id}
                   type="button"
-                  onClick={() => { if (!active) onThemeModeChange(option.id); }}
-                  aria-pressed={active}
+                  role="radio"
+                  aria-checked={active}
                   aria-label={`外观：${option.fullLabel}`}
                   title={
                     active
@@ -560,48 +580,48 @@ const Sidebar: React.FC<SidebarProps> = ({
                         ? '跟随系统深色 / 浅色偏好'
                         : `切换到${option.fullLabel}模式`
                   }
-                  className={`flex-1 flex items-center justify-center gap-1 h-7 rounded-[10px] text-[12px] font-medium transition-colors duration-150 min-w-0 ${
+                  onClick={() => { if (!active) onThemeModeChange(option.id); }}
+                  className={`flex items-center justify-center w-[30px] h-7 rounded-lg border border-transparent transition-colors duration-150 ${
                     active
-                      ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-md shadow-[rgba(var(--accent-blue-rgb),0.3)]'
+                      ? 'border-[rgba(var(--accent-blue-rgb),0.32)] bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--accent-blue)]'
                       : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
                   }`}
                 >
-                  <span className="shrink-0">{option.icon}</span>
-                  <span className="truncate">{option.label}</span>
+                  {option.icon}
                 </button>
               );
             })}
           </div>
 
+          {/* 快捷键参考：同属「除了整理照片之外的事」，退到工具带右端 */}
           <button
             type="button"
             onClick={onOpenShortcuts}
             title="键盘快捷键（? 也可唤出）"
             aria-label="键盘快捷键"
-            className="shrink-0 flex items-center justify-center w-8 h-8 rounded-xl text-[var(--text-quaternary)] hover:text-[var(--accent-cyan)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)] transition-colors duration-150"
+            className="ml-auto shrink-0 flex items-center justify-center w-8 h-8 rounded-[10px] text-[var(--text-quaternary)] hover:text-[var(--accent-cyan)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)] transition-colors duration-150"
           >
             <KeyboardIcon />
           </button>
-        </div>
 
-        {/* 清空照片列表：低频破坏性操作，退到最次要的一层——静止时几乎看不见，
-            只有悬停才亮出危险色，靠位置而非按钮样式存在。
-            名字直说它做什么：清空的是列表，磁盘文件不动，所以不叫「重置」 */}
-        <button
-          type="button"
-          onClick={onRequestReset}
-          disabled={!hasPhotos}
-          title={hasPhotos ? '清空列表中的全部照片并重置筛选与缓存；磁盘上的原文件不会被删除' : '列表为空'}
-          aria-label="清空照片列表"
-          className={`w-full flex items-center justify-center gap-1.5 h-7 rounded-[10px] text-[12px] font-medium transition-colors duration-150 ${
-            hasPhotos
-              ? 'text-[var(--text-quaternary)] hover:text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.1)]'
-              : 'text-[var(--text-quaternary)] opacity-40 cursor-not-allowed'
-          }`}
-        >
-          <ResetIcon />
-          清空照片列表
-        </button>
+          {/* 清空照片列表：低频破坏性操作，收成工具带最右的一颗图标——
+              位置比体量更次要，悬停才亮出危险色；点击仍有二次确认兜底。
+              名字直说它做什么：清空的是列表，磁盘文件不动，所以不叫「重置」 */}
+          <button
+            type="button"
+            onClick={onRequestReset}
+            disabled={!hasPhotos}
+            title={hasPhotos ? '清空列表中的全部照片并重置筛选与缓存；磁盘上的原文件不会被删除' : '列表为空'}
+            aria-label="清空照片列表"
+            className={`shrink-0 flex items-center justify-center w-8 h-8 rounded-[10px] transition-colors duration-150 ${
+              hasPhotos
+                ? 'text-[var(--text-quaternary)] hover:text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.1)]'
+                : 'text-[var(--text-quaternary)] opacity-40 cursor-not-allowed'
+            }`}
+          >
+            <ResetIcon />
+          </button>
+        </div>
       </div>
       </div>
     </aside>

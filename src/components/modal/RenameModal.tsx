@@ -10,6 +10,8 @@ interface RenameModalProps {
   /** 当前选中的待重命名文件（用于生成真实预览） */
   photos: Photo[];
   count: number;
+  /** K19：批量重命名进行中 —— 按钮置灰、Esc 不关闭，避免重复提交 */
+  isBusy?: boolean;
 }
 
 const INVALID_CHARS = /[<>:"|?*\\/]/;
@@ -47,7 +49,7 @@ interface PreviewResult {
 
 const PREVIEW_MAX_ROWS = 5;
 
-const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, photos, count }) => {
+const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, photos, count, isBusy = false }) => {
   const [mode, setMode] = useState<'sequence' | 'replace' | 'date' | 'repair'>('sequence');
 
   const [prefix, setPrefix] = useState('照片_');
@@ -85,9 +87,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
     }
   }, [isOpen]);
 
-  // Esc 关闭弹层（与系统弹窗习惯一致）
+  // Esc 关闭弹层（与系统弹窗习惯一致）；执行中不响应，避免把进度遮罩下的弹层关掉
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || isBusy) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -96,7 +98,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
+  }, [isOpen, isBusy, onClose]);
 
   /**
    * 基于真实选中文件生成重命名预览，逻辑与 App.handleBatchRename 保持一致：
@@ -193,7 +195,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
     datePrefix, dateFormat, fixMojibake, stripJunkPrefix, stripCopyMarks, fallbackToDate,
   ]);
 
-  const canConfirm = !preview.error && photos.length > 0;
+  const canConfirm = !preview.error && photos.length > 0 && !isBusy;
 
   const handleConfirm = () => {
     if (!canConfirm) return;
@@ -536,7 +538,8 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
           <div className="flex justify-end gap-3">
             <button
               onClick={onClose}
-              className="px-6 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] border border-[var(--border-default)] hover:border-[var(--border-hover)] rounded-xl transition-all duration-200"
+              disabled={isBusy}
+              className="px-6 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] border border-[var(--border-default)] hover:border-[var(--border-hover)] rounded-xl transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               取消
             </button>
@@ -549,7 +552,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                   : 'text-[var(--text-quaternary)] bg-[var(--bg-input)] border border-[var(--border-subtle)] cursor-not-allowed'
               }`}
             >
-              重命名
+              {isBusy ? '重命名中…' : '重命名'}
             </button>
           </div>
         </div>

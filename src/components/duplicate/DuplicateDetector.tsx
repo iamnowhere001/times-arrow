@@ -109,6 +109,8 @@ interface DuplicateDetectorProps {
   duplicateGroups: Photo[][];
   onDeleteDuplicates: (photosToDelete: Photo[]) => void;
   isProcessing: boolean;
+  /** 仅按新参数重新分组中（已有结果保留，只叠一条细进度） */
+  isRepartitioning: boolean;
   /** 检测进度（阶段 / 已用时 / 预计剩余），未开始时为 null */
   progress: DuplicateScanProgress | null;
   onQuickLook: (photo: Photo) => void;
@@ -268,6 +270,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
   duplicateGroups,
   onDeleteDuplicates,
   isProcessing,
+  isRepartitioning,
   progress,
   onQuickLook,
   onRecheck,
@@ -546,16 +549,18 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
    * 顶栏副标题负责「这一页在做什么」，具体数量交给下面的情境条，
    * 避免同一组数字在同一屏里出现两次。
    */
-  const summaryLine = isProcessing
-    ? progress?.phase === 'comparing'
-      ? '正在比对分组…'
-      : '正在为图片计算指纹并分组…'
-    : '以感知哈希比对相似图片，全部在本机完成';
+  const summaryLine = isRepartitioning
+    ? '正在按新参数重新分组…'
+    : isProcessing
+      ? progress?.phase === 'comparing'
+        ? '正在比对分组…'
+        : '正在为图片计算指纹并分组…'
+      : '以感知哈希比对相似图片，全部在本机完成';
 
   return (
     <div className="flex-1 flex flex-col w-full min-h-0">
       {/* 顶栏：与图库工具栏同位同高，形成同一套外壳 */}
-      <div className={`app-drag bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 shrink-0 py-2.5 shadow-lg shadow-[rgba(0,0,0,0.15)] ${isLeftPaneOpen ? 'px-4' : 'pl-[78px] pr-4'}`}>
+      <div className={`app-drag bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 shrink-0 py-2.5 shadow-[var(--shadow-toolbar)] ${isLeftPaneOpen ? 'px-4' : 'pl-[78px] pr-4'}`}>
         <div className="app-no-drag flex items-center justify-between h-10 gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -589,7 +594,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
             </div>
             <button
               onClick={onRecheck}
-              disabled={isProcessing}
+              disabled={isProcessing || isRepartitioning}
               className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-[13px] font-medium text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
             >
               <RefreshIcon />
@@ -710,6 +715,16 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
               </>
             )}
           </div>
+
+          {/* 重新分组：结果列表原地保留，只在顶部叠一条细进度，方便连续微调阈值 */}
+          {isRepartitioning && (
+            <div className="mx-4 mb-1 h-0.5 shrink-0 rounded-full bg-[var(--bg-glass-hover)] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-[var(--accent-purple)] transition-[width] duration-200 ease-out"
+                style={{ width: `${Math.max(8, percent)}%` }}
+              />
+            </div>
+          )}
 
           {/* 内容区 */}
           <div className="flex-1 overflow-y-auto custom-scrollbar">

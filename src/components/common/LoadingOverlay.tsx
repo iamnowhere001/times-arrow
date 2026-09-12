@@ -7,17 +7,28 @@ import React from 'react';
  * 大于 0 表示「入库阶段」，按 `progress / total` 展示百分比。
  */
 interface LoadingOverlayProps {
-  /** 总条目数；0 表示扫描阶段（不确定态） */
+  /** 总条目数；0 表示无法预知总数（不确定态动画） */
   total: number;
   /** 已处理条目数 */
   progress: number;
   /** 当前正在处理的文件名 */
   currentFile: string;
-  /** 取消添加 */
-  onCancel: () => void;
+  /** 取消操作；不传则不显示取消按钮（如重命名 / 移动这类不可中断的批量操作） */
+  onCancel?: () => void;
+  /** 主标题；默认按 total 区分「正在处理媒体 / 正在扫描文件夹」 */
+  title?: string;
+  /** 底部状态文案；默认「个项目 / 请稍候」 */
+  hint?: string;
 }
 
-const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ total, progress, currentFile, onCancel }) => (
+const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
+  total,
+  progress,
+  currentFile,
+  onCancel,
+  title,
+  hint,
+}) => (
   <div className="fixed inset-0 bg-[var(--bg-overlay)] backdrop-blur-2xl z-[100] flex items-center justify-center">
     <div className="relative">
       <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-blue)]/20 via-transparent to-[var(--accent-purple)]/20 rounded-3xl blur-3xl animate-pulse"></div>
@@ -38,14 +49,14 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ total, progress, curren
           </div>
 
           <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-4 tracking-wide">
-            {total > 0 ? '正在处理媒体' : '正在扫描文件夹'}
+            {title ?? (total > 0 ? '正在处理媒体' : '正在扫描文件夹')}
           </h3>
 
           <div className="w-full space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-[var(--text-tertiary)]">{total > 0 ? '进度' : '状态'}</span>
               <span className="font-medium bg-gradient-to-r from-[var(--accent-cyan)] to-[var(--accent-purple)] bg-clip-text text-transparent">
-                {total > 0 ? `${Math.round((progress / total) * 100)}%` : '扫描中'}
+                {total > 0 ? `${Math.round((progress / total) * 100)}%` : '处理中'}
               </span>
             </div>
 
@@ -67,7 +78,7 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ total, progress, curren
               <span className="text-xs text-[var(--text-quaternary)] font-mono">
                 {total > 0 ? `${progress} / ${total}` : '—'}
               </span>
-              <span className="text-xs text-[var(--text-quaternary)]">{total > 0 ? '个项目' : '请稍候'}</span>
+              <span className="text-xs text-[var(--text-quaternary)]">{hint ?? (total > 0 ? '个项目' : '请稍候')}</span>
             </div>
 
             <div className="h-8 mt-2 px-3 py-1.5 bg-[var(--bg-glass)] rounded-xl border border-[var(--border-subtle)] flex items-center justify-center overflow-hidden">
@@ -76,12 +87,14 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ total, progress, curren
               </p>
             </div>
 
-            <button
-              onClick={onCancel}
-              className="w-full mt-1 py-2 text-sm font-medium rounded-xl border border-[var(--border-default)] bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200 active:scale-[0.98]"
-            >
-              取消添加
-            </button>
+            {onCancel && (
+              <button
+                onClick={onCancel}
+                className="w-full mt-1 py-2 text-sm font-medium rounded-xl border border-[var(--border-default)] bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200 active:scale-[0.98]"
+              >
+                取消添加
+              </button>
+            )}
           </div>
         </div>
       </div>
