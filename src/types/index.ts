@@ -114,6 +114,21 @@ export interface SmartAlbum {
 }
 
 /**
+ * 图库来源（N8）：一次「打开文件夹 / 添加文件」被存为常驻入口，
+ * 重启后据此重建图库，不必每次开机重找目录。
+ */
+export interface LibrarySource {
+  /** 绝对路径：文件夹或单独添加的文件 */
+  path: string;
+  /** 来源类型：文件夹（递归扫描）或单独添加的文件 */
+  kind: 'directory' | 'file';
+  /** 首次加入时间（毫秒时间戳） */
+  addedAt: number;
+  /** 最近一次成功导入时间（毫秒时间戳），用于「最近使用在前」排序 */
+  lastOpenedAt: number;
+}
+
+/**
  * 视频元数据。
  * 主进程无法解码视频，因此时长 / 分辨率只能由渲染进程的播放器读取后上报；
  * 读取结果会缓存并持久化，避免每次启动都重新探测。
@@ -200,7 +215,17 @@ export interface PersistedConfig {
   videoMeta?: Record<string, VideoMetaRecord>;
   /** 视图偏好（主题 / 排序 / 缩放 / 面板开合…） */
   preferences?: ViewPreferences;
-  /** 最近打开过的目录（新在前） */
+  /**
+   * 常驻来源（N8）：文件夹与单独添加的文件，重启后据此重建图库。
+   * 来源只增不减（移除靠用户显式操作），因此兼作「整理过哪些目录」的记录。
+   */
+  sources?: LibrarySource[];
+  /**
+   * 最近打开过的目录（新在前）。
+   * 已被 `sources` 取代，仅为兼容旧配置保留：读取端会把其中的目录
+   * 升级为常驻来源，写入端不再更新。
+   * @deprecated 使用 `sources`
+   */
   recentDirectories?: string[];
   /** 重复检测参数 */
   duplicate?: DuplicatePreferences;

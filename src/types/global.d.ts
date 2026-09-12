@@ -152,6 +152,11 @@ declare global {
       getImageHashes: (filePaths: string[]) => Promise<Array<string | null>>;
       /** 批量获取文件 size/mtime/created；失败路径显式返回 failedPaths */
       statFiles: (filePaths: string[]) => Promise<StatFilesResult>;
+      /**
+       * 批量检查路径是否存在（不递归），返回「原路径 → 是否存在」。
+       * 启动时用于标注「不可用来源」（目录被挪走 / 卷未挂载）。
+       */
+      checkPaths: (paths: string[]) => Promise<Record<string, boolean>>;
       /** 监听目录（递归，感知外部增删）；切换目录时主进程自动替换旧 watcher */
       watchDirectory: (dirPath: string) => Promise<{ success: boolean; already?: boolean; error?: string }>;
       /** 停止目录监听 */

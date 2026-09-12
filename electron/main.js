@@ -1787,6 +1787,23 @@ ipcMain.handle('get-metadata', async (event, filePath) => {
   }
 });
 
+// 批量检查路径是否存在（N8：启动时标注「不可用来源」——目录被挪走 / 卷未挂载）。
+// 只做一次 stat，不递归；返回 { 路径: 是否存在 }，缺失的路径显式返回 false。
+ipcMain.handle('check-paths', async (event, paths) => {
+  const list = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string' && p.length > 0) : [];
+  const settled = await Promise.all(
+    list.map(async (target) => {
+      try {
+        await stat(target);
+        return [target, true];
+      } catch {
+        return [target, false];
+      }
+    })
+  );
+  return Object.fromEntries(settled);
+});
+
 // 批量计算感知哈希（主进程并发受控 + 内存缓存，不阻塞渲染进程）
 ipcMain.handle('get-image-hashes', async (event, filePaths) => {
   const list = Array.isArray(filePaths) ? filePaths : [];

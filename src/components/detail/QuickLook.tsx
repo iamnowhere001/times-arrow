@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -30,8 +31,26 @@ interface QuickLookProps {
   preloadSources?: string[];
 }
 
-/** 幻灯片自动播放间隔 */
-const SLIDESHOW_INTERVAL = 3000;
+/** 幻灯片自动播放间隔选项（秒） */
+const SLIDESHOW_INTERVAL_OPTIONS = [2, 3, 5, 8, 12] as const;
+const SLIDESHOW_INTERVAL_STORAGE_KEY = 'pm:slideshow-interval';
+const DEFAULT_SLIDESHOW_INTERVAL = 3;
+
+/** 读取上次选择的间隔：与时光画廊的密度偏好同样落在 localStorage，失败静默回退默认值 */
+const readSlideshowInterval = (): number => {
+  try {
+    const raw = window.localStorage.getItem(SLIDESHOW_INTERVAL_STORAGE_KEY);
+    const parsed = raw ? Number(raw) : NaN;
+    if ((SLIDESHOW_INTERVAL_OPTIONS as readonly number[]).includes(parsed)) return parsed;
+  } catch {
+    /* 隐私模式 / 存储被禁用时忽略 */
+  }
+  return DEFAULT_SLIDESHOW_INTERVAL;
+};
+
+/** 图片交叉淡入的过渡时长；与下方 CSS duration 保持一致 */
+const MEDIA_CROSSFADE_MS = 500;
+
 /** 缩放范围：1 = 适应窗口 */
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 8;
@@ -68,6 +87,9 @@ const QuickLook: React.FC<QuickLookProps> = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [showControls, setShowControls] = useState(true);
   const [isSlideshow, setIsSlideshow] = useState(false);
+  /** 幻灯片间隔（秒）：跨会话记忆，播放中可随时调整、立即生效 */
+  const [slideshowInterval, setSlideshowInterval] = useState(readSlideshowInterval);
+  const [isIntervalMenuOpen, setIsIntervalMenuOpen] = useState(false);
   // 大图加载状态：按 photo.id 记录，避免上一张的 load 事件误判当前这张（HEIC / 大图解码较慢）
   const [mediaStatus, setMediaStatus] = useState<{ id: string; state: 'ready' | 'error' } | null>(null);
   // 慢图才显示转圈：连续翻页时快速命中缓存，不应每张都闪一下加载动画
@@ -239,6 +261,14 @@ const QuickLook: React.FC<QuickLookProps> = ({
     onToggleFavorite?.(photo.id);
   }, [onToggleFavorite, photo.id]);
 
+  // 刚打开的一瞬间忽略点击：地图上双击光点会先打开预览，紧接着的第二次点击
+  // 若不拦截，就会把刚打开（或正在入场）的预览直接关掉
+  const openedAtRef = useRef(Date.now());
+  const handleBackdropClick = useCallback(() => {
+    if (Date.now() - openedAtRef.current < 300) return;
+    onClose();
+  }, [onClose]);
+
   /** 无法在应用内解码时，用系统播放器兜底 */
   const revealInFinder = useCallback(() => {
     if (photo.path && window.electronAPI?.showInFolder) {
@@ -251,6 +281,47 @@ const QuickLook: React.FC<QuickLookProps> = ({
     videoControlRef.current?.resetView();
   }, [resetView]);
 
+  /* ------------------------------ 切换过渡 ------------------------------ */
+
+  /**
+   * 交叉淡入：翻页时把上一张的定格快照垫在底层，新图就绪后再一起淡出淡入。
+   * 只处理「图片 ⇄ 图片」；涉及视频时由播放器接管，直接切换。
+   * 快照连带读走当时的缩放 / 平移变换 —— 放大端详时翻页，旧图不会「弹回原位」。
+   */
+  const prevPhotoRef = useRef(photo);
+  const [outgoing, setOutgoing] = useState<{ photo: Photo; transform: string } | null>(null);
+
+  // 快照层的尺寸规则：与它当时在主层里的呈现方式保持一致（占位分支 / 自适应分支），
+  // 否则过渡的瞬间会看到一次尺寸跳动
+  const outgoingDims = outgoing?.photo.dimensions;
+  const outgoingRatio =
+    outgoingDims?.width && outgoingDims?.height ? outgoingDims.width / outgoingDims.height : 0;
+  const outgoingBoxed = Boolean(outgoing?.photo.thumbnail) && outgoingRatio > 0;
+
+  useLayoutEffect(() => {
+    const prev = prevPhotoRef.current;
+    if (prev.id === photo.id) return;
+    prevPhotoRef.current = photo;
+
+    if (isVideoPhoto(prev) || isVideoPhoto(photo)) {
+      setOutgoing(null);
+      return;
+    }
+    // 此时 DOM 上仍是上一张的变换（缩放重置发生在 passive effect 里，晚于这里）
+    setOutgoing({ photo: prev, transform: mediaRef.current?.style.transform ?? '' });
+  }, [photo]);
+
+  useEffect(() => {
+    if (!outgoing) return;
+    // 新图未就绪时先垫着旧图：宁可多停一会儿，也不要在加载中途把画面抽走
+    if (!imageReady && !imageFailed) {
+      const guard = window.setTimeout(() => setOutgoing(null), 6000);
+      return () => window.clearTimeout(guard);
+    }
+    const timer = window.setTimeout(() => setOutgoing(null), MEDIA_CROSSFADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [outgoing, imageReady, imageFailed]);
+
   /* ------------------------------ 幻灯片 ------------------------------ */
   useEffect(() => {
     if (!isSlideshow || isVideo) return;
@@ -262,14 +333,44 @@ const QuickLook: React.FC<QuickLookProps> = ({
       } else {
         setIsSlideshow(false);
       }
-    }, SLIDESHOW_INTERVAL);
+    }, slideshowInterval * 1000);
     return () => window.clearInterval(timer);
-  }, [isSlideshow, isVideo, hasNext, onNext, onFirst]);
+  }, [isSlideshow, isVideo, hasNext, onNext, onFirst, slideshowInterval]);
+
+  // 间隔选择即记忆，下次打开预览沿用
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SLIDESHOW_INTERVAL_STORAGE_KEY, String(slideshowInterval));
+    } catch {
+      /* 忽略 */
+    }
+  }, [slideshowInterval]);
+
+  // 播放期间控件常显：随时能暂停 / 改间隔（并清掉播放开始前挂起的隐藏计时器）
+  useEffect(() => {
+    if (!isSlideshow) return;
+    if (controlsTimeoutRef.current !== null) {
+      window.clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+    setShowControls(true);
+  }, [isSlideshow]);
 
   // 切到视频时自动退出幻灯片模式
   useEffect(() => {
     if (isVideo && isSlideshow) setIsSlideshow(false);
   }, [isVideo, isSlideshow]);
+
+  // 间隔菜单：点到外面即收起
+  const intervalMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isIntervalMenuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!intervalMenuRef.current?.contains(e.target as Node)) setIsIntervalMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () => window.removeEventListener('pointerdown', onPointerDown, true);
+  }, [isIntervalMenuOpen]);
 
   /* ------------------------------ 键盘 ------------------------------ */
   const handleKeyDown = useCallback(
@@ -431,7 +532,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
   return (
     <div
       className="fixed inset-0 z-[100] bg-[rgba(0,0,0,0.95)] backdrop-blur-xl flex flex-col animate-fadeIn overflow-hidden select-none"
-      onClick={onClose}
+      onClick={handleBackdropClick}
     >
       {/* 顶栏：文件名 / 序号 / 缩放或视频信息 */}
       <div
@@ -470,6 +571,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent-cyan)]" />
                 </span>
                 幻灯片播放中
+                <span className="font-numeric tabular-nums text-[rgba(255,255,255,0.55)]">{slideshowInterval}s</span>
               </span>
             </>
           )}
@@ -514,6 +616,41 @@ const QuickLook: React.FC<QuickLookProps> = ({
           <VideoPlayer photo={photo} controlRef={videoControlRef} onRevealInFinder={revealInFinder} />
         ) : (
           <>
+            {/* 交叉淡入：上一张的定格快照垫底；新图就绪时两层一起换位。
+                尺寸规则与被替换的主图完全一致，否则过渡瞬间会看到一次缩放跳动 */}
+            {outgoing && (
+              <div
+                aria-hidden
+                className={`absolute inset-0 z-0 flex items-center justify-center pointer-events-none transition-opacity duration-500 ${
+                  imageReady || imageFailed ? 'opacity-0' : 'opacity-100'
+                }`}
+                style={outgoing.transform ? { transform: outgoing.transform } : undefined}
+              >
+                {outgoingBoxed ? (
+                  <div
+                    className="relative"
+                    style={{
+                      aspectRatio: String(outgoingRatio),
+                      width: `min(90vw, calc(85vh * ${outgoingRatio}))`,
+                    }}
+                  >
+                    <img
+                      src={outgoing.photo.url}
+                      alt=""
+                      draggable={false}
+                      className="absolute inset-0 w-full h-full object-contain shadow-2xl rounded-lg border border-[rgba(255,255,255,0.1)]"
+                    />
+                  </div>
+                ) : (
+                  <img
+                    src={outgoing.photo.url}
+                    alt=""
+                    draggable={false}
+                    className="max-w-[90vw] max-h-[85vh] object-contain shadow-2xl rounded-lg border border-[rgba(255,255,255,0.1)]"
+                  />
+                )}
+              </div>
+            )}
             {/* 大图解码期间给出明确反馈，避免整屏黑屏像是卡死 */}
             {showSpinner && !imageFailed && (
               <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
@@ -561,7 +698,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
                     alt=""
                     aria-hidden
                     draggable={false}
-                    className={`absolute inset-0 w-full h-full object-contain rounded-lg blur-xl transition-opacity duration-500 ${imageReady ? 'opacity-0' : 'opacity-80'}`}
+                    className={`absolute inset-0 w-full h-full object-contain rounded-lg blur-xl transition-opacity duration-500 ${imageReady || outgoing ? 'opacity-0' : 'opacity-80'}`}
                   />
                   <img
                     src={photo.url}
@@ -683,6 +820,58 @@ const QuickLook: React.FC<QuickLookProps> = ({
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
               )}
             </button>
+
+            {/* 间隔：播放前后都能调，选中即记忆（顶栏会同步显示当前秒数） */}
+            <div className="relative" ref={intervalMenuRef}>
+              <button
+                onClick={() => setIsIntervalMenuOpen(prev => !prev)}
+                className={`h-10 min-w-[44px] px-2 flex items-center justify-center rounded-xl font-numeric text-xs font-semibold tabular-nums transition-all active:scale-90 ${
+                  isIntervalMenuOpen
+                    ? 'text-white bg-[rgba(255,255,255,0.14)]'
+                    : 'text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)]'
+                }`}
+                title="幻灯片间隔"
+                aria-haspopup="menu"
+                aria-expanded={isIntervalMenuOpen}
+                aria-label={`幻灯片间隔，当前 ${slideshowInterval} 秒`}
+              >
+                {slideshowInterval}s
+              </button>
+              {isIntervalMenuOpen && (
+                <div
+                  role="menu"
+                  aria-label="幻灯片间隔"
+                  className="absolute bottom-12 left-1/2 -translate-x-1/2 w-[132px] p-1 rounded-2xl bg-[rgba(30,30,40,0.95)] backdrop-blur-xl border border-[rgba(255,255,255,0.12)] shadow-2xl animate-scaleIn"
+                >
+                  {SLIDESHOW_INTERVAL_OPTIONS.map(seconds => {
+                    const active = slideshowInterval === seconds;
+                    return (
+                      <button
+                        key={seconds}
+                        role="menuitemradio"
+                        aria-checked={active}
+                        onClick={() => {
+                          setSlideshowInterval(seconds);
+                          setIsIntervalMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between h-8 px-3 rounded-xl text-xs transition-colors ${
+                          active
+                            ? 'text-[var(--accent-cyan)] bg-[rgba(var(--accent-cyan-rgb),0.14)]'
+                            : 'text-[rgba(255,255,255,0.78)] hover:text-white hover:bg-[rgba(255,255,255,0.1)]'
+                        }`}
+                      >
+                        <span className="font-numeric tabular-nums">{seconds} 秒</span>
+                        {active && (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1" />
 

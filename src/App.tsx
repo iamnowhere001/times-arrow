@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { AiCacheEntry, MediaFilter, PersistedConfig, Photo, PhotoFilters, SmartAlbum, SortConfig, ViewMode, RenameOptions, SortKey } from '@/types';
+import { AiCacheEntry, LibrarySource, MediaFilter, PersistedConfig, Photo, PhotoFilters, SmartAlbum, SortConfig, ViewMode, RenameOptions, SortKey } from '@/types';
 import {
   isImageName,
   isVideoName,
@@ -54,6 +54,7 @@ import {
   savePersistedConfig,
   setPersistenceErrorHandler,
 } from '@/lib/persistence/persistence';
+import { basenameOfPath, readSourcesFromConfig, upsertSources } from '@/lib/persistence/sources';
 import { loadAiCache, saveAiCache } from '@/lib/persistence/aiCache';
 import Sidebar from '@/components/layout/Sidebar';
 import Toolbar from '@/components/layout/Toolbar';
@@ -71,6 +72,7 @@ import DuplicateDetector, {
 } from '@/components/duplicate/DuplicateDetector';
 import ExportModal from '@/components/modal/ExportModal';
 import TimelineGallery from '@/components/timeline/TimelineGallery';
+import LocationMap from '@/components/map/LocationMap';
 import { clearThumbnailCache } from '@/components/grid/ThumbnailImage';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import DragOverlay from '@/components/common/DragOverlay';
@@ -78,12 +80,13 @@ import LoadingOverlay from '@/components/common/LoadingOverlay';
 import ActiveFiltersBar from '@/components/layout/ActiveFiltersBar';
 import AdjustDateModal, { type DateAdjustment } from '@/components/modal/AdjustDateModal';
 import SaveAlbumModal from '@/components/modal/SaveAlbumModal';
+import RestoreLibraryModal from '@/components/modal/RestoreLibraryModal';
 import AiSettingsModal from '@/components/modal/AiSettingsModal';
 import ShortcutsOverlay from '@/components/common/ShortcutsOverlay';
 import { logger } from '@/lib/logger';
 
-/** 主内容区的顶层视图：图库 / 时光画廊 / 重复图片检测（整页视图，而非弹窗） */
-type MainView = 'library' | 'timeline' | 'duplicates';
+/** 主内容区的顶层视图：图库 / 时光画廊 / 按地点浏览 / 重复图片检测（整页视图，而非弹窗） */
+type MainView = 'library' | 'timeline' | 'map' | 'duplicates';
 
 /** 导入所需的最小文件信息（来自主进程扫描 / stat） */
 interface FileInfo {
@@ -146,9 +149,17 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   /** AI 分析结果缓存（路径 → 描述 / 标签），持久化在独立的 ai-cache.json */
   const aiCacheRef = useRef<Map<string, AiCacheEntry>>(new Map());
-  /** 最近打开过的目录（新在前），用于一键重新打开 */
-  const [recentDirectories, setRecentDirectories] = useState<string[]>([]);
-  const recentDirectoriesRef = useRef<string[]>([]);
+  /**
+   * 常驻来源（N8）：打开的文件夹与单独添加的文件都记在这里，重启后据此重建图库。
+   * 顺序（最近使用在前）、去重与条数上限由 sources.ts 统一维护。
+   */
+  const [sources, setSources] = useState<LibrarySource[]>([]);
+  const sourcesRef = useRef<LibrarySource[]>([]);
+  /** 运行时判定为不可用的来源路径（不存在 / 卷未挂载）；不落盘，每次启动重探 */
+  const [unavailableSourcePaths, setUnavailableSourcePaths] = useState<Set<string>>(new Set());
+  /** 「恢复上次的图库」确认框：每个会话只问一次 */
+  const [isRestorePromptOpen, setIsRestorePromptOpen] = useState(false);
+  const restorePromptShownRef = useRef(false);
   /** 配置是否已读取完成：完成前不写偏好，避免用默认值覆盖已存配置 */
   const [isConfigLoaded, setIsConfigLoaded] = useState(false);
   const [quickLookPhoto, setQuickLookPhoto] = useState<Photo | null>(null);
@@ -195,6 +206,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingTotal, setLoadingTotal] = useState(0);
   const [loadingCurrentFile, setLoadingCurrentFile] = useState('');
+  /** 遮罩承载的操作类型：只影响取消按钮与取消提示的文案（导入 / 恢复上次的图库） */
+  const [loadingKind, setLoadingKind] = useState<'import' | 'restore'>('import');
 
   // K19：批量文件操作（重命名 / 删除 / 移动）的状态。
   // isFileOpBusy 同步置位 → 弹层主按钮置灰；fileOpOverlay 延迟升起 → 小批量不闪遮罩。
@@ -285,6 +298,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const isDuplicateDetectorOpen = mainView === 'duplicates';
   /** 时光画廊是否在前台：工具栏 / 详情面板据此让行 */
   const isTimelineOpen = mainView === 'timeline';
+  /** 「按地点浏览」是否在前台 */
+  const isMapOpen = mainView === 'map';
   /**
    * 左栏（侧边栏）是否真正占据左侧空间。
    *
@@ -393,6 +408,104 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     void api.unwatchDirectory().catch(() => undefined);
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // 库来源（N8）：把「打开文件夹 / 添加文件」记为常驻来源，重启后据此重建图库。
+  // 记录时机统一放在「导入成功之后」——失败或取消不写，
+  // 因此来源列表恒等于「真正整理过的内容」，恢复时不会再撞空。
+  // ---------------------------------------------------------------------------
+
+  /** 把一批来源写进配置（按路径去重、刷新使用时间），并同步清掉它们的不可用标记 */
+  const rememberSources = useCallback((incoming: Array<Pick<LibrarySource, 'path' | 'kind'>>) => {
+    if (incoming.length === 0) return;
+    const next = upsertSources(sourcesRef.current, incoming);
+    sourcesRef.current = next;
+    setSources(next);
+    setUnavailableSourcePaths(prev => {
+      if (prev.size === 0) return prev;
+      const updated = new Set(prev);
+      let changed = false;
+      incoming.forEach(entry => {
+        if (updated.delete(entry.path)) changed = true;
+      });
+      return changed ? updated : prev;
+    });
+    void savePersistedConfig({ sources: next });
+  }, []);
+
+  /** 探测来源是否仍存在（目录被挪走 / 卷未挂载 → 侧栏单独标注「不可用」） */
+  const refreshSourceAvailability = useCallback(async (list: LibrarySource[]) => {
+    const api = window.electronAPI;
+    if (!api?.checkPaths) return;
+    if (list.length === 0) {
+      setUnavailableSourcePaths(new Set());
+      return;
+    }
+    try {
+      const result = await api.checkPaths(list.map(source => source.path));
+      setUnavailableSourcePaths(
+        new Set(list.filter(source => result[source.path] === false).map(source => source.path))
+      );
+    } catch (error) {
+      logger.warn('来源可用性检查失败:', error);
+    }
+  }, []);
+
+  /**
+   * 移除来源：只摘掉「记住的来源」，磁盘文件与收藏 / 标签 / 时间修正全部保留
+   * （重新打开同一文件夹即可按路径对上）。
+   *
+   * 当前列表里属于这些来源的条目一并移出 —— 否则会留下「来源已移除、
+   * 照片还在列表里、下次启动却不会恢复」的悬空状态。
+   */
+  const removeSources = useCallback((removed: LibrarySource[]) => {
+    if (removed.length === 0) return;
+    const removedPaths = new Set(removed.map(source => source.path));
+    const dirPrefixes = removed
+      .filter(source => source.kind === 'directory')
+      .map(source => `${source.path}/`);
+
+    const next = sourcesRef.current.filter(source => !removedPaths.has(source.path));
+    sourcesRef.current = next;
+    setSources(next);
+    void savePersistedConfig({ sources: next });
+    setUnavailableSourcePaths(prev => {
+      if (prev.size === 0) return prev;
+      const updated = new Set(prev);
+      let changed = false;
+      removedPaths.forEach(path => {
+        if (updated.delete(path)) changed = true;
+      });
+      return changed ? updated : prev;
+    });
+
+    const targets = photosRef.current.filter(photo => {
+      const p = photo.path;
+      if (!p) return false;
+      return removedPaths.has(p) || dirPrefixes.some(prefix => p.startsWith(prefix));
+    });
+    if (targets.length > 0) {
+      const ids = new Set(targets.map(photo => photo.id));
+      forgetImportedPaths(targets.map(photo => photo.path as string).filter(Boolean));
+      removeWithCollapse(ids);
+      removeIdsFromSelection(ids);
+      pruneDuplicateGroups(ids);
+    }
+
+    // 正在监听的目录属于被移除来源：停止监听，避免继续对已移除来源报外部变动
+    const watched = watchedDirRef.current;
+    if (watched && (removedPaths.has(watched) || dirPrefixes.some(prefix => watched.startsWith(prefix)))) {
+      unwatchCurrentDir();
+    }
+
+    const label = removed.length === 1 ? `「${basenameOfPath(removed[0].path)}」` : `${removed.length} 个来源`;
+    showToast(
+      targets.length > 0
+        ? `已移除来源${label}，列表中的 ${targets.length} 项一并移出（磁盘文件与收藏 / 标签保留）`
+        : `已移除来源${label}`,
+      'info'
+    );
+  }, [forgetImportedPaths, pruneDuplicateGroups, removeIdsFromSelection, removeWithCollapse, showToast, unwatchCurrentDir]);
+
   // 内存压力响应：主进程广播 + 渲染进程堆占用兜底，统一裁剪已登记的缓存
   useEffect(() => {
     const offPressure = installMemoryPressureListener();
@@ -427,11 +540,16 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       // 视频元数据预热：命中缓存的视频无需再次探测即可显示时长
       seedVideoMeta(config.videoMeta);
 
-      const storedRecent = Array.isArray(config.recentDirectories)
-        ? config.recentDirectories.filter(dir => typeof dir === 'string' && dir.length > 0).slice(0, 8)
-        : [];
-      recentDirectoriesRef.current = storedRecent;
-      setRecentDirectories(storedRecent);
+      // 常驻来源：旧配置没有 sources 时由「最近打开」升级而来（见 sources.ts）。
+      // 可用性探测放到后台：启动不被磁盘 stat 拖慢，结果到了侧栏自然更新。
+      const storedSources = readSourcesFromConfig(config);
+      sourcesRef.current = storedSources;
+      setSources(storedSources);
+      void refreshSourceAvailability(storedSources);
+      // 迁移结果立刻落盘：否则每次启动都要从旧字段重新推导（且清空过来源的配置会复活）
+      if (!Array.isArray(config.sources) && storedSources.length > 0) {
+        void savePersistedConfig({ sources: storedSources });
+      }
 
       setAlbums(
         Array.isArray(config.albums)
@@ -504,7 +622,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     return () => {
       cancelled = true;
     };
-  }, [updateFilters]);
+  }, [refreshSourceAvailability, updateFilters]);
 
   // 视频元数据上报：回写到对应条目（时长 / 分辨率）。
   // 写入延迟合并，避免同时加载多个视频时反复落盘。
@@ -796,14 +914,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     showToast(removed ? `已删除相簿「${removed.name}」` : '已删除相簿', 'info');
   }, [albums, filters, showToast]);
 
-  /** 记录最近打开的目录（新在前，最多 8 条） */
-  const pushRecentDirectory = useCallback((dir: string) => {
-    const next = [dir, ...recentDirectoriesRef.current.filter(item => item !== dir)].slice(0, 8);
-    recentDirectoriesRef.current = next;
-    setRecentDirectories(next);
-    void savePersistedConfig({ recentDirectories: next });
-  }, []);
-
   const clearLoading = useCallback(() => {
     setLoading(false);
     setLoadingProgress(0);
@@ -907,8 +1017,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
     cancelShowLoading();
     clearLoading();
-    showToast('已取消添加', 'info');
-  }, [cancelShowLoading, clearLoading, showToast]);
+    showToast(loadingKind === 'restore' ? '已取消恢复' : '已取消添加', 'info');
+  }, [cancelShowLoading, clearLoading, loadingKind, showToast]);
 
   // 清空照片列表：只清空列表与派生缓存，磁盘文件不动
   const handleClearList = useCallback(() => {
@@ -926,6 +1036,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     setFilters(createEmptyFilters());
     setSearchQuery('');
     importedPathsRef.current.clear();
+    // N8：来源记录一并清空 —— 清空列表的语义是「重新开始」，
+    // 留下来源会让下次启动又把刚清掉的库恢复回来
+    sourcesRef.current = [];
+    setSources([]);
+    setUnavailableSourcePaths(new Set());
+    void savePersistedConfig({ sources: [] });
     clearDragThumbnailCache();
     clearThumbnailCache();
     // 列表清空后指纹也失去意义，一并释放（否则切库后缓存只增不减）
@@ -1302,10 +1418,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
       if (activeScanIdRef.current !== scanId || cancelRequestedRef.current) return;
 
+      // N8：目录打开成功即记入常驻来源（已在列表也记 —— 来源记的是「你整理哪些目录」）
+      rememberSources([{ path: dirPath, kind: 'directory' }]);
+
       if (added === 0 && infos.length > 0) {
         showToast(`文件夹 "${dirName}" 中的内容已在列表中`, 'info');
       } else {
-        pushRecentDirectory(dirPath);
         showToast(`文件夹 "${dirName}" 已加载 ${added} 个项目`, 'success');
       }
 
@@ -1335,13 +1453,115 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         clearLoading();
       }
     }
-  }, [cancelShowLoading, clearLoading, ingestFiles, pushRecentDirectory, showToast, watchCurrentDir]);
+  }, [cancelShowLoading, clearLoading, ingestFiles, rememberSources, showToast, watchCurrentDir]);
 
-  /** 重新打开最近目录（走同一套扫描 + 导入管线，同样可取消） */
-  const handleSelectRecentFolder = useCallback((path: string) => {
+  /**
+   * 恢复上次的图库（N8）：按来源逐项重扫 / 补 stat，走统一导入管线。
+   * 复用现有的进度浮层与取消链路：目录逐个扫描（浮层显示当前目录与序号），
+   * 单独文件一次 stat 后整批入库；失败的来源标记为「不可用」，不静默丢弃。
+   */
+  const restoreLibrary = useCallback(async (targets: LibrarySource[]) => {
+    const api = window.electronAPI;
+    if (!api || targets.length === 0) return;
+
     cancelRequestedRef.current = false;
-    void loadDirectory(path);
-  }, [loadDirectory]);
+    const dirs = targets.filter(source => source.kind === 'directory');
+    const files = targets.filter(source => source.kind === 'file');
+    const totalSteps = dirs.length + (files.length > 0 ? 1 : 0);
+    const failedPaths = new Set<string>();
+    let addedTotal = 0;
+    let step = 0;
+
+    setLoadingKind('restore');
+    showLoadingSoon();
+    setLoadingTotal(0); // 0 = 扫描阶段（不确定态）
+    setLoadingCurrentFile('正在准备恢复…');
+
+    try {
+      for (const source of dirs) {
+        if (cancelRequestedRef.current) break;
+        step += 1;
+        const name = basenameOfPath(source.path);
+        setLoadingTotal(0);
+        setLoadingProgress(0);
+        setLoadingCurrentFile(`正在扫描「${name}」（${step}/${totalSteps}）…`);
+
+        const scanId = `restore-${Date.now()}-${step}`;
+        activeScanIdRef.current = scanId;
+        try {
+          const scan = await api.scanDirectory(source.path, scanId);
+          if (activeScanIdRef.current !== scanId || cancelRequestedRef.current || scan.cancelled) break;
+          if (scan.error) {
+            // 目录不存在 / 卷未挂载：标注不可用，但来源本身保留
+            logger.warn(`恢复来源失败「${source.path}」:`, scan.error);
+            failedPaths.add(source.path);
+            continue;
+          }
+          if (scan.files.length > 0) {
+            setLoadingTotal(scan.files.length);
+            setLoadingCurrentFile(`正在恢复「${name}」（${step}/${totalSteps}）…`);
+            addedTotal += await ingestFiles(scan.files, (done, total) => {
+              if (total > 0) setLoadingProgress(Math.min(done, total));
+            });
+          }
+        } catch (error) {
+          logger.warn(`恢复来源失败「${source.path}」:`, error);
+          failedPaths.add(source.path);
+        } finally {
+          if (activeScanIdRef.current === scanId) activeScanIdRef.current = null;
+        }
+      }
+
+      // 单独添加的文件：一次 stat 补齐后走同一入库管线
+      if (files.length > 0 && !cancelRequestedRef.current) {
+        step += 1;
+        setLoadingTotal(0);
+        setLoadingProgress(0);
+        setLoadingCurrentFile(`正在恢复 ${files.length} 个单独添加的文件（${step}/${totalSteps}）…`);
+        const paths = files.map(source => source.path);
+        try {
+          const stat = await api.statFiles(paths);
+          stat.failedPaths.forEach(path => failedPaths.add(path));
+          if (!cancelRequestedRef.current && stat.infos.length > 0) {
+            setLoadingTotal(stat.infos.length);
+            addedTotal += await ingestFiles(stat.infos, (done, total) => {
+              if (total > 0) setLoadingProgress(Math.min(done, total));
+            });
+          }
+        } catch (error) {
+          logger.warn('恢复单独添加的文件失败:', error);
+          paths.forEach(path => failedPaths.add(path));
+        }
+      }
+
+      // 重新探测一次可用性：目录挪回来 / 磁盘重新挂载要能自动脱掉「不可用」
+      void refreshSourceAvailability(sourcesRef.current);
+
+      // 恢复出的第一个可用目录接管监听：外部增删照常感知
+      const primaryDir = dirs.find(source => !failedPaths.has(source.path));
+      if (primaryDir && !cancelRequestedRef.current) void watchCurrentDir(primaryDir.path);
+
+      if (cancelRequestedRef.current) {
+        // 取消提示由 handleCancelLoading 统一给出，这里只在已有入库结果时补充说明
+        if (addedTotal > 0) showToast(`已取消恢复：已加入 ${addedTotal} 个项目`, 'info');
+      } else if (failedPaths.size > 0) {
+        showToast(
+          addedTotal > 0
+            ? `已恢复 ${addedTotal} 个项目；${failedPaths.size} 个来源不可用（已移动或未挂载），可在侧栏「文件夹」中移除`
+            : `${failedPaths.size} 个来源不可用（已移动或未挂载），可在侧栏「文件夹」中移除`,
+          'warning'
+        );
+      } else if (addedTotal === 0) {
+        showToast('来源内容已在列表中，无需重复恢复', 'info');
+      } else {
+        showToast(`已恢复 ${addedTotal} 个项目`, 'success');
+      }
+    } finally {
+      cancelShowLoading();
+      clearLoading();
+      setLoadingKind('import');
+    }
+  }, [cancelShowLoading, clearLoading, ingestFiles, refreshSourceAvailability, showToast, watchCurrentDir]);
 
   /**
    * 按文件路径导入：stat 补齐元数据后走统一入库管线。
@@ -1368,6 +1588,11 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         return;
       }
 
+      // N8：成功读到的文件记为常驻来源，下次启动可原地补回
+      if (added > 0) {
+        rememberSources(infos.map(info => ({ path: info.path, kind: 'file' as const })));
+      }
+
       const ignoreNote = ignored > 0 ? `，已忽略 ${ignored} 个不支持的文件` : '';
       if (added === 0) {
         showToast(`已选中的 ${infos.length} 个项目已在列表中${ignoreNote}`, ignored > 0 ? 'warning' : 'info');
@@ -1388,7 +1613,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     } finally {
       endDropWork();
     }
-  }, [beginDropWork, endDropWork, ingestFiles, showToast]);
+  }, [beginDropWork, endDropWork, ingestFiles, rememberSources, showToast]);
 
   /**
    * 统一导入：一个对话框可同时多选图片 / 视频文件与文件夹（可混合）。
@@ -1428,6 +1653,65 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     }
   }, [importPickedPaths, showToast]);
 
+  // ---------------------------------------------------------------------------
+  // 库来源交互（N8）：点来源 = 重新扫描 / 补进列表；移除来源 = 只摘记录、不动磁盘
+  // ---------------------------------------------------------------------------
+
+  /** 点单个来源：不可用时给出说明与「移除来源」入口，可用时走原导入管线 */
+  const handleSelectSource = useCallback((source: LibrarySource) => {
+    if (unavailableSourcePaths.has(source.path)) {
+      const name = basenameOfPath(source.path);
+      showToast(
+        source.kind === 'directory'
+          ? `「${name}」不可用：文件夹不存在或所在磁盘未挂载`
+          : `「${name}」不可用：文件已被移动或删除`,
+        'warning',
+        { label: '移除来源', onClick: () => removeSources([source]) }
+      );
+      return;
+    }
+    cancelRequestedRef.current = false;
+    if (source.kind === 'directory') void loadDirectory(source.path);
+    else void importFilePaths([source.path], 0);
+  }, [importFilePaths, loadDirectory, removeSources, showToast, unavailableSourcePaths]);
+
+  const handleSelectDirectorySource = useCallback((path: string) => {
+    const source = sourcesRef.current.find(item => item.path === path);
+    if (source) handleSelectSource(source);
+  }, [handleSelectSource]);
+
+  const handleRemoveDirectorySource = useCallback((path: string) => {
+    removeSources(sourcesRef.current.filter(item => item.path === path));
+  }, [removeSources]);
+
+  const handleSelectFileSources = useCallback(() => {
+    const files = sourcesRef.current.filter(item => item.kind === 'file');
+    if (files.length === 0) return;
+    // 全部不可用：给出与单个来源一致的说明与移除入口，不再走注定失败的导入
+    if (files.every(item => unavailableSourcePaths.has(item.path))) {
+      showToast(`${files.length} 个单独添加的文件都不可用（已被移动或删除）`, 'warning', {
+        label: '移除来源',
+        onClick: () => removeSources(files),
+      });
+      return;
+    }
+    cancelRequestedRef.current = false;
+    // 部分缺失由 importFilePaths 的失败提示逐条说明，不会静默少几个
+    void importFilePaths(files.map(item => item.path), 0);
+  }, [importFilePaths, removeSources, showToast, unavailableSourcePaths]);
+
+  const handleRemoveFileSources = useCallback(() => {
+    removeSources(sourcesRef.current.filter(item => item.kind === 'file'));
+  }, [removeSources]);
+
+  // 启动时若存在常驻来源：询问是否恢复上次的图库（每个会话只问一次）
+  useEffect(() => {
+    if (!isConfigLoaded || restorePromptShownRef.current) return;
+    if (photosRef.current.length > 0) return;
+    if (sources.length === 0) return;
+    restorePromptShownRef.current = true;
+    setIsRestorePromptOpen(true);
+  }, [isConfigLoaded, sources]);
 
   // Selection Logic
   // 区间选择的锚点：最近一次「单击」的照片 id（Shift 连选以它为起点）
@@ -1509,18 +1793,30 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   }, [visiblePhotos, selectedIds]);
 
   /**
+   * 「按地点浏览」里点开某张照片时的临时翻页范围：收窄到该地点的照片。
+   * QuickLook 关闭后自动释放（见下方 effect），不会影响其它视图的翻页。
+   */
+  const [quickLookScope, setQuickLookScope] = useState<Photo[] | null>(null);
+
+  /**
    * QuickLook 的翻页范围跟随当前视图：
    * 图库里按可见列表翻页，重复检测页只在检测结果内翻页，
-   * 时光画廊按时间排序的全部照片翻页。
+   * 时光画廊按时间排序的全部照片翻页，地图里则限定在同一点位内。
    */
   const quickLookList = useMemo(
     () => {
+      if (quickLookScope) return quickLookScope;
       if (isDuplicateDetectorOpen) return duplicateGroups.flatMap(group => group);
       if (isTimelineOpen) return timelinePhotos;
       return visiblePhotos;
     },
-    [isDuplicateDetectorOpen, isTimelineOpen, duplicateGroups, visiblePhotos, timelinePhotos]
+    [quickLookScope, isDuplicateDetectorOpen, isTimelineOpen, duplicateGroups, visiblePhotos, timelinePhotos]
   );
+
+  // 预览关闭即释放地点范围：否则回到图库再打开预览，翻页仍被困在上一个地点
+  useEffect(() => {
+    if (!quickLookPhoto) setQuickLookScope(null);
+  }, [quickLookPhoto]);
 
   // QuickLook 当前索引：缓存结果，避免每次渲染对大列表做线性查找
   const quickLookIndex = useMemo(
@@ -2406,6 +2702,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     [albums, filters]
   );
 
+  // 侧栏「文件夹」来源区：目录逐个列出，单独添加的文件聚合为一行
+  const directorySources = useMemo(
+    () => sources.filter(source => source.kind === 'directory'),
+    [sources]
+  );
+  const fileSources = useMemo(() => sources.filter(source => source.kind === 'file'), [sources]);
+  const unavailableSourceCount = unavailableSourcePaths.size;
+
   // 筛选面板的可选项（相机 / 格式 / 标签）：随元数据与标签变化动态更新。
   // 口径必须与 matchesFilters 一致 —— 隐藏项本来就不会出现在结果里，
   // 若把「只存在于隐藏项」的相机 / 标签列成可选，用户选中后必然得到 0 条结果。
@@ -2432,6 +2736,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
   const handleOpenSaveAlbum = useCallback(() => setIsSaveAlbumModalOpen(true), []);
   const handleSelectTimeline = useCallback(() => setMainView('timeline'), []);
+  const handleSelectMap = useCallback(() => setMainView('map'), []);
+  /** 地图照片条 → QuickLook：翻页范围限定在该地点的照片内 */
+  const handleMapQuickLook = useCallback((photo: Photo, scope: Photo[]) => {
+    setQuickLookScope(scope);
+    setQuickLookPhoto(photo);
+  }, []);
   const handleOpenShortcuts = useCallback(() => setIsShortcutsOpen(true), []);
   const handleOpenAiSettings = useCallback(() => setIsAiSettingsOpen(true), []);
   const handleCheckDuplicatesClick = useCallback(() => {
@@ -2557,6 +2867,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         }
         return;
       }
+      // 按地点浏览：同上（地图自身的方向键平移 / 缩放由地图容器处理）
+      if (isMapOpen) {
+        if (e.key === 'Escape' && !quickLookPhoto) {
+          e.preventDefault();
+          setMainView('library');
+        }
+        return;
+      }
       // 弹层打开时全局快捷键一律让行：尤其是 Delete / Backspace，
       // 否则会在当前弹层之上再叠一个「移至回收站」确认框
       if (
@@ -2649,7 +2967,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
-    quickLookPhoto, isRenameModalOpen, isDeleteModalOpen, isDuplicateDetectorOpen, isTimelineOpen, isExportModalOpen,
+    quickLookPhoto, isRenameModalOpen, isDeleteModalOpen, isDuplicateDetectorOpen, isTimelineOpen, isMapOpen,
+    isExportModalOpen,
     isShortcutsOpen, isAiSettingsOpen, isAdjustDateModalOpen, isSaveAlbumModalOpen, isFilterPanelOpen,
     isClearListConfirmOpen,
     contextMenu, visiblePhotos, selectedIds,
@@ -2780,6 +3099,10 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           const added = await ingestFiles(resolved, (done, total) => {
             if (total > 0) setLoadingProgress(Math.min(done, total));
           });
+          // N8：拖入的文件同样记为常驻来源
+          if (added > 0) {
+            rememberSources(resolved.map(item => ({ path: item.path, kind: 'file' as const })));
+          }
           // 同一次拖放里混有不支持的文件 / stat 失败的文件时一并说明，避免「悄悄少了几个」
           const rejectNote = rejected.length > 0 ? `，已忽略 ${rejected.length} 个不支持的文件` : '';
           const statNote = statFailedCount > 0 ? `，${statFailedCount} 个文件无法读取完整信息` : '';
@@ -2832,6 +3155,9 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               const added = await ingestFiles(infos, (done, total) => {
                 if (total > 0) setLoadingProgress(Math.min(done, total));
               });
+              // N8：拖入的文件夹记为常驻来源；监听目录一并切到它（外部增删照常感知）
+              rememberSources([{ path: dirPath, kind: 'directory' }]);
+              void watchCurrentDir(dirPath);
               // 部分子目录 / 文件读取失败时一并说明，避免「悄悄少了几个」
               const failedCount = (scan.failedDirs ?? 0) + (scan.failedFiles ?? 0);
               const failNote = failedCount > 0 ? `（${failedCount} 项无法读取已跳过）` : '';
@@ -2908,7 +3234,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         clearLoading();
       }
     })();
-  }, [clearLoading, createThumbnail, ingestFiles, showToast]);
+  }, [clearLoading, createThumbnail, ingestFiles, rememberSources, showToast, watchCurrentDir]);
 
   // 空状态 / 情境条文案派生（实现见 libraryViewState.ts）。
   // 与重构前一致：每次渲染直接计算，不做 memo。
@@ -2954,10 +3280,17 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onSelectAlbum={handleSelectAlbum}
           onDeleteAlbum={handleDeleteAlbum}
           onRequestSaveAlbum={handleOpenSaveAlbum}
-          recentDirectories={recentDirectories}
-          onSelectRecentFolder={handleSelectRecentFolder}
+          directorySources={directorySources}
+          fileSources={fileSources}
+          unavailableSourcePaths={unavailableSourcePaths}
+          onSelectDirectorySource={handleSelectDirectorySource}
+          onRemoveDirectorySource={handleRemoveDirectorySource}
+          onSelectFileSources={handleSelectFileSources}
+          onRemoveFileSources={handleRemoveFileSources}
           onSelectTimeline={handleSelectTimeline}
           isTimelineActive={isTimelineOpen}
+          onSelectMap={handleSelectMap}
+          isMapActive={isMapOpen}
           onCheckDuplicates={handleCheckDuplicatesClick}
           onRequestReset={handleRequestClearList}
           hasPhotos={photos.length > 0}
@@ -2974,6 +3307,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           progress={loadingProgress}
           currentFile={loadingCurrentFile}
           onCancel={handleCancelLoading}
+          cancelLabel={loadingKind === 'restore' ? '取消恢复' : undefined}
         />
       )}
       {/* K19：批量文件操作（重命名 / 删除 / 移动）的大操作遮罩 —— 延迟升起，覆盖弹层防连点 */}
@@ -3046,6 +3380,33 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               onQuickLook={setQuickLookPhoto}
               onBack={() => setMainView('library')}
               isLeftPaneOpen={isLeftPaneVisible}
+            />
+          </ErrorBoundary>
+        ) : mainView === 'map' ? (
+          <ErrorBoundary
+            label="按地点浏览"
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-8 text-center">
+                <div>
+                  <p className="text-sm font-medium text-[var(--text-primary)] mb-1">地图视图出错</p>
+                  <p className="text-xs text-[var(--text-tertiary)] mb-4">图库内容仍然完好，可返回图库继续浏览。</p>
+                  <button
+                    onClick={() => setMainView('library')}
+                    className="px-4 py-2 text-sm font-medium rounded-xl text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    返回图库
+                  </button>
+                </div>
+              </div>
+            }
+          >
+            {/* 与时光画廊同源：非隐藏的全部照片（带 GPS 的会落成光点） */}
+            <LocationMap
+              photos={timelinePhotos}
+              onQuickLook={handleMapQuickLook}
+              onBack={() => setMainView('library')}
+              isLeftPaneOpen={isLeftPaneVisible}
+              isLight={isLight}
             />
           </ErrorBoundary>
         ) : (
@@ -3141,7 +3502,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
             isSearchEmpty
               ? `找不到与「${searchQuery}」匹配的内容。试着换个关键词，或清除搜索。`
               : isEmptyLibrary
-                ? '把整个文件夹拖进窗口，或使用「打开文件夹」导入。图片与视频都支持，所有整理都在本地完成。'
+                ? '把整个文件夹拖进窗口，或使用「打开文件夹」导入。打开过的文件夹会被记住，重启后可一键恢复；所有整理都在本地完成。'
                 : isAllHidden
                   ? '当前图库里的项目都被隐藏了，它们收在「已隐藏」里，可在那里取消隐藏。'
                   : isHiddenEmpty
@@ -3240,6 +3601,23 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         count={photos.length}
         onClose={() => setIsClearListConfirmOpen(false)}
         onConfirm={handleConfirmClearList}
+      />
+      {/* 「恢复上次的图库」确认框（N8）：启动时存在常驻来源才出现 */}
+      <RestoreLibraryModal
+        isOpen={isRestorePromptOpen}
+        sourceCount={sources.length}
+        directoryCount={directorySources.length}
+        fileCount={fileSources.length}
+        directoryNames={directorySources.map(source => basenameOfPath(source.path))}
+        unavailableCount={unavailableSourceCount}
+        onClose={() => {
+          setIsRestorePromptOpen(false);
+          showToast('可在侧栏「文件夹」中随时重新打开来源', 'info');
+        }}
+        onConfirm={() => {
+          setIsRestorePromptOpen(false);
+          void restoreLibrary(sourcesRef.current);
+        }}
       />
       {/* AI 分析设置：应用内配置 DeepSeek API Key / 接口地址 / 模型 */}
       <AiSettingsModal

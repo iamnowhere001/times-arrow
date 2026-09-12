@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { MediaFilter, SmartAlbum } from '@/types';
+import { LibrarySource, MediaFilter, SmartAlbum } from '@/types';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -32,13 +32,24 @@ interface SidebarProps {
   mediaFilter: MediaFilter;
   /** 选择图库分类（分类 + 媒体类型同时落地，避免出现「收藏夹里的视频」这类组合） */
   onSelectNav: (category: string, filter: MediaFilter) => void;
-  /** 最近打开过的目录（新在前），用于一键重新打开 */
-  recentDirectories: string[];
-  onSelectRecentFolder: (path: string) => void;
+  /** 常驻文件夹来源（新在前）：重启后可一键重开，是图库的「骨架」 */
+  directorySources: LibrarySource[];
+  /** 单独添加的文件来源：聚合成一行，点击原地补进列表 */
+  fileSources: LibrarySource[];
+  /** 当前不可用的来源路径（不存在 / 卷未挂载），单独标注而不是静默丢弃 */
+  unavailableSourcePaths: Set<string>;
+  onSelectDirectorySource: (path: string) => void;
+  onRemoveDirectorySource: (path: string) => void;
+  onSelectFileSources: () => void;
+  onRemoveFileSources: () => void;
   /** 打开时光画廊（整页时间线视图） */
   onSelectTimeline: () => void;
   /** 当前是否处于时光画廊视图 */
   isTimelineActive: boolean;
+  /** 打开按地点浏览（整页地图视图，数据来自照片的 EXIF GPS） */
+  onSelectMap: () => void;
+  /** 当前是否处于按地点浏览视图 */
+  isMapActive: boolean;
   /** 打开相似照片（整页视图）：与筛选无关，属「视图」而非分类 */
   onCheckDuplicates: () => void;
   /** 请求清空照片列表：破坏性操作，由 App 统一弹二次确认 */
@@ -127,6 +138,15 @@ const TimelineIcon = () => (
   </svg>
 );
 
+/** 按地点：三折地图，与「把照片落到地图上」的语义一致 */
+const MapIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 4 3 6.5v13L9 17l6 3 6-2.5v-13L15 7 9 4z"></path>
+    <path d="M9 4v13"></path>
+    <path d="M15 7v13"></path>
+  </svg>
+);
+
 /** 相似照片检测：叠放的两张照片 */
 const DuplicateIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -161,11 +181,34 @@ const ApertureIcon = () => (
   </svg>
 );
 
-const HistoryIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
-    <path d="M3 3v5h5"></path>
-    <path d="M12 7.5V12l3 2"></path>
+/** 文件夹来源：常驻入口，重启后据此重建图库 */
+const FolderIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path>
+  </svg>
+);
+
+/** 单独添加的文件：来源聚合行 */
+const FileIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z"></path>
+    <path d="M14 3v5h5"></path>
+  </svg>
+);
+
+/** 来源不可用：小三角感叹号，只在需要提示时占位 */
+const WarningIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3.6 21 19.4H3L12 3.6z"></path>
+    <path d="M12 10v4"></path>
+    <path d="M12 17h.01"></path>
+  </svg>
+);
+
+/** 移除来源：×（移除的是「记住的来源」，不是磁盘上的文件，所以不用垃圾桶） */
+const RemoveSourceIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 6l12 12M18 6 6 18"></path>
   </svg>
 );
 
@@ -301,11 +344,11 @@ const SectionLabel: React.FC<{ children: React.ReactNode; action?: React.ReactNo
 );
 
 /**
- * 左栏：视图入口 + 图库分类 + 媒体类型 + 智能相簿 + 最近打开，底部为全局设置。
+ * 左栏：视图入口 + 图库分类 + 媒体类型 + 智能相簿 + 文件夹来源，底部为全局设置。
  *
  * 组织原则：
  * 1. 全栏只有「视图行」（去往整页视图，右端是箭头）与「筛选行」（留下并改变列表，
- *    右端是计数）两类行；相簿与最近打开沿用同一套行走法，只调密度不做新控件。
+ *    右端是计数）两类行；相簿与文件夹来源沿用同一套行走法，只调密度不做新控件。
  * 2. 计数右对齐成等宽数字列，代替此前每行一颗的胶囊——胶囊是容器，数字才是信息。
  * 3. 分隔线只出现在「内容类型改变」处（视图→分类→媒体类型→我的内容），
  *    不再每段一条，避免把导航读成一串互不相干的清单。
@@ -324,10 +367,17 @@ const Sidebar: React.FC<SidebarProps> = ({
   onSelectAlbum,
   onDeleteAlbum,
   onRequestSaveAlbum,
-  recentDirectories,
-  onSelectRecentFolder,
+  directorySources,
+  fileSources,
+  unavailableSourcePaths,
+  onSelectDirectorySource,
+  onRemoveDirectorySource,
+  onSelectFileSources,
+  onRemoveFileSources,
   onSelectTimeline,
   isTimelineActive,
+  onSelectMap,
+  isMapActive,
   onCheckDuplicates,
   onRequestReset,
   hasPhotos,
@@ -336,8 +386,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   themeMode,
   onThemeModeChange,
 }) => {
-  /** 最近打开：最多 3 条。它只是回访入口，再多就把分类挤出首屏 */
-  const recentList = recentDirectories.slice(0, 3);
+  /** 单独文件来源：聚合成一行，计数与不可用数量都在这里算好 */
+  const fileSourceCount = fileSources.length;
+  const unavailableFileCount = fileSources.reduce(
+    (count, source) => (unavailableSourcePaths.has(source.path) ? count + 1 : count),
+    0
+  );
+  const filePreview = fileSources
+    .slice(0, 3)
+    .map(source => source.path.split(/[\\/]/).filter(Boolean).pop() ?? source.path)
+    .join('、');
 
   type NavItem = {
     id: string;
@@ -398,6 +456,15 @@ const Sidebar: React.FC<SidebarProps> = ({
               active={isTimelineActive}
               chevron
               title="按时间线沉浸式回顾全部记忆"
+            />
+            <NavRow
+              icon={<MapIcon />}
+              label="按地点"
+              onClick={onSelectMap}
+              active={isMapActive}
+              disabled={!hasPhotos}
+              chevron
+              title={hasPhotos ? '把带 GPS 的照片落到地图上，按拍摄地点浏览' : '导入照片后可用'}
             />
             <NavRow
               icon={<DuplicateIcon />}
@@ -520,29 +587,99 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* 最近打开：与「智能相簿」同属「你的内容」，只靠间距分层，不再补一条分隔线 */}
-        {recentList.length > 0 && (
-          <div className="mt-4">
-            <SectionLabel>最近打开</SectionLabel>
+        {/* 文件夹：常驻来源（N8）。与「智能相簿」同属「你的内容」，只靠间距分层。
+            点击 = 重新扫描 / 补进列表；悬停 ✕ = 只移除来源（磁盘文件与收藏 / 标签保留）。 */}
+        <div className="mt-4">
+          <SectionLabel>文件夹</SectionLabel>
+          {directorySources.length === 0 && fileSourceCount === 0 ? (
+            <p className="px-2.5 pt-0.5 text-[11.5px] leading-relaxed text-[var(--text-quaternary)]">
+              打开或拖入文件夹后会记在这里，重启后可一键恢复。
+            </p>
+          ) : (
             <ul className="space-y-[2px]">
-              {recentList.map(dir => (
-                <li key={dir}>
+              {directorySources.map(source => {
+                const unavailable = unavailableSourcePaths.has(source.path);
+                const name = source.path.split(/[\\/]/).filter(Boolean).pop() ?? source.path;
+                return (
+                  <li key={source.path} className="group/source relative">
+                    <button
+                      type="button"
+                      onClick={() => onSelectDirectorySource(source.path)}
+                      title={
+                        unavailable
+                          ? `不可用：文件夹不存在或所在磁盘未挂载\n${source.path}\n（可点右侧 ✕ 移除来源）`
+                          : source.path
+                      }
+                      className={`${ROW_BASE} h-7 gap-2 px-2.5 pr-8 text-left text-[12px] ${
+                        unavailable
+                          ? 'text-[var(--accent-orange)] hover:bg-[rgba(var(--accent-orange-rgb),0.12)]'
+                          : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:bg-[var(--bg-glass-active)]'
+                      }`}
+                    >
+                      <span className={`shrink-0 ${unavailable ? 'text-[var(--accent-orange)]' : 'text-[var(--text-quaternary)]'}`}>
+                        <FolderIcon />
+                      </span>
+                      <span className="truncate">{name}</span>
+                      {unavailable && (
+                        <span className="ml-auto shrink-0 text-[var(--accent-orange)] transition-opacity duration-150 group-hover/source:opacity-0">
+                          <WarningIcon />
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveDirectorySource(source.path)}
+                      title={`移除来源「${name}」（磁盘文件不会被删除）`}
+                      aria-label={`移除来源 ${name}`}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md opacity-0 group-hover/source:opacity-100 focus-visible:opacity-100 text-[var(--text-quaternary)] hover:text-[var(--accent-pink)] hover:bg-[var(--bg-glass-hover)] transition-opacity duration-150"
+                    >
+                      <RemoveSourceIcon />
+                    </button>
+                  </li>
+                );
+              })}
+
+              {/* 单独添加的文件没有目录可聚合，收成一行；点击把所有文件来源补进列表 */}
+              {fileSourceCount > 0 && (
+                <li className="group/source relative">
                   <button
                     type="button"
-                    onClick={() => onSelectRecentFolder(dir)}
-                    title={dir}
-                    className={`${ROW_BASE} h-7 gap-2 px-2.5 text-left text-[12px] text-[var(--text-tertiary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:bg-[var(--bg-glass-active)]`}
+                    onClick={onSelectFileSources}
+                    title={`${fileSourceCount} 个单独添加的文件：${filePreview}${
+                      fileSourceCount > 3 ? ' 等' : ''
+                    }${unavailableFileCount > 0 ? `\n其中 ${unavailableFileCount} 个已不可用` : ''}\n点击再次补进列表`}
+                    className={`${ROW_BASE} h-7 gap-2 px-2.5 pr-8 text-left text-[12px] ${
+                      unavailableFileCount > 0
+                        ? 'text-[var(--accent-orange)] hover:bg-[rgba(var(--accent-orange-rgb),0.12)]'
+                        : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:bg-[var(--bg-glass-active)]'
+                    }`}
                   >
-                    <span className="shrink-0 text-[var(--text-quaternary)]">
-                      <HistoryIcon />
+                    <span className={`shrink-0 ${unavailableFileCount > 0 ? 'text-[var(--accent-orange)]' : 'text-[var(--text-quaternary)]'}`}>
+                      <FileIcon />
                     </span>
-                    <span className="truncate">{dir.split(/[\\/]/).filter(Boolean).pop() ?? dir}</span>
+                    <span className="truncate">单独添加的文件</span>
+                    <span className="ml-auto shrink-0 transition-opacity duration-150 group-hover/source:opacity-0">
+                      {unavailableFileCount > 0 ? (
+                        <WarningIcon />
+                      ) : (
+                        <span className="font-numeric text-[11px] tabular-nums">{fileSourceCount}</span>
+                      )}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onRemoveFileSources}
+                    title="移除全部单独添加的文件来源（磁盘文件不会被删除）"
+                    aria-label="移除单独添加的文件来源"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md opacity-0 group-hover/source:opacity-100 focus-visible:opacity-100 text-[var(--text-quaternary)] hover:text-[var(--accent-pink)] hover:bg-[var(--bg-glass-hover)] transition-opacity duration-150"
+                  >
+                    <RemoveSourceIcon />
                   </button>
                 </li>
-              ))}
+              )}
             </ul>
-          </div>
-        )}
+          )}
+        </div>
       </nav>
 
       {/* 底部：一条全局工具带。外观 / 快捷键参考 / 清空列表都不作用于当前视图，

@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 批量计算感知哈希，避免渲染进程用 canvas 解码阻塞 UI */
   getImageHashes: (filePaths) => ipcRenderer.invoke('get-image-hashes', filePaths),
   statFiles: (filePaths) => ipcRenderer.invoke('stat-files', filePaths),
+  /** 批量检查路径是否存在（启动时标注「不可用来源」） */
+  checkPaths: (paths) => ipcRenderer.invoke('check-paths', paths),
 
   // 目录监听（N5）：感知当前目录的外部增删，主进程聚合后回推事件
   /** 监听目录（递归）；切换目录时自动替换旧 watcher */

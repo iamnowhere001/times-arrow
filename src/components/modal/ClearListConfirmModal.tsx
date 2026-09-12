@@ -65,8 +65,9 @@ const ClearListConfirmModal: React.FC<ClearListConfirmModalProps> = ({
           <div className="min-w-0">
             <h3 className="text-base font-semibold text-[var(--text-primary)]">清空照片列表</h3>
             <p className="text-sm text-[var(--text-secondary)] mt-1 leading-relaxed">
-              当前的 {count} 个照片将从列表中全部移除，筛选、搜索与缩略图缓存一并重置。
-              磁盘上的原文件不会被删除，之后重新导入即可恢复。
+              当前的 {count} 个照片将从列表中全部移除，筛选、搜索与缩略图缓存一并重置，
+              记录的来源也会清空（下次启动不再自动恢复）。磁盘上的原文件不会被删除，
+              之后重新打开文件夹或添加文件即可恢复。
             </p>
           </div>
         </div>

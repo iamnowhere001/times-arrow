@@ -1,7 +1,7 @@
 {
   "name": "photominder",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "main": "electron/main.js",
   "type": "commonjs",
   "scripts": {

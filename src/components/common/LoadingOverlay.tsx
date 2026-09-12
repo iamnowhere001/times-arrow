@@ -19,6 +19,8 @@ interface LoadingOverlayProps {
   title?: string;
   /** 底部状态文案；默认「个项目 / 请稍候」 */
   hint?: string;
+  /** 取消按钮文案；默认「取消添加」（恢复上次的图库时用「取消恢复」） */
+  cancelLabel?: string;
 }
 
 const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
@@ -28,6 +30,7 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
   onCancel,
   title,
   hint,
+  cancelLabel,
 }) => (
   <div className="fixed inset-0 bg-[var(--bg-overlay)] backdrop-blur-2xl z-[100] flex items-center justify-center">
     <div className="relative">
@@ -92,7 +95,7 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
                 onClick={onCancel}
                 className="w-full mt-1 py-2 text-sm font-medium rounded-xl border border-[var(--border-default)] bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200 active:scale-[0.98]"
               >
-                取消添加
+                {cancelLabel ?? '取消添加'}
               </button>
             )}
           </div>
