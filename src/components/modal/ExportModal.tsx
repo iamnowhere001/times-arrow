@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Photo } from '@/types';
 import { logger } from '@/lib/logger';
-import { humanizeFsError } from '@/lib/fs/fileOperations';
+import { humanizeFsError, isFileGoneError } from '@/lib/fs/fileOperations';
 
 export type ExportFormat = 'original' | 'image/jpeg' | 'image/png' | 'image/webp';
 
@@ -14,6 +14,11 @@ export interface ExportSummary {
   firstError?: string;
   /** 实际写入的目标目录，让用户知道文件去哪了 */
   targetDir: string;
+  /**
+   * 源文件已不在磁盘（外部删除 / 移动）的照片：调用方应把它们从列表剔除，
+   * 并从「重新导出」集合中排除 —— 再试多少次都只会失败。
+   */
+  gonePhotos?: Photo[];
 }
 
 interface ExportModalProps {
@@ -166,6 +171,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
     let failed = 0;
     let cancelled = false;
     let firstError: string | undefined;
+    const gonePhotos: Photo[] = [];
 
     for (let i = 0; i < photos.length; i++) {
       if (cancelRef.current) {
@@ -179,6 +185,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
       } catch (err) {
         logger.error(`导出 ${photos[i].name} 失败:`, err);
         failed++;
+        // 读取源文件时 ENOENT = 文件已被外部删除 / 移动：单独收集，由调用方剔除出列表
+        if (isFileGoneError((err as Error)?.message)) gonePhotos.push(photos[i]);
         // 只留首个原因：汇总里带一句就够，逐条弹提示反而会被 Toast 队列顶掉
         firstError ??= describeExportError(err);
       }
@@ -186,7 +194,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
     }
 
     setIsExporting(false);
-    onFinish({ succeeded, failed, cancelled, firstError, targetDir });
+    onFinish({ succeeded, failed, cancelled, firstError, targetDir, gonePhotos });
   }, [targetDir, photos, format, quality, onFinish]);
 
   if (!isOpen) return null;

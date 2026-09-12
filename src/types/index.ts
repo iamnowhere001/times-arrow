@@ -34,7 +34,6 @@ export interface Photo {
   aiTags?: string[];
   isFavorite: boolean;
   isRecommended?: boolean; // Recommended photo to keep in duplicate group
-  isCover?: boolean; // 图库封面：全库仅一张（持久化随状态层 M2 一并落地）
   /** 用户隐藏：默认从各视图排除，仅在「已隐藏」中可见 */
   isHidden?: boolean;
   /** 用户手动标签（与 AI 生成的 aiTags 分开维护，可编辑） */
@@ -199,8 +198,6 @@ export interface PersistedConfig {
   albums?: SmartAlbum[];
   /** 视频元数据：路径 → 时长 / 分辨率 */
   videoMeta?: Record<string, VideoMetaRecord>;
-  /** 图库封面路径（全库仅一张） */
-  cover?: string;
   /** 视图偏好（主题 / 排序 / 缩放 / 面板开合…） */
   preferences?: ViewPreferences;
   /** 最近打开过的目录（新在前） */

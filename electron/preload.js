@@ -39,6 +39,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getImageHashes: (filePaths) => ipcRenderer.invoke('get-image-hashes', filePaths),
   statFiles: (filePaths) => ipcRenderer.invoke('stat-files', filePaths),
 
+  // 目录监听（N5）：感知当前目录的外部增删，主进程聚合后回推事件
+  /** 监听目录（递归）；切换目录时自动替换旧 watcher */
+  watchDirectory: (dirPath) => ipcRenderer.invoke('watch-directory', dirPath),
+  /** 停止监听并清空聚合状态 */
+  unwatchDirectory: () => ipcRenderer.invoke('unwatch-directory'),
+  /** 外部变动事件（已按扩展名过滤 + 防抖聚合）；返回取消订阅函数 */
+  onDirectoryChanged: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on('directory-changed', listener);
+    return () => ipcRenderer.removeListener('directory-changed', listener);
+  },
+  /** watcher 异常（目录被外部删除 / 卷被卸载）；返回取消订阅函数 */
+  onDirectoryWatchError: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on('directory-watch-error', listener);
+    return () => ipcRenderer.removeListener('directory-watch-error', listener);
+  },
+
   // 用户配置（收藏 / 隐藏 / 标签 / 拍摄时间修正 / 智能相簿）
   loadConfig: () => ipcRenderer.invoke('load-config'),
   /** 合并写入配置片段 */

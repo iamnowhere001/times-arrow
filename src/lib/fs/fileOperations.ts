@@ -47,6 +47,14 @@ export const humanizeFsError = (message?: string): string => {
   }
 };
 
+/**
+ * 错误信息是否表示「文件已不在磁盘上」。
+ *
+ * 主进程只回传 `error.message` 字符串，这里用原始错误码判定即可；
+ * 命中后调用方应把对应条目从列表剔除（见 ipcGuard.reportGone），而不是留给用户反复重试。
+ */
+export const isFileGoneError = (message?: string): boolean => /\bENOENT\b/.test(message ?? '');
+
 export interface TrashResult {
   /** 成功移入回收站的条目 id */
   deletedIds: Set<string>;

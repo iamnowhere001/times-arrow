@@ -36,7 +36,6 @@ export interface ContextMenuActionsDeps {
   onShowInFolder: (photo: Photo) => void;
   onCopyPath: (photo: Photo) => void;
   onOpenInEditor: (photo: Photo) => void;
-  onToggleCover: (photo: Photo) => void;
   onExportSelected: () => void;
   onMovePhotos: (photos: Photo[]) => void;
   onOpenAdjustDate: () => void;
@@ -62,7 +61,6 @@ export function buildContextMenuActions(deps: ContextMenuActionsDeps): ContextMe
     onShowInFolder,
     onCopyPath,
     onOpenInEditor,
-    onToggleCover,
     onExportSelected,
     onMovePhotos,
     onOpenAdjustDate,
@@ -143,10 +141,6 @@ export function buildContextMenuActions(deps: ContextMenuActionsDeps): ContextMe
     {
       label: '用默认应用打开',
       onClick: () => onOpenInEditor(photo),
-    },
-    {
-      label: photo.isCover ? '取消封面' : '设为封面',
-      onClick: () => onToggleCover(photo),
     },
     // 导出走 canvas 重编码，仅图片可用
     ...(isVideo ? [] : [{

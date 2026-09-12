@@ -842,15 +842,6 @@ const ImageCard = React.memo(({
           </button>
         </div>
 
-        {photo.isCover && (
-          <div className="absolute bottom-1.5 right-1.5 z-10 flex items-center gap-1 px-2 py-1 rounded-full bg-[rgba(0,0,0,0.55)] text-white text-[10px] font-medium backdrop-blur-md shadow-lg">
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2l2.9 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14 5 9.27l7.1-1.01z" />
-            </svg>
-            封面
-          </div>
-        )}
-
         {(!loaded || mediaPending) && !loadError && (
           <div className="absolute inset-0 bg-[rgba(255,255,255,0.03)] animate-pulse flex items-center justify-center">
             <div className="w-10 h-10 rounded-full border-2 border-[rgba(255,255,255,0.1)] border-t-[var(--accent-blue)] animate-spin"></div>
@@ -931,7 +922,6 @@ const ImageCard = React.memo(({
         )}
 
         {/* 文件名浮层：不再占卡片高度，悬停（或选中）时贴在图底渐显。
-            「封面」角标在右下，因此有角标时给文字留出右侧空位。
             加载失败时不盖住重试按钮。 */}
         {!loadError && (
           <div
@@ -941,7 +931,7 @@ const ImageCard = React.memo(({
           >
             <p
               title={photo.name}
-              className={`text-[11px] leading-tight font-medium truncate text-white ${photo.isCover ? 'pr-14' : ''}`}
+              className="text-[11px] leading-tight font-medium truncate text-white"
             >
               {photo.name}
             </p>

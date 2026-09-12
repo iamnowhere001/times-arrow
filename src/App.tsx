@@ -23,7 +23,8 @@ import { createThumbnail, clearDragThumbnailCache } from '@/lib/cache/dragThumbn
 import { joinPath, sanitizeFilename } from '@/lib/fs/pathUtils';
 import { deriveLibraryViewState } from '@/lib/filter/libraryViewState';
 import { buildContextMenuActions } from '@/lib/contextMenuActions';
-import { humanizeFsError, movePhotosToTrash } from '@/lib/fs/fileOperations';
+import { humanizeFsError, movePhotosToTrash, isFileGoneError } from '@/lib/fs/fileOperations';
+import { createFsErrorReporter } from '@/lib/fs/ipcGuard';
 import { useToasts } from '@/hooks/useToasts';
 import { useThemeMode } from '@/hooks/useThemeMode';
 import { useDuplicateDetection } from '@/hooks/useDuplicateDetection';
@@ -143,8 +144,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
   // 快捷键总览层（? 唤出，Esc 关闭）
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
-  /** 图库封面路径；null 表示未设置 */
-  const coverRef = useRef<string | null>(null);
   /** AI 分析结果缓存（路径 → 描述 / 标签），持久化在独立的 ai-cache.json */
   const aiCacheRef = useRef<Map<string, AiCacheEntry>>(new Map());
   /** 最近打开过的目录（新在前），用于一键重新打开 */
@@ -321,6 +320,68 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   // 已导入的路径集合：重复打开同一目录时直接跳过，避免重复条目
   const importedPathsRef = useRef<Set<string>>(new Set());
 
+  // 只摘 importedPaths 登记、不动收藏 / 标签：文件消失后的重新导入需要这条路径空出来
+  const forgetImportedPaths = useCallback((paths: Iterable<string>) => {
+    for (const p of paths) importedPathsRef.current.delete(p);
+  }, []);
+
+  // N5：IPC 失败统一上报 + 「文件已消失」自动剔除。
+  // 依赖全是稳定回调（showToast / removeWithCollapse / removeIdsFromSelection /
+  // forgetImportedPaths / pruneDuplicateGroups），只在首次渲染创建一次。
+  const fsGuard = useMemo(() => createFsErrorReporter({
+    showToast,
+    removeWithCollapse,
+    removeIdsFromSelection,
+    forgetImportedPaths,
+    pruneDuplicateGroups,
+  }), [showToast, removeWithCollapse, removeIdsFromSelection, forgetImportedPaths, pruneDuplicateGroups]);
+
+  // ---------------------------------------------------------------------------
+  // 目录监听（N5）：主进程只做过滤 + 防抖聚合，语义判定全部在这里：
+  //   removed → 统一剔除管线；added → statFiles + ingestFiles（天然去重分批）。
+  //   应用自身操作的回环事件走「双保险」过滤：
+  //     1) 操作期间事件暂存（pendingWatcherEventsRef），锁释放后合并应用；
+  //     2) 操作发起前把涉及路径登记进 touchedPathsRef（TTL 8s），
+  //        覆盖「事件在锁释放后才抵达」的窗口。
+  // ---------------------------------------------------------------------------
+  const watchedDirRef = useRef<string | null>(null);
+  /** 路径 → 过期时间戳：TTL 内的 watcher 事件视为应用自身操作的回环 */
+  const touchedPathsRef = useRef<Map<string, number>>(new Map());
+  /** 操作进行中抵达的 watcher 事件：锁释放后合并应用，避免与半更新状态踩踏 */
+  const pendingWatcherEventsRef = useRef<DirectoryChangeEvent[]>([]);
+  /** 回环登记的有效期：需覆盖塌陷动画（EXIT_DURATION）+ 事件防抖（主进程 500ms/3s）+ 余量 */
+  const TOUCHED_TTL = 8000;
+
+  /** 操作发起前登记涉及的路径（旧 + 新）；undefined 项静默跳过 */
+  const markPathsTouched = useCallback((paths: Array<string | undefined>) => {
+    const expiry = Date.now() + TOUCHED_TTL;
+    for (const p of paths) {
+      if (p) touchedPathsRef.current.set(p, expiry);
+    }
+  }, []);
+
+  /** 让主进程监听 dirPath（切换目录时主进程自动替换旧 watcher） */
+  const watchCurrentDir = useCallback(async (dirPath: string) => {
+    const api = window.electronAPI;
+    if (!api) return;
+    try {
+      const result = await api.watchDirectory(dirPath);
+      if (result?.success) watchedDirRef.current = dirPath;
+    } catch (error) {
+      // 监听失败不影响正常使用，只是失去外部变动感知
+      logger.warn('目录监听失败:', error);
+    }
+  }, []);
+
+  /** 停止监听并清空暂存事件（清空列表 / 卸载时调用） */
+  const unwatchCurrentDir = useCallback(() => {
+    const api = window.electronAPI;
+    if (!api || !watchedDirRef.current) return;
+    watchedDirRef.current = null;
+    pendingWatcherEventsRef.current = [];
+    void api.unwatchDirectory().catch(() => undefined);
+  }, []);
+
   // 内存压力响应：主进程广播 + 渲染进程堆占用兜底，统一裁剪已登记的缓存
   useEffect(() => {
     const offPressure = installMemoryPressureListener();
@@ -354,8 +415,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       });
       // 视频元数据预热：命中缓存的视频无需再次探测即可显示时长
       seedVideoMeta(config.videoMeta);
-
-      coverRef.current = config.cover ? config.cover : null;
 
       const storedRecent = Array.isArray(config.recentDirectories)
         ? config.recentDirectories.filter(dir => typeof dir === 'string' && dir.length > 0).slice(0, 8)
@@ -419,7 +478,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
             isFavorite: favoritesRef.current.has(photo.path),
             isHidden: hiddenRef.current.has(photo.path) || undefined,
             tags: tagsRef.current.get(photo.path),
-            isCover: coverRef.current !== null && photo.path === coverRef.current,
             ...(override !== undefined ? { dateTaken: override, dateAdjusted: true } : null),
             ...(video
               ? { duration: video.duration, dimensions: { width: video.width, height: video.height } }
@@ -572,14 +630,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   /**
    * 单个文件的磁盘路径发生变化时，迁移所有「按路径存储」的数据。
    *
-   * 收藏 / 隐藏 / 标签 / 时间修正 / 封面 / 视频元数据 / AI 缓存全部以路径为键，
+   * 收藏 / 隐藏 / 标签 / 时间修正 / 视频元数据 / AI 缓存全部以路径为键，
    * 重命名或移动后如果只改 `photo.path` 而不改键，这些标记就指向了不存在的路径：
-   * 重启后表现为「收藏、标签、封面凭空消失」，而旧键会一直滞留在 config.json 里。
+   * 重启后表现为「收藏、标签凭空消失」，而旧键会一直滞留在 config.json 里。
    *
    * @returns 哪些分段数据因此发生了变化，供调用方决定是否需要落盘
    */
   const rekeyPathData = useCallback((from: string, to: string) => {
-    if (!from || !to || from === to) return { cover: false, video: false, ai: false };
+    if (!from || !to || from === to) return { video: false, ai: false };
 
     if (favoritesRef.current.delete(from)) favoritesRef.current.add(to);
     if (hiddenRef.current.delete(from)) hiddenRef.current.add(to);
@@ -596,12 +654,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       if (!dateOverridesRef.current.has(to)) dateOverridesRef.current.set(to, override);
     }
 
-    let cover = false;
-    if (coverRef.current === from) {
-      coverRef.current = to;
-      cover = true;
-    }
-
     const video = rekeyVideoMeta(from, to);
 
     let ai = false;
@@ -615,7 +667,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     // 已导入路径集合同步跟随：否则改名后再次导入同一目录会把它当成新文件，产生重复条目
     if (importedPathsRef.current.delete(from)) importedPathsRef.current.add(to);
 
-    return { cover, video, ai };
+    return { video, ai };
   }, []);
 
   /**
@@ -625,7 +677,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
    * 时间修正 —— 最坏情况是「新导入的照片被隐藏，在库里根本找不到」。
    */
   const dropPathData = useCallback((paths: Iterable<string>) => {
-    let cover = false;
     let video = false;
     let ai = false;
 
@@ -635,16 +686,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       hiddenRef.current.delete(p);
       tagsRef.current.delete(p);
       dateOverridesRef.current.delete(p);
-      if (coverRef.current === p) {
-        coverRef.current = null;
-        cover = true;
-      }
       if (forgetVideoMeta(p)) video = true;
       if (aiCacheRef.current.delete(p)) ai = true;
       importedPathsRef.current.delete(p);
     }
 
-    return { cover, video, ai };
+    return { video, ai };
   }, []);
 
   /**
@@ -652,14 +699,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
    * @param changed rekeyPathData / dropPathData 的变化标记（多次调用按位或累加）
    */
   const persistPathData = useCallback(
-    async (changed: { cover: boolean; video: boolean; ai: boolean }) => {
+    async (changed: { video: boolean; ai: boolean }) => {
       const patch: Partial<PersistedConfig> = {
         favorites: [...favoritesRef.current],
         hidden: [...hiddenRef.current],
         tags: Object.fromEntries(tagsRef.current),
         dateOverrides: Object.fromEntries(dateOverridesRef.current),
       };
-      if (changed.cover) patch.cover = coverRef.current ?? '';
       if (changed.video) patch.videoMeta = snapshotVideoMeta();
 
       await savePersistedConfig(patch);
@@ -832,8 +878,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     clearImageHashCache();
     cancelRequestedRef.current = false;
     releaseMemory('soft', 'clear-list');
+    // 列表已清空：停掉目录监听，避免外部变动事件打到空列表上产生噪音提示
+    unwatchCurrentDir();
     showToast('已清空照片列表', 'info');
-  }, [photos, showToast]);
+  }, [photos, showToast, unwatchCurrentDir]);
+
+  // 卸载兜底：停掉主进程 watcher，防止泄漏
+  useEffect(() => () => { unwatchCurrentDir(); }, [unwatchCurrentDir]);
 
   // 清空照片列表：入口只负责「请求」，确认与执行分开走。
   // 侧栏底部与右键菜单共用这一条路径，都会先停下来确认一次
@@ -957,7 +1008,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
             isFavorite: favoritesRef.current.has(info.path),
             isHidden: hiddenRef.current.has(info.path) || undefined,
             tags: tagsRef.current.get(info.path),
-            isCover: coverRef.current !== null && info.path === coverRef.current,
             ...(override !== undefined ? { dateTaken: override, dateAdjusted: true } : null),
             ...(video
               ? { duration: video.duration, dimensions: { width: video.width, height: video.height } }
@@ -985,6 +1035,163 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     return created.length;
   }, [loadMetadata]);
 
+  // ---------------------------------------------------------------------------
+  // 目录监听：事件应用与订阅（依赖 ingestFiles / fsGuard，均稳定）
+  // ---------------------------------------------------------------------------
+
+  /**
+   * 应用一条（已过滤回环的）外部变动事件：
+   *   removed → 前缀匹配（目录删除只报目录路径）后走统一剔除管线（silent，由汇总提示）；
+   *   added → stat 补全后走 ingestFiles；
+   *   addedDirs → 拖入监听范围的文件夹，走完整扫描管线（静默导入）。
+   * 有实际变动时给一条 info 汇总；均 0 则完全静默。
+   */
+  const applyWatcherEvent = useCallback(async (e: DirectoryChangeEvent) => {
+    const now = Date.now();
+    const touched = touchedPathsRef.current;
+    // 双保险的第二层：subscription 已滤过一轮，这里再滤一次（合并事件可能带来新路径）
+    const isLoop = (p: string) => {
+      const expiry = touched.get(p);
+      if (expiry === undefined) return false;
+      if (expiry <= now) {
+        touched.delete(p);
+        return false;
+      }
+      return true;
+    };
+
+    // 1) 消失：文件与目录统一按前缀匹配剔除
+    let removedCount = 0;
+    const gonePrefixes = e.removed.filter(p => !isLoop(p));
+    if (gonePrefixes.length > 0) {
+      const targets = photosRef.current.filter(photo => {
+        const p = photo.path;
+        return p !== undefined && gonePrefixes.some(prefix => p === prefix || p.startsWith(`${prefix}/`));
+      });
+      if (targets.length > 0) {
+        fsGuard.reportGone(targets, { silent: true });
+        removedCount = targets.length;
+      }
+    }
+
+    // 2) 新增文件：过滤回环与已登记路径 → stat → 统一入库（ingestFiles 内部再去重分批）
+    let addedCount = 0;
+    const addedPaths = e.added.filter(p => !isLoop(p) && !importedPathsRef.current.has(p));
+    if (addedPaths.length > 0 && window.electronAPI) {
+      try {
+        const stat = await window.electronAPI.statFiles(addedPaths);
+        if (stat.infos.length > 0) {
+          addedCount = await ingestFiles(stat.infos);
+        }
+        // stat.failedPaths：分类后到 stat 之间又消失的文件（TOCTOU），忽略即可
+      } catch (error) {
+        logger.warn('处理外部新增文件失败:', error);
+      }
+    }
+
+    // 3) 新增目录：拖入监听范围的文件夹，走完整扫描管线（静默，不弹 loading / 成功提示）
+    let addedFromDirs = 0;
+    const addedDirs = e.addedDirs.filter(d => !isLoop(d) && !importedPathsRef.current.has(d));
+    if (addedDirs.length > 0 && window.electronAPI) {
+      for (const dir of addedDirs) {
+        try {
+          const result = await window.electronAPI.scanDirectory(dir, `watch-${Date.now()}`);
+          // 部分子目录读不了（K1 字段）：监听场景静默跳过，不追加重试提示
+          if (result.files.length > 0) {
+            addedFromDirs += await ingestFiles(result.files);
+          }
+        } catch (error) {
+          logger.warn('处理外部新增目录失败:', error);
+        }
+      }
+    }
+
+    const totalAdded = addedCount + addedFromDirs;
+    if (totalAdded > 0 || removedCount > 0) {
+      const parts: string[] = [];
+      if (totalAdded > 0) parts.push(`新增 ${totalAdded} 项`);
+      if (removedCount > 0) parts.push(`移除 ${removedCount} 项`);
+      showToast(`外部变动：${parts.join('，')}`, 'info');
+    }
+  }, [fsGuard, ingestFiles, showToast]);
+
+  /** 操作锁释放后调用：把暂存的 watcher 事件按路径并集合并成一条应用（幂等） */
+  const flushPendingWatcherEvents = useCallback(() => {
+    if (fileOpLockRef.current) return; // 锁又被拿了（连续操作）：继续暂存
+    const pending = pendingWatcherEventsRef.current;
+    if (pending.length === 0) return;
+    pendingWatcherEventsRef.current = [];
+
+    // 同一事件内 / 跨事件的同路径：后到者优先（removed → added = 重建，added → removed = 得而复失）
+    const addedSet = new Set<string>();
+    const addedDirsSet = new Set<string>();
+    const removedSet = new Set<string>();
+    let dir: string | null = null;
+    for (const e of pending) {
+      dir = e.dir;
+      e.added.forEach(p => { removedSet.delete(p); addedSet.add(p); });
+      e.addedDirs.forEach(p => { removedSet.delete(p); addedDirsSet.add(p); });
+      e.removed.forEach(p => { addedSet.delete(p); addedDirsSet.delete(p); removedSet.add(p); });
+    }
+
+    void applyWatcherEvent({
+      dir: dir ?? '',
+      added: [...addedSet],
+      addedDirs: [...addedDirsSet],
+      removed: [...removedSet],
+    });
+  }, [applyWatcherEvent]);
+
+  // 挂载即订阅 watcher 事件（卸载时取消）；旧目录残响直接丢弃
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api) return;
+
+    const filterLoopPaths = (paths: string[]): string[] => {
+      const now = Date.now();
+      return paths.filter(p => {
+        const expiry = touchedPathsRef.current.get(p);
+        if (expiry === undefined) return true;
+        if (expiry <= now) {
+          touchedPathsRef.current.delete(p);
+          return false;
+        }
+        return false; // TTL 内：应用自身操作的回环
+      });
+    };
+
+    const offChanged = api.onDirectoryChanged(event => {
+      if (event.dir !== watchedDirRef.current) return;
+
+      const filtered: DirectoryChangeEvent = {
+        dir: event.dir,
+        added: filterLoopPaths(event.added),
+        addedDirs: filterLoopPaths(event.addedDirs),
+        removed: filterLoopPaths(event.removed),
+      };
+      if (filtered.added.length === 0 && filtered.addedDirs.length === 0 && filtered.removed.length === 0) return;
+
+      // 操作进行中：暂存，等锁释放后合并应用
+      if (fileOpLockRef.current) {
+        pendingWatcherEventsRef.current.push(filtered);
+        return;
+      }
+      void applyWatcherEvent(filtered);
+    });
+
+    const offWatchError = api.onDirectoryWatchError(({ dir }) => {
+      if (dir !== watchedDirRef.current) return;
+      watchedDirRef.current = null;
+      pendingWatcherEventsRef.current = [];
+      showToast('目录已不可访问，已停止监听外部变动', 'error');
+    });
+
+    return () => {
+      offChanged();
+      offWatchError();
+    };
+  }, [applyWatcherEvent, showToast]);
+
   // QuickLook navigation functions
   // 翻页范围跟随「当前可见列表」（收藏夹内只翻收藏），不会跳到分类之外；
   // 在重复检测页则只在本次检测结果内翻页
@@ -1010,11 +1217,23 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     showLoadingSoon();
 
     try {
-      const infos = await window.electronAPI.scanDirectory(dirPath, scanId);
+      // K1：返回结果区分「为空 / 根目录不可访问 / 部分内容失败」，不再一律冒充空数组
+      const scan = await window.electronAPI.scanDirectory(dirPath, scanId);
 
       // 被取消：丢弃扫描结果，不写入列表
-      if (activeScanIdRef.current !== scanId || cancelRequestedRef.current) return;
+      if (activeScanIdRef.current !== scanId || cancelRequestedRef.current || scan.cancelled) return;
 
+      // 根目录级错误（不存在 / 无权限 / 不是文件夹）：与「空目录」明确区分
+      if (scan.error) {
+        logger.error('Scan directory failed:', scan.error);
+        showToast(`无法读取目录「${dirName}」：${humanizeFsError(scan.error)}`, 'error', {
+          label: '重试',
+          onClick: () => { void loadDirectory(dirPath); },
+        });
+        return;
+      }
+
+      const infos = scan.files;
       if (infos.length === 0) {
         showToast(`文件夹 "${dirName}" 不包含任何图片或视频`, 'info');
         return;
@@ -1031,11 +1250,24 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
       if (added === 0 && infos.length > 0) {
         showToast(`文件夹 "${dirName}" 中的内容已在列表中`, 'info');
-        return;
+      } else {
+        pushRecentDirectory(dirPath);
+        showToast(`文件夹 "${dirName}" 已加载 ${added} 个项目`, 'success');
       }
 
-      pushRecentDirectory(dirPath);
-      showToast(`文件夹 "${dirName}" 已加载 ${added} 个项目`, 'success');
+      // K1：部分子目录 / 文件读取失败（无权限 / 瞬时占用）——给一条可重试的提示。
+      // 重试重跑整次扫描：importedPathsRef 按路径去重，只会补进此前漏掉的项。
+      const failedDirs = scan.failedDirs ?? 0;
+      const failedFiles = scan.failedFiles ?? 0;
+      if (failedDirs > 0 || failedFiles > 0) {
+        showToast(`「${dirName}」有 ${failedDirs} 个子目录 / ${failedFiles} 个文件无法读取，已跳过`, 'warning', {
+          label: '重试',
+          onClick: () => { void loadDirectory(dirPath); },
+        });
+      }
+
+      // N5：目录就绪后开始监听外部增删（切换目录时主进程自动替换旧 watcher）
+      void watchCurrentDir(dirPath);
     } catch (err) {
       logger.error('Error loading directory contents:', err);
       showToast(`无法加载目录「${dirName}」`, 'error', {
@@ -1049,13 +1281,60 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         clearLoading();
       }
     }
-  }, [cancelShowLoading, clearLoading, ingestFiles, pushRecentDirectory, showToast]);
+  }, [cancelShowLoading, clearLoading, ingestFiles, pushRecentDirectory, showToast, watchCurrentDir]);
 
   /** 重新打开最近目录（走同一套扫描 + 导入管线，同样可取消） */
   const handleSelectRecentFolder = useCallback((path: string) => {
     cancelRequestedRef.current = false;
     void loadDirectory(path);
   }, [loadDirectory]);
+
+  /**
+   * 按文件路径导入：stat 补齐元数据后走统一入库管线。
+   * K1：stat 失败的路径显式回传（failedPaths），不再静默过滤成空结果；
+   * 部分失败时单独给一条可重试提示 —— 重试只对 failedPaths 再 stat + 入库，天然只补漏。
+   */
+  const importFilePaths = useCallback(async (files: string[], ignored: number) => {
+    if (!window.electronAPI || files.length === 0) return;
+    beginDropWork();
+    try {
+      const stat = await window.electronAPI.statFiles(files);
+      const infos = stat.infos;
+      setLoadingTotal(infos.length);
+      const added = await ingestFiles(infos, (done, total) => {
+        if (total > 0) setLoadingProgress(Math.min(done, total));
+      });
+
+      // 一个都没读到：整体性错误（K1 不再冒充「空」），带原因与重试
+      if (infos.length === 0) {
+        showToast(`无法读取所选文件：${humanizeFsError(stat.error)}`, 'error', {
+          label: '重试',
+          onClick: () => { void importFilePaths(files, ignored); },
+        });
+        return;
+      }
+
+      const ignoreNote = ignored > 0 ? `，已忽略 ${ignored} 个不支持的文件` : '';
+      if (added === 0) {
+        showToast(`已选中的 ${infos.length} 个项目已在列表中${ignoreNote}`, ignored > 0 ? 'warning' : 'info');
+      } else {
+        showToast(`已添加 ${added} 个项目${ignoreNote}`, ignored > 0 ? 'warning' : 'success');
+      }
+
+      // 部分失败：单独一条提示，避免挤掉成功汇总（失败原因可能是已被外部移动 / 删除）
+      if (stat.failedPaths.length > 0) {
+        showToast(`${stat.failedPaths.length} 个文件无法读取，可能已被移动或删除`, 'warning', {
+          label: '重试',
+          onClick: () => { void importFilePaths(stat.failedPaths, 0); },
+        });
+      }
+    } catch (error) {
+      logger.error('Error importing files:', error);
+      showToast('导入文件失败', 'error');
+    } finally {
+      endDropWork();
+    }
+  }, [beginDropWork, endDropWork, ingestFiles, showToast]);
 
   /**
    * 统一导入：一个对话框可同时多选图片 / 视频文件与文件夹（可混合）。
@@ -1067,29 +1346,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     cancelRequestedRef.current = false;
 
     if (picked.files.length > 0) {
-      beginDropWork();
-      try {
-        // 补齐 size / birthtime / mtime，避免 size=0 让重复检测退化
-        const infos = await window.electronAPI.statFiles(picked.files);
-        setLoadingTotal(infos.length);
-        const added = await ingestFiles(infos, (done, total) => {
-          if (total > 0) setLoadingProgress(Math.min(done, total));
-        });
-        const ignoreNote = picked.ignored > 0 ? `，已忽略 ${picked.ignored} 个不支持的文件` : '';
-        if (added === 0) {
-          showToast(
-            `已选中的 ${infos.length} 个项目已在列表中${ignoreNote}`,
-            picked.ignored > 0 ? 'warning' : 'info'
-          );
-        } else {
-          showToast(`已添加 ${added} 个项目${ignoreNote}`, picked.ignored > 0 ? 'warning' : 'success');
-        }
-      } catch (error) {
-        logger.error('Error importing files:', error);
-        showToast('导入文件失败', 'error');
-      } finally {
-        endDropWork();
-      }
+      await importFilePaths(picked.files, picked.ignored);
     } else if (picked.ignored > 0 && picked.directories.length === 0) {
       showToast(`已忽略 ${picked.ignored} 个不支持的文件（仅支持图片与视频）`, 'warning');
     }
@@ -1098,7 +1355,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       if (cancelRequestedRef.current) break;
       await loadDirectory(dirPath);
     }
-  }, [beginDropWork, endDropWork, ingestFiles, loadDirectory, showToast]);
+  }, [importFilePaths, loadDirectory, showToast]);
 
   /** 工具栏 / 空状态 / 右键菜单统一入口 */
   const handleImport = useCallback(async () => {
@@ -1325,15 +1582,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     }
   }, [showToast]);
 
-  // 设为封面：全库仅一张，再次点击取消；路径写入配置，重启后仍在
-  const handleToggleCover = useCallback((photo: Photo) => {
-    const willBeCover = !photo.isCover;
-    coverRef.current = willBeCover ? photo.path ?? null : null;
-    setPhotos(prev => prev.map(p => ({ ...p, isCover: willBeCover ? p.id === photo.id : false })));
-    void savePersistedConfig({ cover: coverRef.current ?? '' });
-    showToast(willBeCover ? `已将「${photo.name}」设为封面` : '已取消封面', 'success');
-  }, [showToast]);
-
   // 打开导出弹层（默认导出当前选中项；视频不参与重编码导出）
   const handleExportSelected = useCallback(() => {
     if (selectedPhotos.length === 0) {
@@ -1403,6 +1651,9 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         return;
       }
       
+      // 回环防护：改名涉及的新旧路径登记进 touchedPathsRef（主进程 watcher 会立刻看到这次改名）
+      markPathsTouched([oldPath, newPath]);
+
       let finalPath = newPath;
       let conflicted = false;
       try {
@@ -1411,15 +1662,22 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
         if (result.error) {
           logger.error('Failed to rename file:', result.error);
-          showToast(`重命名「${photo.name}」失败：${humanizeFsError(result.error)}`, 'error');
+          // 文件已被外部删除 / 移动：自动从列表剔除，不再弹常规失败提示
+          if (!fsGuard.handleGone([photo], result.error)) {
+            showToast(`重命名「${photo.name}」失败：${humanizeFsError(result.error)}`, 'error');
+          }
           return;
         }
         // 主进程在重名时可能自动追加了序号，一律以返回的最终路径为准
         finalPath = result.path || newPath;
+        markPathsTouched([finalPath]);
         conflicted = Boolean(result.conflicted);
       } catch (electronError) {
         logger.error('Electron rename error:', electronError);
-        showToast(`重命名「${photo.name}」失败：${humanizeFsError((electronError as Error).message)}`, 'error');
+        const message = (electronError as Error).message;
+        if (!fsGuard.handleGone([photo], message)) {
+          showToast(`重命名「${photo.name}」失败：${humanizeFsError(message)}`, 'error');
+        }
         return;
         }
 
@@ -1439,7 +1697,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         return p;
       }));
 
-      // 按路径存储的用户数据一起迁移：不迁移的话，重启后收藏 / 标签 / 封面会全部丢失
+      // 按路径存储的用户数据一起迁移：不迁移的话，重启后收藏 / 标签会全部丢失
       await persistPathData(rekeyPathData(oldPath, finalPath));
 
       if (conflicted) {
@@ -1453,6 +1711,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       showToast(`重命名照片失败：${(err as Error).message}`, 'error');
     } finally {
       fileOpLockRef.current = false;
+      // 操作期间抵达的外部变动事件此刻才应用（重命名的新路径已被去重，天然幂等）
+      flushPendingWatcherEvents();
     }
   };
 
@@ -1490,6 +1750,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       let unchangedCount = 0; // 名称本来就符合规则、无需改动
       let failedCount = 0;
       let conflictCount = 0; // 因重名被主进程自动追加序号的数量
+      // 文件已被外部删除 / 移动的条目：剔除出列表，不算普通失败、不进失败汇总
+      const gonePhotos: Photo[] = [];
       // 循环内不逐条弹 Toast（队列上限 4 条，会把汇总顶掉、还看不到是哪些失败），
       // 只留首个失败原因，结束后给一条统一汇总
       let firstError: string | null = null;
@@ -1584,32 +1846,40 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         // Rename the file using Electron API
         const oldPath = photo.path;
         logger.debug(`Attempting to rename: ${oldPath} to ${newName}`);
-        
+
         const dirPath = folderOfPath(oldPath);
         const newPath = joinPath(dirPath, newName);
         logger.debug(`Generated new path: ${newPath}`);
-        
+
         // Skip if new name is the same as old name
         if (newPath === oldPath) {
           logger.debug(`Skipping rename for ${oldPath} - same name`);
           unchangedCount++;
           continue;
         }
-        
+
+        // 回环防护：登记本次改名的新旧路径
+        markPathsTouched([oldPath, newPath]);
+
         try {
           const result = await window.electronAPI.renameFile(oldPath, newPath);
           logger.debug(`Rename result:`, result);
 
           if (result.error) {
             logger.error('Failed to rename file:', result.error);
-            failedCount++;
-            firstError ??= `「${photo.name}」${humanizeFsError(result.error)}`;
+            if (isFileGoneError(result.error)) {
+              gonePhotos.push(photo);
+            } else {
+              failedCount++;
+              firstError ??= `「${photo.name}」${humanizeFsError(result.error)}`;
+            }
             // Continue with other photos instead of failing all
             continue;
           }
 
           // 重名时主进程会自动追加序号，以返回的最终路径为准
           const finalPath = result.path || newPath;
+          markPathsTouched([finalPath]);
           const actualName = finalPath.split(/[\\/]/).pop() || newName;
           if (result.conflicted) conflictCount++;
 
@@ -1617,8 +1887,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           renamedCount++;
         } catch (electronError) {
           logger.error('Electron rename error:', electronError);
-          failedCount++;
-          firstError ??= `「${photo.name}」${humanizeFsError((electronError as Error).message)}`;
+          if (isFileGoneError((electronError as Error).message)) {
+            gonePhotos.push(photo);
+          } else {
+            failedCount++;
+            firstError ??= `「${photo.name}」${humanizeFsError((electronError as Error).message)}`;
+          }
           continue;
         }
       }
@@ -1639,18 +1913,20 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           return p;
         }));
 
-        // 批量改名同样要做路径迁移：收藏 / 隐藏 / 标签 / 时间修正 / 封面 / AI 缓存都按路径存储
-        let changed = { cover: false, video: false, ai: false };
+        // 批量改名同样要做路径迁移：收藏 / 隐藏 / 标签 / 时间修正 / AI 缓存都按路径存储
+        let changed = { video: false, ai: false };
         for (const update of updates) {
           const one = rekeyPathData(update.oldPath, update.newPath);
           changed = {
-            cover: changed.cover || one.cover,
             video: changed.video || one.video,
             ai: changed.ai || one.ai,
           };
         }
         await persistPathData(changed);
       }
+
+      // 文件已不在原位的条目：统一剔除（塌陷动画 + 收敛选中 + 收藏标签保留）
+      if (gonePhotos.length > 0) fsGuard.reportGone(gonePhotos);
 
       const summaryParts: string[] = [];
       if (renamedCount > 0) summaryParts.push(`已重命名 ${renamedCount} 项`);
@@ -1664,7 +1940,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       if (failedCount > 0) {
         showToast(summaryParts.join('，'), 'warning');
       } else if (summaryParts.length === 0) {
-        showToast('没有需要修改的名称', 'info');
+        // 全部条目因文件消失被剔除：reportGone 的提示已经说明，不再补一条误导性的「无需修改」
+        if (gonePhotos.length === 0) showToast('没有需要修改的名称', 'info');
       } else {
         showToast(summaryParts.join('，'), 'success');
       }
@@ -1674,6 +1951,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       showToast(`批量重命名照片失败：${(err as Error).message}`, 'error');
     } finally {
       fileOpLockRef.current = false;
+      flushPendingWatcherEvents();
     }
   };
 
@@ -1684,6 +1962,9 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       showToast('电子 API 不可用，无法执行删除操作', 'error');
       return;
     }
+
+    // 回环防护：删除会让 watcher 看到一波 removed，登记后由双保险过滤掉
+    markPathsTouched(targets.map(p => p.path));
 
     const { deletedIds, failedPhotos, errors, pathlessRemoved } = await movePhotosToTrash(targets);
 
@@ -1709,18 +1990,33 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       ? `，另有 ${pathlessRemoved} 项无磁盘文件，仅从列表移除`
       : '';
 
-    if (failedPhotos.length === 0) {
+    // ENOENT 的失败项说明文件早已不在磁盘（外部删除 / 移动）：剔除条目，
+    // 不进「重试」（重试只会再失败一次）；其余失败项维持原有重试入口
+    const gonePhotos: Photo[] = [];
+    const retryPhotos: Photo[] = [];
+    const retryErrors: string[] = [];
+    failedPhotos.forEach((photo, i) => {
+      if (isFileGoneError(errors[i])) {
+        gonePhotos.push(photo);
+      } else {
+        retryPhotos.push(photo);
+        retryErrors.push(errors[i]);
+      }
+    });
+    if (gonePhotos.length > 0) fsGuard.reportGone(gonePhotos);
+
+    if (retryPhotos.length === 0) {
       showToast(`已将 ${deletedIds.size - pathlessRemoved} 张照片移至回收站${pathlessNote}`, 'success');
       return;
     }
 
-    errors.forEach(error => logger.error('删除失败：', error));
-    const detail = errors[0] + (errors.length > 1 ? ` 等 ${errors.length} 项` : '');
-    const retryAction = { label: '重试', onClick: () => { void runDelete(failedPhotos); } };
+    retryErrors.forEach(error => logger.error('删除失败：', error));
+    const detail = retryErrors[0] + (retryErrors.length > 1 ? ` 等 ${retryErrors.length} 项` : '');
+    const retryAction = { label: '重试', onClick: () => { void runDelete(retryPhotos); } };
 
     if (deletedIds.size > 0) {
       showToast(
-        `已删除 ${deletedIds.size - pathlessRemoved} 张，${failedPhotos.length} 张失败${pathlessNote}：${detail}`,
+        `已删除 ${deletedIds.size - pathlessRemoved} 张，${retryPhotos.length} 张失败${pathlessNote}：${detail}`,
         'warning',
         retryAction
       );
@@ -1753,16 +2049,22 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       setIsDeleteModalOpen(false);
     } finally {
       fileOpLockRef.current = false;
+      flushPendingWatcherEvents();
     }
   };
 
   /**
    * 批量移动到指定文件夹。
    * 磁盘移动成功后，条目状态（路径 / 文件名 / pm:// 地址）与所有「按路径存储」
-   * 的用户数据（收藏 / 隐藏 / 标签 / 日期修正 / 封面 / 视频元数据 / AI 缓存）
+   * 的用户数据（收藏 / 隐藏 / 标签 / 日期修正 / 视频元数据 / AI 缓存）
    * 都要一起迁移，否则移动后这些标记会凭空消失。
    */
-  const runMove = async (targets: Photo[], targetDir: string) => {
+  const doRunMove = async (
+    targets: Photo[],
+    targetDir: string,
+    /** K2 幂等重试：源路径 → 上次跨卷移动已落盘的副本路径（只补删源，不重复复制） */
+    priorTargets?: Record<string, string>
+  ) => {
     if (!window.electronAPI) {
       showToast('电子 API 不可用，无法执行移动操作', 'error');
       return;
@@ -1776,9 +2078,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       return;
     }
 
+    // 回环防护：源路径的移出会被 watcher 看到，先登记（目标路径在拿到结果后登记）
+    markPathsTouched(movable.map(p => p.path));
+
     const result = await window.electronAPI.moveFiles(
       movable.map(p => p.path as string),
-      targetDir
+      targetDir,
+      priorTargets
     );
     if (result?.error) {
       showToast(`移动失败：${result.error}`, 'error');
@@ -1787,7 +2093,33 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
     const moved = result.results.filter(r => r.success && r.to);
     const skipped = result.results.filter(r => r.skipped);
-    const failedResults = result.results.filter(r => !r.success && !r.skipped);
+    // K2 中间态：副本已落盘但源文件删除失败 —— 源仍在原位，列表条目保持不动，
+    // 单独汇总并允许「重试」只补删源（回传 priorTargets，绝不重复复制）
+    const partialPhotos: Photo[] = [];
+    const partialRetryTargets: Record<string, string> = {};
+    for (const r of result.results) {
+      if (!r.partial) continue;
+      const photo = movable.find(p => p.path === r.from);
+      if (photo && r.to) {
+        partialPhotos.push(photo);
+        partialRetryTargets[r.from] = r.to;
+      }
+    }
+    // 文件已被外部删除 / 移动：剔除条目，不进重试
+    const gonePhotos: Photo[] = [];
+    const failedResults: MoveFileResult[] = [];
+    for (const r of result.results) {
+      if (r.success || r.skipped || r.partial) continue;
+      const photo = movable.find(p => p.path === r.from);
+      if (isFileGoneError(r.error) && photo) {
+        gonePhotos.push(photo);
+      } else {
+        failedResults.push(r);
+      }
+    }
+    if (gonePhotos.length > 0) fsGuard.reportGone(gonePhotos);
+    // 目标路径也登记：跨卷复制落盘同样会被 watcher 看到
+    markPathsTouched([...moved.map(r => r.to), ...Object.values(partialRetryTargets)]);
     let conflictCount = 0;
 
     if (moved.length > 0) {
@@ -1815,12 +2147,11 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           : p;
       }));
 
-      // 2) 迁移按路径存储的用户数据（收藏 / 隐藏 / 标签 / 时间修正 / 封面 / 视频元数据 / AI 缓存）
-      let changed = { cover: false, video: false, ai: false };
+      // 2) 迁移按路径存储的用户数据（收藏 / 隐藏 / 标签 / 时间修正 / 视频元数据 / AI 缓存）
+      let changed = { video: false, ai: false };
       for (const [from, to] of pathMap) {
         const one = rekeyPathData(from, to);
         changed = {
-          cover: changed.cover || one.cover,
           video: changed.video || one.video,
           ai: changed.ai || one.ai,
         };
@@ -1841,24 +2172,49 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     if (pathlessCount > 0) notes.push(`${pathlessCount} 项无磁盘路径已跳过`);
     const noteText = notes.length > 0 ? `（${notes.join('，')}）` : '';
 
-    if (moved.length > 0 && failedPhotos.length === 0) {
+    // 重试集合 = 普通失败（正常重走移动）+ partial（回传 priorTargets 只补删源）；
+    // 同一批里两类并存时，priorTargets 只作用于 partial 项，互不干扰
+    const retryPhotos = [...failedPhotos, ...partialPhotos];
+    const retryPriors = partialPhotos.length > 0 ? partialRetryTargets : undefined;
+    const retryAction = retryPhotos.length > 0
+      ? { label: '重试', onClick: () => { void runMove(retryPhotos, targetDir, retryPriors); } }
+      : undefined;
+
+    if (moved.length > 0 && retryPhotos.length === 0) {
       showToast(`已移动 ${moved.length} 项到「${dirName}」${noteText}`, 'success');
-    } else if (moved.length > 0) {
-      const detail = humanizeFsError(failedResults[0]?.error);
-      showToast(
-        `已移动 ${moved.length} 项到「${dirName}」，${failedPhotos.length} 项失败：${detail}`,
-        'warning',
-        { label: '重试', onClick: () => { void runMove(failedPhotos, targetDir); } }
-      );
-    } else if (skipped.length > 0 && failedPhotos.length === 0) {
+    } else if (moved.length > 0 || partialPhotos.length > 0) {
+      const head = moved.length > 0
+        ? `已移动 ${moved.length} 项到「${dirName}」`
+        : `已复制 ${partialPhotos.length} 项到「${dirName}」`;
+      const partialText = moved.length > 0 && partialPhotos.length > 0
+        ? `，另有 ${partialPhotos.length} 项已复制到目标位置，但原文件删除失败`
+        : '';
+      const failText = failedPhotos.length > 0
+        ? `，${failedPhotos.length} 项失败：${humanizeFsError(failedResults[0]?.error)}`
+        : '';
+      showToast(`${head}${failText}${partialText}${noteText}`, 'warning', retryAction);
+    } else if (skipped.length > 0 && retryPhotos.length === 0) {
       showToast(`所选项目都已在「${dirName}」中，无需移动`, 'info');
-    } else {
+    } else if (retryPhotos.length > 0) {
       const detail = humanizeFsError(failedResults[0]?.error);
-      showToast(
-        `移动失败：${detail}`,
-        'error',
-        { label: '重试', onClick: () => { void runMove(failedPhotos.length > 0 ? failedPhotos : movable, targetDir); } }
-      );
+      showToast(`移动失败：${detail}`, 'error', retryAction);
+    }
+    // else：全部条目已按「文件不在原位」剔除 —— reportGone 的提示已覆盖，不再补报错
+  };
+
+  /** 移动的提交锁包装：连点防护 + 操作期间抵达的 watcher 事件在锁释放后统一应用 */
+  const runMove = async (
+    targets: Photo[],
+    targetDir: string,
+    priorTargets?: Record<string, string>
+  ) => {
+    if (fileOpLockRef.current) return;
+    fileOpLockRef.current = true;
+    try {
+      await doRunMove(targets, targetDir, priorTargets);
+    } finally {
+      fileOpLockRef.current = false;
+      flushPendingWatcherEvents();
     }
   };
 
@@ -1903,13 +2259,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     onShowInFolder: handleShowInFolder,
     onCopyPath: handleCopyPath,
     onOpenInEditor: handleOpenInEditor,
-    onToggleCover: handleToggleCover,
     onExportSelected: handleExportSelected,
     onMovePhotos: handleMoveSelected,
     onOpenAdjustDate: () => setIsAdjustDateModalOpen(true),
     onOpenRename: () => setIsRenameModalOpen(true),
     onOpenDelete: () => setIsDeleteModalOpen(true),
-  }), [contextMenu, visiblePhotos.length, photos.length, selectedIds, toggleFavorite, setHidden, handleCopyImage, handleShowInFolder, handleCopyPath, handleOpenInEditor, handleToggleCover, handleExportSelected, handleMoveSelected, handleSelectAllVisible, handleCheckDuplicates, handleRequestClearList, handleImport]);
+  }), [contextMenu, visiblePhotos.length, photos.length, selectedIds, toggleFavorite, setHidden, handleCopyImage, handleShowInFolder, handleCopyPath, handleOpenInEditor, handleExportSelected, handleMoveSelected, handleSelectAllVisible, handleCheckDuplicates, handleRequestClearList, handleImport]);
 
   // 计算媒体统计数据（侧栏「图库 / 媒体类型」与顶部筛选共用）
   // 隐藏项不计入任何常规分类，只计入「已隐藏」，与 macOS 照片一致
@@ -2311,11 +2666,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     if (resolved.length > 0) {
       (async () => {
         beginDropWork();
+        // K1：stat 失败的文件不阻塞导入 —— 拖放自带的 size/mtime 兜底，仅缺 birthtime
+        let statFailedCount = 0;
         try {
           // 拖放的 File 对象没有创建时间，补一次 stat 才能拿到 birthtime
           if (window.electronAPI) {
-            const infos = await window.electronAPI.statFiles(resolved.map(r => r.path));
-            const byPath = new Map(infos.map(info => [info.path, info]));
+            const stat = await window.electronAPI.statFiles(resolved.map(r => r.path));
+            const byPath = new Map(stat.infos.map(info => [info.path, info]));
             resolved.forEach(item => {
               const info = byPath.get(item.path);
               if (!info) return;
@@ -2323,21 +2680,23 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               item.mtime = info.mtime;
               item.created = info.created;
             });
+            statFailedCount = stat.failedPaths.length;
           }
           setLoadingTotal(resolved.length);
           const added = await ingestFiles(resolved, (done, total) => {
             if (total > 0) setLoadingProgress(Math.min(done, total));
           });
-          // 同一次拖放里混有不支持的文件时一并说明，避免「悄悄少了几个」
+          // 同一次拖放里混有不支持的文件 / stat 失败的文件时一并说明，避免「悄悄少了几个」
           const rejectNote = rejected.length > 0 ? `，已忽略 ${rejected.length} 个不支持的文件` : '';
+          const statNote = statFailedCount > 0 ? `，${statFailedCount} 个文件无法读取完整信息` : '';
           if (added === 0) {
             // 「已添加 0 个项目」会让人怀疑是导入失败，这里说清楚是重复
             showToast(
-              `已选中的 ${resolved.length} 个项目已在列表中${rejectNote}`,
+              `已选中的 ${resolved.length} 个项目已在列表中${statNote}${rejectNote}`,
               rejected.length > 0 ? 'warning' : 'info'
             );
           } else {
-            showToast(`已添加 ${added} 个项目${rejectNote}`, rejected.length > 0 ? 'warning' : 'success');
+            showToast(`已添加 ${added} 个项目${statNote}${rejectNote}`, rejected.length > 0 ? 'warning' : 'success');
           }
         } catch {
           showToast('处理拖拽文件失败', 'error');
@@ -2362,8 +2721,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
             const scanId = `drop-${Date.now()}-${i}`;
             activeScanIdRef.current = scanId;
             try {
-              const infos = await window.electronAPI.scanDirectory(dirPath, scanId);
+              // K1：新返回形状区分「为空 / 根目录不可访问 / 部分内容失败」
+              const scan = await window.electronAPI.scanDirectory(dirPath, scanId);
               if (activeScanIdRef.current !== scanId) return; // 已被取消
+              if (scan.error) {
+                showToast(`无法读取文件夹「${dir.name}」：${humanizeFsError(scan.error)}`, 'error');
+                continue;
+              }
+              const infos = scan.files;
               if (infos.length === 0) {
                 showToast(`文件夹「${dir.name}」中没有可导入的图片或视频`, 'warning');
                 continue;
@@ -2373,10 +2738,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               const added = await ingestFiles(infos, (done, total) => {
                 if (total > 0) setLoadingProgress(Math.min(done, total));
               });
+              // 部分子目录 / 文件读取失败时一并说明，避免「悄悄少了几个」
+              const failedCount = (scan.failedDirs ?? 0) + (scan.failedFiles ?? 0);
+              const failNote = failedCount > 0 ? `（${failedCount} 项无法读取已跳过）` : '';
               showToast(
                 added === 0
-                  ? `文件夹「${dir.name}」中的内容已在列表中`
-                  : `已从文件夹「${dir.name}」加入 ${added} 个项目`,
+                  ? `文件夹「${dir.name}」中的内容已在列表中${failNote}`
+                  : `已从文件夹「${dir.name}」加入 ${added} 个项目${failNote}`,
                 added === 0 ? 'info' : 'success'
               );
             } catch (error) {
@@ -2779,10 +3147,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           isOpen={isExportModalOpen}
           photos={exportTargets}
           onClose={() => { setIsExportModalOpen(false); setExportTargets([]); }}
-          onFinish={({ succeeded, failed, cancelled, firstError, targetDir }) => {
+          onFinish={({ succeeded, failed, cancelled, firstError, targetDir, gonePhotos }) => {
             setIsExportModalOpen(false);
+            // 源文件已被外部删除 / 移动的条目：剔除出列表，且不进「重新导出」集合
+            const gone = gonePhotos ?? [];
+            if (gone.length > 0) fsGuard.reportGone(gone);
             // 重试必须带着目标重新打开弹层：只开弹层会得到一个空的「已选择 0 张照片」
-            const retryTargets = exportTargets;
+            const goneIds = new Set(gone.map(p => p.id));
+            const retryTargets = exportTargets.filter(p => !goneIds.has(p.id));
             setExportTargets([]);
             const retryExport = {
               label: '重新导出',
@@ -2795,14 +3167,16 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
             const reason = firstError ? `：${firstError}` : '';
             const dirName = targetDir.split(/[\\/]/).filter(Boolean).pop() ?? '';
             const where = dirName ? `到「${dirName}」` : '';
+            // 汇总里的「失败」只算真正可重试的：文件消失的条目已单独提示并剔除
+            const retriableFailed = failed - gone.length;
             if (cancelled) {
-              showToast(`导出已取消：完成 ${succeeded} 张${failed > 0 ? `，失败 ${failed} 张${reason}` : ''}`, 'warning');
-            } else if (failed === 0) {
+              showToast(`导出已取消：完成 ${succeeded} 张${retriableFailed > 0 ? `，失败 ${retriableFailed} 张${reason}` : ''}`, 'warning');
+            } else if (retriableFailed === 0) {
               showToast(`已导出 ${succeeded} 张${where}`, 'success');
             } else if (succeeded > 0) {
-              showToast(`已导出 ${succeeded} 张，${failed} 张失败${reason}`, 'warning', retryExport);
+              showToast(`已导出 ${succeeded} 张，${retriableFailed} 张失败${reason}`, 'warning', retryExport);
             } else {
-              showToast(`导出失败：${failed} 张照片均未成功${reason}`, 'error', retryExport);
+              showToast(`导出失败：${retriableFailed} 张照片均未成功${reason}`, 'error', retryExport);
             }
           }}
         />

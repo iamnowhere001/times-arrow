@@ -559,6 +559,10 @@ async function scanDirectory(rootPath, scanId) {
   const pending = [];
   const visited = new Set();
   const stack = [{ dir: rootPath, depth: 0 }];
+  // K1：无法读取的目录 / 文件不再静默吞掉，计数后随结果返回，
+  // 渲染层据此区分「目录为空」与「部分内容无法读取」
+  let failedDirs = 0;
+  let failedFiles = 0;
 
   try {
     while (stack.length > 0 && !isCancelled()) {
@@ -569,6 +573,7 @@ async function scanDirectory(rootPath, scanId) {
       try {
         realDir = await fs.promises.realpath(dir);
       } catch {
+        failedDirs += 1;
         continue;
       }
       if (visited.has(realDir)) continue;
@@ -578,6 +583,7 @@ async function scanDirectory(rootPath, scanId) {
       try {
         entries = await readdir(dir, { withFileTypes: true });
       } catch {
+        failedDirs += 1;
         continue;
       }
 
@@ -608,6 +614,7 @@ async function scanDirectory(rootPath, scanId) {
                 created: s.birthtimeMs || s.ctimeMs || 0,
               };
             } catch {
+              failedFiles += 1;
               return null;
             }
           })
@@ -615,14 +622,153 @@ async function scanDirectory(rootPath, scanId) {
       }
     }
 
-    if (isCancelled()) return [];
+    if (isCancelled()) return { files: [], cancelled: true };
 
     const settled = await Promise.all(pending);
-    return settled.filter(Boolean);
+    return {
+      files: settled.filter(Boolean),
+      ...(failedDirs > 0 ? { failedDirs } : null),
+      ...(failedFiles > 0 ? { failedFiles } : null),
+    };
   } finally {
     if (tracked) activeScans.delete(scanId);
   }
 }
+
+// ---------------------------------------------------------------------------
+// 目录监听（N5）：轻量感知外部增删。
+// macOS 下 fs.watch recursive 基于 FSEvents：rename 会同时产生 add+remove 对，
+// 整目录拷入会形成事件风暴，因此主进程只做「过滤 + 防抖聚合」，
+// 语义判定（新增 / 移除 / 回环防护）全部交给渲染层。
+// ---------------------------------------------------------------------------
+let dirWatcher = null;
+let watchedDir = null;
+/** absolutePath → 最近一次事件类型（Map 天然去重，同路径只保留一条） */
+const pendingWatchEvents = new Map();
+let watchFlushTimer = null;
+let watchFlushMaxTimer = null;
+
+/** 关闭当前 watcher 并清空全部聚合状态 */
+function stopDirWatcher() {
+  if (dirWatcher) {
+    try {
+      dirWatcher.close();
+    } catch {
+      // 已关闭 / 已失效时 close 可能抛错，忽略
+    }
+    dirWatcher = null;
+  }
+  watchedDir = null;
+  pendingWatchEvents.clear();
+  if (watchFlushTimer) {
+    clearTimeout(watchFlushTimer);
+    watchFlushTimer = null;
+  }
+  if (watchFlushMaxTimer) {
+    clearTimeout(watchFlushMaxTimer);
+    watchFlushMaxTimer = null;
+  }
+}
+
+/** 防抖 flush：500ms 尾沿；事件持续到达时由 3s maxWait 强制截断 */
+function scheduleWatchFlush() {
+  if (watchFlushTimer) clearTimeout(watchFlushTimer);
+  watchFlushTimer = setTimeout(() => {
+    watchFlushTimer = null;
+    flushWatchEvents();
+  }, 500);
+  if (!watchFlushMaxTimer) {
+    watchFlushMaxTimer = setTimeout(() => {
+      watchFlushMaxTimer = null;
+      if (watchFlushTimer) {
+        clearTimeout(watchFlushTimer);
+        watchFlushTimer = null;
+      }
+      flushWatchEvents();
+    }, 3000);
+  }
+}
+
+/** 聚合分类后一次性发给渲染层：stat 成功的文件 → added；目录 → addedDirs；ENOENT → removed */
+function flushWatchEvents() {
+  if (!watchedDir || pendingWatchEvents.size === 0) return;
+
+  const added = [];
+  const addedDirs = [];
+  const removed = [];
+  const paths = [...pendingWatchEvents.keys()];
+  pendingWatchEvents.clear();
+
+  for (const filePath of paths) {
+    try {
+      const s = fs.statSync(filePath);
+      if (s.isFile()) added.push(filePath);
+      else if (s.isDirectory()) addedDirs.push(filePath); // 目录被拖入监听范围，交渲染层走扫描管线
+    } catch (error) {
+      if (error.code === 'ENOENT') removed.push(filePath);
+      // EACCES 等无法判定的忽略，避免误删列表
+    }
+  }
+
+  if (added.length === 0 && addedDirs.length === 0 && removed.length === 0) return;
+  logger.debug(
+    `[watch] ${watchedDir}: +${added.length} files, +${addedDirs.length} dirs, -${removed.length}`
+  );
+  mainWindow?.webContents?.send('directory-changed', {
+    dir: watchedDir,
+    added,
+    addedDirs,
+    removed,
+  });
+}
+
+ipcMain.handle('watch-directory', async (event, dirPath) => {
+  if (typeof dirPath !== 'string' || !dirPath) {
+    return { success: false, error: 'Invalid directory path' };
+  }
+  try {
+    const resolved = path.resolve(dirPath);
+    if (watchedDir === resolved && dirWatcher) {
+      return { success: true, already: true };
+    }
+    stopDirWatcher();
+    const dirStat = await stat(dirPath);
+    if (!dirStat.isDirectory()) {
+      return { success: false, error: '路径不是文件夹' };
+    }
+    watchedDir = resolved;
+    dirWatcher = fs.watch(resolved, { recursive: true }, (type, relPath) => {
+      if (!watchedDir || !relPath) return;
+      const base = path.basename(relPath);
+      if (base.startsWith('.')) return; // .DS_Store / ._* / 临时文件
+      const full = path.join(resolved, relPath);
+      if (!isMediaFile(full)) return;
+      pendingWatchEvents.set(full, type);
+      scheduleWatchFlush();
+    });
+    // 目录被外部删除 / 卷被卸载时 macOS 多报 EPERM / ENOENT：停止监听并告知渲染层
+    dirWatcher.on('error', (watchError) => {
+      logger.warn(`[watch] watcher error on ${watchedDir}:`, watchError);
+      const erroredDir = watchedDir;
+      stopDirWatcher();
+      mainWindow?.webContents?.send('directory-watch-error', {
+        dir: erroredDir,
+        code: watchError?.code,
+      });
+    });
+    logger.debug(`[watch] watching ${resolved}`);
+    return { success: true };
+  } catch (error) {
+    logger.error('Error watching directory:', error);
+    stopDirWatcher();
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('unwatch-directory', async () => {
+  stopDirWatcher();
+  return true;
+});
 
 // ---------------------------------------------------------------------------
 // EXIF：在主进程解析（渲染进程不再做 atob 逐字节转换，避免主线程长任务）
@@ -1021,10 +1167,42 @@ function isSameDirectory(a, b) {
 /**
  * 跨磁盘 / 跨卷移动：rename 抛 EXDEV 时退化为「复制成功后再删源文件」。
  * COPYFILE_EXCL 兜底保证绝不覆盖（正常路径已由 buildUniquePath 保证）。
+ * K2：源文件删除失败（如只读卷）不再整体抛错——副本已落盘，返回 partial 中间态，
+ * 由渲染层提示并可通过 priorTargets 幂等重试，绝不重复复制。
  */
 async function moveAcrossDevices(srcPath, destPath) {
   await fs.promises.copyFile(srcPath, destPath, fs.constants.COPYFILE_EXCL);
-  await fs.promises.unlink(srcPath);
+  try {
+    await fs.promises.unlink(srcPath);
+  } catch (error) {
+    return { to: destPath, partial: true, error: error.message };
+  }
+  return { to: destPath, partial: false };
+}
+
+/**
+ * K2：补删跨卷移动残留的源文件（重试入口）。
+ * 副本存在且与源体积一致才删源；任一 stat 失败或体积不一致返回 null（无法安全续删，
+ * 走正常移动流程）；源已不存在视为移动已完成。
+ */
+async function resumePartialMove(srcPath, copiedPath) {
+  let srcStat;
+  let copiedStat;
+  try {
+    [srcStat, copiedStat] = await Promise.all([
+      fs.promises.stat(srcPath),
+      fs.promises.stat(copiedPath),
+    ]);
+  } catch {
+    return null;
+  }
+  if (srcStat.size !== copiedStat.size) return null;
+  try {
+    await fs.promises.unlink(srcPath);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 }
 
 // 重命名：目标不存在直接改；目标已存在（且不是自身）时自动追加序号，绝不覆盖
@@ -1069,11 +1247,12 @@ ipcMain.handle('delete-file', async (event, filePath) => {
  * 批量移动文件到指定文件夹（整理图库用）。
  * - 源文件已在目标目录 → 跳过（skipped + reason='same-directory'）
  * - 目标已存在同名文件 → 自动追加序号（conflicted=true），绝不覆盖
- * - 跨磁盘 / 跨卷 → 复制后删除源文件
+ * - 跨磁盘 / 跨卷 → 复制后删除源文件；删源失败返回 partial 中间态（K2），
+ *   渲染层重试时回传 priorTargets（源路径 → 已落盘副本路径），只补删源、绝不重复复制
  * 逐个串行执行：前一个落盘后后一个才能探测同名，避免批内互相覆盖。
  * 返回整体错误 + 每个文件独立结果，失败项由渲染进程组织重试。
  */
-ipcMain.handle('move-files', async (event, filePaths, targetDir) => {
+ipcMain.handle('move-files', async (event, filePaths, targetDir, priorTargets) => {
   if (!Array.isArray(filePaths) || typeof targetDir !== 'string' || !targetDir) {
     return { error: 'Invalid arguments', results: [] };
   }
@@ -1095,6 +1274,24 @@ ipcMain.handle('move-files', async (event, filePaths, targetDir) => {
       continue;
     }
 
+    // K2 重试幂等：上次「复制成功但删源失败」的残留副本优先补删源
+    const priorTo =
+      priorTargets && typeof priorTargets === 'object' ? priorTargets[srcPath] : null;
+    if (typeof priorTo === 'string' && priorTo) {
+      // eslint-disable-next-line no-await-in-loop
+      const resumed = await resumePartialMove(srcPath, priorTo);
+      if (resumed) {
+        if (resumed.ok) {
+          logger.debug(`Resumed partial move: removed source ${srcPath}`);
+          results.push({ from: srcPath, to: priorTo, success: true, resumed: true });
+        } else {
+          results.push({ from: srcPath, to: priorTo, partial: true, error: resumed.error });
+        }
+        continue;
+      }
+      // 副本缺失 / 体积不一致：残留副本不可信，回退正常移动流程
+    }
+
     try {
       if (isSameDirectory(path.dirname(srcPath), targetDir)) {
         results.push({ from: srcPath, skipped: true, reason: 'same-directory' });
@@ -1103,21 +1300,29 @@ ipcMain.handle('move-files', async (event, filePaths, targetDir) => {
 
       const fileName = path.basename(srcPath);
       const destPath = buildUniquePath(targetDir, fileName);
+      let finalDest = destPath;
+      let partialMove = null;
       try {
         await rename(srcPath, destPath);
       } catch (err) {
         if (err.code === 'EXDEV') {
-          await moveAcrossDevices(srcPath, destPath);
+          partialMove = await moveAcrossDevices(srcPath, destPath);
+          finalDest = partialMove.to;
         } else {
           throw err;
         }
       }
-      logger.debug(`Moved file: ${srcPath} -> ${destPath}`);
+      logger.debug(`Moved file: ${srcPath} -> ${finalDest}`);
+      if (partialMove?.partial) {
+        // 副本已落盘但源未删除：条目留在原位（源仍在），渲染层提示可重试
+        results.push({ from: srcPath, to: finalDest, partial: true, error: partialMove.error });
+        continue;
+      }
       results.push({
         from: srcPath,
-        to: destPath,
+        to: finalDest,
         success: true,
-        conflicted: destPath !== path.join(targetDir, fileName),
+        conflicted: finalDest !== path.join(targetDir, fileName),
       });
     } catch (error) {
       logger.error('Error moving file:', error);
@@ -1525,12 +1730,18 @@ function setupProtocol() {
 }
 
 // 扫描目录（递归，返回图片文件清单）
+// K1：根目录不可访问时明确报错，部分子项失败以 failedDirs / failedFiles 计数返回，
+// 不再吞错伪装成「空目录」，渲染层可区分「为空 / 无权限 / 部分失败」
 ipcMain.handle('scan-directory', async (event, dirPath, scanId) => {
   try {
+    const rootStat = await stat(dirPath);
+    if (!rootStat.isDirectory()) {
+      return { files: [], error: '路径不是文件夹', errorCode: 'ENOTDIR' };
+    }
     return await scanDirectory(dirPath, scanId);
   } catch (error) {
     logger.error('Error scanning directory:', error);
-    return [];
+    return { files: [], error: error.message, errorCode: error.code };
   }
 });
 
@@ -1587,10 +1798,11 @@ ipcMain.handle('get-image-hashes', async (event, filePaths) => {
 });
 
 // 批量获取文件信息（用于拖放/单文件选择时补齐 size/mtime）
+// K1：单项失败不再过滤丢弃，路径进 failedPaths 返回，渲染层可提示跳过数量并重试
 ipcMain.handle('stat-files', async (event, filePaths) => {
+  const list = Array.isArray(filePaths) ? filePaths : [];
   try {
-    const list = Array.isArray(filePaths) ? filePaths : [];
-    const result = await Promise.all(
+    const settled = await Promise.all(
       list.map(async (filePath) => {
         try {
           const s = await stat(filePath);
@@ -1606,9 +1818,14 @@ ipcMain.handle('stat-files', async (event, filePaths) => {
         }
       })
     );
-    return result.filter(Boolean);
+    return {
+      infos: settled.filter(Boolean),
+      failedPaths: settled
+        .map((item, index) => (item ? null : list[index]))
+        .filter((p) => typeof p === 'string'),
+    };
   } catch (error) {
-    return [];
+    return { infos: [], failedPaths: list.filter((p) => typeof p === 'string'), error: error.message };
   }
 });
 

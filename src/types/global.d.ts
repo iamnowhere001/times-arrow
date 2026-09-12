@@ -1,4 +1,52 @@
 declare global {
+  /** 扫描 / stat 返回的单个文件信息 */
+  interface FileInfo {
+    name: string;
+    path: string;
+    size: number;
+    mtime: number;
+    created?: number;
+  }
+
+  /** 目录扫描结果：区分「为空 / 根目录不可访问 / 部分内容失败」（K1） */
+  interface ScanDirectoryResult {
+    files: FileInfo[];
+    /** 无法读取的子目录数（无权限 / 已消失） */
+    failedDirs?: number;
+    /** 无法 stat 的文件数 */
+    failedFiles?: number;
+    /** 扫描被用户取消 */
+    cancelled?: boolean;
+    /** 根目录级错误（不存在 / 无权限 / 不是文件夹） */
+    error?: string;
+    errorCode?: string;
+  }
+
+  /** 批量 stat 结果：失败路径显式返回，不再静默过滤（K1） */
+  interface StatFilesResult {
+    infos: FileInfo[];
+    failedPaths: string[];
+    error?: string;
+  }
+
+  /** 目录监听的外部变动事件（主进程已按扩展名过滤并防抖聚合） */
+  interface DirectoryChangeEvent {
+    /** 产生事件的监听目录 */
+    dir: string;
+    /** 新增的媒体文件绝对路径 */
+    added: string[];
+    /** 新出现的子目录（拖入监听范围的文件夹，由渲染层走扫描管线） */
+    addedDirs: string[];
+    /** 已消失的路径（可能是文件或目录，渲染层按前缀匹配剔除） */
+    removed: string[];
+  }
+
+  /** 目录监听异常事件（目录被外部删除 / 卷被卸载） */
+  interface DirectoryWatchErrorEvent {
+    dir: string;
+    code?: string;
+  }
+
   /** 单个文件的移动结果（与 move-files IPC 入参等长） */
   interface MoveFileResult {
     /** 源路径 */
@@ -11,6 +59,10 @@ declare global {
     /** 未执行移动（如源文件已在目标目录） */
     skipped?: boolean;
     reason?: 'same-directory';
+    /** 跨卷移动：副本已落盘但源文件删除失败（K2 中间态） */
+    partial?: boolean;
+    /** 本次结果来自「补删源」的幂等重试 */
+    resumed?: boolean;
     error?: string;
   }
 
@@ -49,8 +101,13 @@ declare global {
         error?: string;
       }>;
       deleteFile: (path: string) => Promise<{ success: boolean; error?: string }>;
-      /** 批量移动文件到目标文件夹；逐项返回成功 / 跳过 / 失败结果 */
-      moveFiles: (filePaths: string[], targetDir: string) => Promise<MoveFilesResult>;
+      /** 批量移动文件到目标文件夹；逐项返回成功 / 跳过 / 失败结果；
+       *  priorTargets（源路径 → 上次跨卷移动已落盘的副本路径）用于幂等重试补删源 */
+      moveFiles: (
+        filePaths: string[],
+        targetDir: string,
+        priorTargets?: Record<string, string>
+      ) => Promise<MoveFilesResult>;
       /** 在访达 / 资源管理器中定位文件 */
       showInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
       /** 复制图片到系统剪贴板 */
@@ -66,10 +123,8 @@ declare global {
         base64: string
       ) => Promise<{ success: boolean; path?: string; error?: string }>;
 
-      /** 递归扫描目录，返回图片文件清单（name/path/size/mtime/created）；scanId 用于取消 */
-      scanDirectory: (dirPath: string, scanId?: string) => Promise<
-        Array<{ name: string; path: string; size: number; mtime: number; created?: number }>
-      >;
+      /** 递归扫描目录；返回结果区分「为空 / 根目录不可访问 / 部分内容失败」；scanId 用于取消 */
+      scanDirectory: (dirPath: string, scanId?: string) => Promise<ScanDirectoryResult>;
       /** 取消进行中的目录扫描 */
       cancelScan: (scanId: string) => Promise<boolean>;
       /**
@@ -95,10 +150,16 @@ declare global {
       }>;
       /** 批量计算感知哈希（主进程执行，返回与入参等长的数组） */
       getImageHashes: (filePaths: string[]) => Promise<Array<string | null>>;
-      /** 批量获取文件 size/mtime/created */
-      statFiles: (filePaths: string[]) => Promise<
-        Array<{ path: string; name: string; size: number; mtime: number; created?: number }>
-      >;
+      /** 批量获取文件 size/mtime/created；失败路径显式返回 failedPaths */
+      statFiles: (filePaths: string[]) => Promise<StatFilesResult>;
+      /** 监听目录（递归，感知外部增删）；切换目录时主进程自动替换旧 watcher */
+      watchDirectory: (dirPath: string) => Promise<{ success: boolean; already?: boolean; error?: string }>;
+      /** 停止目录监听 */
+      unwatchDirectory: () => Promise<boolean>;
+      /** 订阅外部变动事件（已聚合）；返回取消订阅函数 */
+      onDirectoryChanged: (callback: (event: DirectoryChangeEvent) => void) => () => void;
+      /** 订阅 watcher 异常（目录被外部删除 / 卷被卸载）；返回取消订阅函数 */
+      onDirectoryWatchError: (callback: (event: DirectoryWatchErrorEvent) => void) => () => void;
       /** 从拖放的 File 对象解析磁盘路径 */
       getFilePath: (file: File) => string;
 
