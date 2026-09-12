@@ -109,8 +109,9 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
 
   // 检测：支持传入阈值 / 范围覆盖（参数变化时自动重跑）
   const handleCheckDuplicates = useCallback(async (override?: { similarity?: number; scope?: DuplicateScope }) => {
-    // 重复检测只针对图片：视频逐帧比对既慢又无意义
-    const imagePhotos = photos.filter(p => !isVideoPhoto(p));
+    // 重复检测只针对图片：视频逐帧比对既慢又无意义。
+    // 已隐藏项同样排除：隐藏是跨视图的语义，不该因为进到检测页就重新可见（还能被删掉）
+    const imagePhotos = photos.filter(p => !isVideoPhoto(p) && !p.isHidden);
     if (imagePhotos.length === 0) {
       showToast(photos.length > 0 ? '相似检测仅支持图片' : '没有照片可检查相似项', 'info');
       return;
@@ -147,7 +148,6 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
         setDuplicateProgress
       );
       setDuplicateGroups(detectedDuplicates);
-      lastDuplicateOptionsRef.current = { similarity: runSimilarity, scope: runScope };
 
       if (detectedDuplicates.length > 0) {
         showToast(`找到 ${detectedDuplicates.length} 组相似照片`, 'info');
@@ -163,6 +163,10 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
       logger.error('Error detecting duplicates:', error);
       showToast('检测相似照片失败', 'error');
     } finally {
+      // 无论成功 / 取消 / 失败，本轮使用的参数都要记下来。
+      // 否则取消后「参数与上次不同」的条件一直成立，自动重跑 effect 会把用户的取消吞掉，
+      // 表现为：点了取消，进度条消失几百毫秒后又自己跑起来。
+      lastDuplicateOptionsRef.current = { similarity: runSimilarity, scope: runScope };
       if (duplicateAbortRef.current === controller) duplicateAbortRef.current = null;
       setIsProcessingDuplicates(false);
       setDuplicateProgress(prev =>

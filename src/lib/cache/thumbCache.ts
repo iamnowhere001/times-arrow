@@ -139,7 +139,7 @@ export function cachedThumbUrl(filePath: string, size: number): string | undefin
   return touchThumbUrl(`${filePath}|${quantizeThumbSize(size)}`);
 }
 
-/** 清空缓存（重置列表时调用） */
+/** 清空缓存（清空照片列表时调用） */
 export function clearThumbnailCache(): void {
   generation += 1;
   resolvedCache.clear();

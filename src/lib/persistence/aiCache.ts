@@ -10,6 +10,7 @@
 
 import { AiCacheEntry, PersistedAiCache } from '@/types';
 import { logger } from '@/lib/logger';
+import { reportPersistenceError } from '@/lib/persistence/persistence';
 
 /** 最多保留多少条 AI 结果（约几百 KB） */
 export const AI_CACHE_LIMIT = 2000;
@@ -52,7 +53,7 @@ export const loadAiCache = async (): Promise<Map<string, AiCacheEntry>> => {
  * 写入缓存。
  * 会就地淘汰超出上限的最早条目，保证内存与磁盘都不会无限增长。
  */
-export const saveAiCache = async (cache: Map<string, AiCacheEntry>): Promise<void> => {
+export const saveAiCache = async (cache: Map<string, AiCacheEntry>): Promise<boolean> => {
   while (cache.size > AI_CACHE_LIMIT) {
     const oldest = cache.keys().next();
     if (oldest.done) break;
@@ -60,7 +61,7 @@ export const saveAiCache = async (cache: Map<string, AiCacheEntry>): Promise<voi
   }
 
   const electronApi = api();
-  if (!electronApi?.saveAiCache) return;
+  if (!electronApi?.saveAiCache) return false;
 
   const entries: Record<string, AiCacheEntry> = {};
   cache.forEach((entry, key) => {
@@ -68,8 +69,13 @@ export const saveAiCache = async (cache: Map<string, AiCacheEntry>): Promise<voi
   });
 
   try {
-    await electronApi.saveAiCache(entries);
+    const ok = await electronApi.saveAiCache(entries);
+    // 缓存本身丢了只是要重新分析，但「以为存上了」会导致下次启动白白重跑一遍
+    if (ok === false) reportPersistenceError('AI 分析结果未能保存到磁盘');
+    return ok !== false;
   } catch (error) {
     logger.warn('写入 AI 缓存失败:', error);
+    reportPersistenceError('AI 分析结果未能保存到磁盘');
+    return false;
   }
 };

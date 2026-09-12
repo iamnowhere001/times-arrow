@@ -80,6 +80,13 @@ export function useThumbnailSrc(photo: Photo, targetSize: number): string | null
         if (cancelled) return;
         setSrc(url);
       };
+      // 预加载失败（缩略图已被清理 / 文件被移走 / 协议偶发失败）必须回退到原图，
+      // 交给 <img onError> 出占位与重试按钮；否则卡片会永久停在加载骨架上，
+      // 而且因为失败不入缓存，每次滚回视口都会再请求一次，没有上限。
+      pre.onerror = () => {
+        if (cancelled) return;
+        setSrc(prev => prev ?? photo.url);
+      };
       pre.src = url;
     };
 
@@ -329,7 +336,15 @@ export const ThumbImage: React.FC<{
   if (isVideo) {
     if (poster.src) {
       return (
-        <img src={poster.src} alt={alt ?? photo.name} loading="lazy" decoding="async" className={className} />
+        <img
+          src={poster.src}
+          alt={alt ?? photo.name}
+          loading="lazy"
+          decoding="async"
+          /* 禁止拖拽：<img> 默认可拖，拖动题图标会弹出全局导入遮罩 */
+          draggable={false}
+          className={className}
+        />
       );
     }
     // 抓帧失败（编码不支持 / 跨源污染）：退回到 <video> 直接渲染首帧
@@ -360,6 +375,7 @@ export const ThumbImage: React.FC<{
       alt={alt ?? photo.name}
       loading="lazy"
       decoding="async"
+      draggable={false}
       className={className}
     />
   );

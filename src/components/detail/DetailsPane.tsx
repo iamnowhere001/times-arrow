@@ -93,6 +93,9 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
     setIsEditingName(false);
     setTagInput('');
     setVideoStatus('idle');
+    // 分析中的状态也要跟着切图重置：否则切到下一张后新照片的按钮会卡在「分析中…」，
+    // 让人以为正在分析新照片（实际上跑的是上一张）
+    setIsAnalyzing(false);
   }, [photo?.id]);
 
   useEffect(() => {
@@ -594,7 +597,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                         {!isVideo && photo.dimensions && (
                             <div className="flex justify-between">
                                 <span className="text-[var(--text-secondary)]">尺寸</span>
-                                <span className="text-[var(--text-primary)] font-medium">{photo.dimensions.width} x {photo.dimensions.height}</span>
+                                <span className="text-[var(--text-primary)] font-medium tabular-nums">{photo.dimensions.width} × {photo.dimensions.height}</span>
                             </div>
                         )}
                         <div className="flex justify-between items-start">
@@ -613,7 +616,8 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                                 title={photo.dateTaken ? undefined : '该照片未包含拍摄时间（EXIF）信息'}
                                 className={`font-medium text-right w-40 truncate ${photo.dateTaken ? 'text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]'}`}
                             >
-                                {photo.dateTaken ? formatDate(photo.dateTaken) : '--'}
+                                {/* 缺失值统一用长破折号：与视频信息里的「分辨率 / 容器格式」保持同一套占位符号 */}
+                                {photo.dateTaken ? formatDate(photo.dateTaken) : '—'}
                             </span>
                         </div>
                         <div className="flex justify-between items-start">
@@ -624,8 +628,13 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                         </div>
                         <div className="flex justify-between items-start">
                             <span className="text-[var(--text-secondary)]">创建时间</span>
-                            <span className="text-[var(--text-primary)] font-medium text-right w-40 truncate">
-                                {photo.dateCreated ? formatDate(photo.dateCreated) : formatDate(photo.lastModified)}
+                            {/* 文件系统没给出 birthtime 时不再拿「修改时间」顶替：
+                                两者一旦长得一样，就分不清这是真值还是兜底值 */}
+                            <span
+                                title={photo.dateCreated ? undefined : '文件系统未提供该文件创建时间（birthtime）'}
+                                className={`font-medium text-right w-40 truncate ${photo.dateCreated ? 'text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]'}`}
+                            >
+                                {photo.dateCreated ? formatDate(photo.dateCreated) : '—'}
                             </span>
                         </div>
                         

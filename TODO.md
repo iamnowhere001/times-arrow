@@ -113,3 +113,337 @@
 | **v0.5 增强版** | F1–F6 按需 | 轻量相册、撤销安全网、时间线 / 地图浏览、元数据写入、AI 增强、实况照片合并 |
 
 > **推进方式**：按 N5 → N7 顺序做，每完成一项即验证「重启后是否仍顺手 / 是否会丢数据 / 视频是否别扭」，并回填本节状态。
+
+---
+
+## 六、代码审查问题清单（2026-09-12）
+
+> **范围**：全量静态审查 —— 渲染进程全部功能 + `electron/main.js` 主进程 + `preload.js` + `src/lib/**`（约 15k 行）。
+> **方法**：① IPC 契约交叉核对（preload 暴露 API ↔ `global.d.ts` ↔ `ipcMain.handle` 实现 ↔ 渲染调用点）；② 以第一章「现状基线」的功能清单为用例，每条走正常 / 边界 / 失败三条路径；③ 按 bug 模式清单（异步竞态、状态一致性、索引错位、持久化、时间时区、缓存内存、交互焦点）逐文件过筛。
+> **分级**：**P0** 丢数据 / 崩溃 / 状态不可自洽 · **P1** 功能失效或结果错误 · **P2** 边界或体验。
+> **本轮**：1 项 P0、10 项 P1、6 项 P2 已修复；17 项 P2 列入待办。`npm run typecheck` 与 `npm run build` 均通过。
+
+### 6.1 已修复
+
+- [x] **[P0] 重命名后收藏 / 隐藏 / 标签 / 时间修正 / 封面 / AI 缓存全部丢失**（`src/App.tsx` 单张与批量重命名）
+  - 触发：给照片加收藏 + 标签 + 设为封面 → 重命名 → 重启并重新打开该目录
+  - 现象：上述标记全部消失（`config.json` 里仍是**旧路径**）；当次会话内双击大图显示「无法显示这张图片」、非原格式导出报「图片解码失败」
+  - 原因：两处 `setPhotos` 只回写 `name` / `path`，未刷新 `url`（仍是 `pm://<旧路径>`），也未迁移任何按路径存储的数据；同类的 `runMove` 却做了完整迁移，属明确遗漏
+  - 修复：抽出 `rekeyPathData(old, new)` + `persistPathData(changed)`，重命名、移动、删除三条路径共用
+
+- [x] **[P1] 删除后按路径数据残留，同名新文件「借尸还魂」**（`src/App.tsx` `runDelete`）
+  - 触发：收藏 / 隐藏照片 A → 删除 A → 把照片 B 重命名成 A 的原文件名
+  - 现象：B 一进来就是已收藏 / 已隐藏；最坏情况是「新导入的照片被隐藏，在库里根本找不到」
+  - 修复：新增 `dropPathData(paths)`，删除成功后清理并落盘
+
+- [x] **[P1] 时光画廊与 QuickLook 翻页泄漏已隐藏项**（`src/App.tsx` `timelinePhotos`）
+  - 触发：隐藏照片 A → 进「时光画廊」→ A 仍可见，空格打开后左右键还能翻到其它隐藏项
+  - 原因：`sortPhotosByTimeline(photos)` 直接吃全量，隐藏排除只在图库视图的 `matchesFilters` 里生效
+  - 修复：数据源前置 `photos.filter(p => !p.isHidden)`（这份数据同时决定时间线上的翻页范围）
+
+- [x] **[P1] 重复检测泄漏已隐藏项**（`src/hooks/useDuplicateDetection.ts`）
+  - 触发：隐藏 A（与 B 相似）→ 检测相似照片 → A 出现在分组里，还可被「只留每组原图」标记删除
+  - 修复：入参改为 `!isVideoPhoto(p) && !p.isHidden`
+
+- [x] **[P1] 取消重复检测约 300ms 后自动重跑，取消被吞掉**（`src/hooks/useDuplicateDetection.ts`）
+  - 触发：90% 跑完 → 拖到 84% → 检测中点「取消检测」
+  - 原因：`lastDuplicateOptionsRef` 只在成功分支更新，取消分支直接 return，effect 判定「参数变了」→ 重跑
+  - 修复：改为在 `finally` 中记录本轮参数（成功 / 取消 / 失败一律记录）
+
+- [x] **[P1]「修改时间」排序实际按拍摄时间排**（`src/lib/media/photoGrouping.ts`）
+  - 现象：列表视图点表头「修改时间」，与「内容创建时间」列顺序完全一致
+  - 原因：`dateModified` 与 `dateTaken` 共用 `a.dateTaken || a.lastModified` 取值；日期分组键也固定用 `dateTaken`
+  - 修复：两个排序键拆开，分组键随排序键切换
+
+- [x] **[P1] 导出失败后「重新导出」打开空弹层**（`src/App.tsx` `ExportModal.onFinish`）
+  - 现象：弹层显示「已选择 0 张照片」，底部按钮 disabled，重试入口完全失效
+  - 原因：`setExportTargets([])` 先清空，`retryExport` 只 `setIsExportModalOpen(true)`
+  - 修复：用清空前的快照回填 `exportTargets`
+
+- [x] **[P1]「设为指定时间」不改基准直接应用 → 静默回退秒数并写入「已修正」**（`src/components/modal/AdjustDateModal.tsx`）
+  - 触发：切到「设为指定时间」→ 不改动基准时间 → 点「应用」
+  - 现象：预览看不出变化，实际 `dateTaken` 被回退 0~59.999 秒，详情面板出现「已修正」且不可撤销
+  - 原因：`toLocalInputValue` 截断到分钟，`delta = target - anchor` 非 0；而预览用的 `formatDate` 也只到分钟
+  - 修复：控件值保留秒（`step=1`），且 `delta === 0` 时不产生任何调整项
+
+- [x] **[P1] config / ai-cache 的读-改-写未串行化，且用固定临时文件名**（`electron/main.js` `writeStore` / `mergeStore`）
+  - 触发：导入含大量视频的目录（videoMeta 1.5s 落盘）时切换主题或拖动缩放滑块
+  - 现象：两次写共用同一个 `config.json.tmp`，后一次以 `w` 打开会清空前一次未写完的内容，`rename` 再互相竞争 → 文件变成两份 JSON 的交错体；下次启动 `JSON.parse` 失败后静默降级为 `{}`，用户看到配置全空
+  - 修复：按 fileName 维护 Promise 写链串行化；临时文件名带 pid + 递增序号；失败时清理半截 tmp
+
+- [x] **[P1] 写盘失败返回值被丢弃，界面显示成功但磁盘无变化**（`src/lib/persistence/persistence.ts`、`aiCache.ts`）
+  - 触发：`userData` 所在卷只读 / 磁盘满时点收藏、建相簿、改标签、AI 分析
+  - 现象：Toast 提示「已收藏」「已保存相簿」，重启后全部丢失，全程无任何错误提示
+  - 修复：两处改为感知返回值；新增 `setPersistenceErrorHandler`，由 App 注册成 Toast 统一提示
+
+- [x] **[P2] macOS 关闭最后一个窗口后从菜单导入抛 TypeError**（`electron/main.js`）
+  - 原因：`mainWindow.webContents.send` 未用可选链（同类代码 `ai-open-settings` 已用）
+  - 修复：无窗口时先 `createWindow()`，再用 `mainWindow?.webContents?.send`
+
+- [x] **[P2]「调整日期」「存为相簿」弹层打开时全局快捷键未屏蔽**（`src/App.tsx` 键盘守卫）
+  - 现象：焦点在弹层非输入区时按 `Delete`/`Backspace`，会在弹层之上再叠一个「移至回收站」确认框；`⌘A` 会静默改写背后图库的选中集
+  - 修复：守卫条件补 `isAdjustDateModalOpen` / `isSaveAlbumModalOpen`（含依赖数组）
+
+- [x] **[P2] 删除 / 筛选后方向键从列表第一项重新开始**（`src/App.tsx`）
+  - 原因：`selectionAnchorRef` 从不收敛，锚点失效后 `currentIndex` 退化为 0
+  - 修复：选区收敛后把失效锚点挪到剩余选中项（无则置空）
+
+- [x] **[P2] 列表视图上下键按网格列数跳步**（`src/App.tsx` `handleArrowNavigation`）
+  - 原因：`gridColumns` 只在网格分支上报，列表视图仍沿用最后一次的网格列数（默认 6），一次跳 6 行
+  - 修复：列表视图步长固定为 1（网格侧「justified 布局每行张数不同」的问题见 6.2 待办）
+
+- [x] **[P2] 缩略图预加载没有 `onerror`，解码失败时卡片永久转圈**（`src/components/grid/ThumbnailImage.tsx`）
+  - 现象：永远停在加载骨架，既不出占位也不出重试按钮；且失败不入缓存，每次滚回视口都重新请求，无上限
+  - 修复：预加载失败回退原图，交给 `<img onError>` 出占位与重试
+
+- [x] **[P2] 重命名 / 删除的确认按钮在异步执行期间未禁用，连点会重复提交**（`src/App.tsx`）
+  - 现象：连点两下「重命名」，第二轮整批报 ENOENT；连点「移至回收站」，第二轮全部失败
+  - 修复：新增 `fileOpLockRef` 提交锁
+
+- [x] **[P2] `config.json` 解析失败不留证，下一次写入即整体覆盖**（`electron/main.js` `readStore`）
+  - 修复：解析失败时先把原文件重命名为 `config.json.corrupt-<ts>` 再从空存储启动
+
+### 6.2 待办（本轮未改）
+
+> 均为 P2：不会丢数据，但结果不准或体验受损。多数与 N5（稳定性加固）同源，做 N5 时一并处理更划算。
+
+- [ ] **AI 缓存 key 只绑定路径，不绑定文件内容与模型**（`src/App.tsx` `aiCacheRef` 读写）
+  - 换模型、或用外部工具覆盖编辑图片（路径不变）后，命中的仍是旧结果且不会失效
+  - 方案：key 改为 `${path}|${size}|${mtime取整}|${model}`
+
+- [ ] **ai-cache 淘汰是插入序 FIFO，不是 LRU**（`src/lib/persistence/aiCache.ts`）
+  - 命中不刷新顺序，最常看的条目反而最先被淘汰；方案：命中时 `delete + set` 重新入队
+
+- [ ] **`version` 字段只写不读，没有版本校验与迁移入口**（`src/lib/persistence/persistence.ts`、`electron/main.js` `readStore`）
+
+- [ ] **扫描 / stat 失败被吞成空结果，渲染层无法区分「为空 / 不存在 / 全部失败」**（`electron/main.js` `scan-directory`、`stat-files`）
+  - 扫描无权限目录只提示「不包含任何图片或视频」；导入中个别文件被丢弃无任何说明（属 N5）
+
+- [ ] **跨卷移动「复制成功但源删除失败」没有中间态**（`electron/main.js` `moveAcrossDevices`）
+  - 从只读卷移动时目标已生成副本却记为失败，Toast 提供「重试」会导致再复制一份（属 N5）
+
+- [x] ~~**窗口尺寸在 `close` 时 fire-and-forget 落盘，退出前可能写不完**~~（`electron/main.js` `persistWindowBounds`）
+  - 第二轮已修：改为走 `withStoreLock`，不再绕过写队列与 `mergeStore` 交错
+  - 仍未做：`before-quit` 里 `await`（macOS 上 `window-all-closed` 不退出，影响很小）
+
+- [x] ~~**筛选面板「相机 / 格式 / 标签」候选池包含已隐藏项**~~（`src/App.tsx` `filterOptions`）
+  - 第二轮已修：候选池改为遍历「非隐藏」照片，与 `matchesFilters` 口径一致
+
+- [x] ~~**删除当前相簿不复位视图**~~（`src/App.tsx` `handleDeleteAlbum`）
+  - 第二轮已修：删掉正在浏览的相簿时一并清除筛选条件
+  - 仍未做：相簿重名校验与重命名入口
+
+- [x] ~~**视频全部被隐藏后，「视频时长」筛选分组消失**~~（`src/App.tsx` `hasVideos`）
+  - 第二轮已修：`hasVideos` 追加 `|| filters.durationFilter !== 'any'`，已生效的条件仍可改回
+
+- [ ] **重复检测并查集取传递闭包，组内会出现低于阈值的配对**（`src/utils/index.ts` UnionFind、`DuplicateDetector.tsx`）
+  - A–B、B–C 达标但 A–C 不达标时三者同组，C 的角标显示「相似 69%」而顶栏写「≥ 80%」，自相矛盾
+
+- [ ] **体积预筛 ±10% 会漏掉体积差大的重复**（`src/utils/index.ts` `selectHashCandidates`）
+  - 同一张图存成 PNG 与 JPEG 检测不到，而文案还声称「已跳过体积唯一、不可能相似的图片」
+
+- [ ] **重命名预览不预演磁盘上已存在的同名文件**（`src/components/modal/RenameModal.tsx`、`src/App.tsx` 批内 `usedNames`）
+  - 预览显示 `照片_001.jpg`，实际落盘为 `照片_001-1.jpg`，只在事后用 Toast 说明
+
+- [ ] **点「取消导出」仍会多写完当前这一张**（`src/components/modal/ExportModal.tsx`）
+  - `cancelRef` 只在循环头判断，无法中断 in-flight 的写盘
+
+- [ ] **网格视图上下键按固定列数跳步，混排宽高比时会跳错列**（`src/components/grid/ImageGrid.tsx`）
+  - `itemsPerRow` 只取第 0 行，而 justified 布局每行张数随宽高比变化；方案：按 `rowOfItem` 找行号再取下一行最近的 cell
+
+- [ ] **首屏入场 `introDelays` 永不被清除，卡片重新挂载会重播淡入**（`src/components/grid/ImageGrid.tsx`）
+  - 清除 timer 的 effect 被 `photos` 变化不断打断，而生成逻辑只跑一次，于是 delays 永久停在首屏那 12 个 id 上
+
+- [ ] **筛选把列表缩得很短时，虚拟列表被逐帧夹回顶部，期间整屏空白**（`src/components/grid/ImageGrid.tsx` `VirtualList`）
+  - 触发：深度滚动后在搜索框输入只命中 3 条的关键词
+
+- [ ] **时光画廊新增月份区块后「当前月份」判定错乱**（`src/components/timeline/TimelineGallery.tsx`）
+  - 代码假设 `monthAnchorsRef` 的 Map 插入序 == 视觉顺序，但新挂载的月份区块追加到 Map 末尾却位于 DOM 上方
+
+### 6.3 已核对无问题（不必再查）
+
+- **IPC 契约**：26 个 `invoke` + 3 个事件的 channel 名、参数顺序、返回结构与 `global.d.ts` 全部一致，无拼写 / 大小写偏差
+- **主进程文件操作**：重命名的同名序号回退、删除走 `shell.trashItem`（确为回收站）、导出的 `buildUniquePath` 永不覆盖、导入 / 导出的取消标志能真正中断循环且无残留
+- **AI 代理链路**：Key 只走主进程、`AbortController` 超时（60s / 20s）、`response.ok` 与空 content 检查、JSON 围栏容错、`AiSettingsModal` 的 `cancelled` 防竞态
+- **缓存与内存治理**：`cacheManager` 的 LRU（get 时 delete+set 刷新）、volatile / sticky 分级、并查集无关；缩略图并发闸门与同 key 去重、generation 挡住「清空后旧请求回写」；主进程内存看门狗与渲染进程堆巡检带冷却
+- **筛选求值**：日期为闭区间且两端口径统一、文件大小 1024 进制、时长单位为秒、无 EXIF 的文件在相机 / 日期 / 时长条件中被正确排除；搜索全程 `includes`，无 `new RegExp` 注入风险
+- **状态一致性**：侧栏与筛选面板共用同一份 `filters`、筛选变化后选择自动收敛、用户标签在多选时被 `isMulti` 守卫（不会把 A 的标签写到 B 上）、封面全库唯一、相簿条件序列化可逆
+- **导入取消链路**：`activeScanIdRef` + `AbortController` + `cancelRequestedRef` 三处配合正确，取消后不会回写
+- **QuickLook**：翻页边界正确、幻灯片 `setInterval` 卸载时清理、切图时缩放 / 旋转 / 位移重置、视频元素卸载无泄漏
+
+---
+
+## 七、操作体验审查（2026-09-12 第二轮）
+
+> **范围**：在第六章逻辑审查的基础上补做**体验维度**，并对第六章的修复与遗留项做完整复核。
+> **方法**：① 复核上轮修复（`git diff` 逐条验证覆盖率与副作用）；② 逐条验证 6.2 的 17 条；③ 按「等待与反馈 / 操作成本 / 误操作与可逆性 / 性能感受 / 信息密度 / 键盘可达性 / 空状态」七类体验模式过筛；④ 补查主进程耗时反馈与异常恢复路径。
+> **修复统计**：1 项体验阻断、9 项体验受损、7 项体验瑕疵已修；`typecheck` + `build` 通过。
+
+### 7.1 上轮修复复核结论
+
+**经验证完整正确，无「改了一半」、无新增竞态**：
+
+- `rekeyPathData` / `dropPathData` / `persistPathData` 覆盖了全部三处会改 `path` 的 `setPhotos` 调用（单张重命名 / 批量重命名 / 移动）与删除清理，全部正确 `await`
+- `fileOpLockRef` 三处加锁均在 `try` 之前、`finally` 内解锁，异常路径不会漏解锁
+- 新增的锚点收敛 effect 只写 ref（不触发重渲染），依赖数组不会自激循环
+- `withStoreLock` 以 `prev.then(task)` + `catch(()=>{})` 记录队尾：不会死锁、不会无界增长、失败后队列仍可继续
+- `readStore` 的 corrupt 备份在首次运行（文件不存在）时不会误触发
+
+**发现 1 个新问题（已修）**：`persistWindowBounds` 直接调 `writeStore` 绕过了 `withStoreLock`，与 `mergeStore` 的读-改-写交错。唯一 tmp 名保证了文件不会被写坏，但叠加的窗口尺寸落盘可能覆盖同时进行的收藏 / 标签写入。已改为走同一把锁。
+
+**6.2 的 17 条复核结果**：全部仍成立；第 7 条描述需修正（原文「选中后恒为 0 结果」过于绝对，实际只在「该值仅出现在隐藏项中」时为 0）。其中第 7 / 8 / 9 / 6 条已在本轮修复，见上。
+
+### 7.2 本轮已修复
+
+- [x] **[体验阻断] 拖放导入全程没有任何加载反馈**（`src/App.tsx` `handleDrop` 两条分支）
+  - 触发：从访达拖入一个含数千张照片的文件夹并松手
+  - 现象：遮罩在松手瞬间消失，此后扫描到入库结束（数秒到数十秒）毫无提示，完成后才弹一条 Toast，用户以为「没反应」
+  - 原因：这两条分支直接 `await scanDirectory / ingestFiles`，从未调用 `showLoadingSoon`（同管线的 `loadDirectory` 调了）
+  - 修复：新增 `beginDropWork` / `endDropWork`（带计数，避免一次拖放的两条异步分支互相提前收遮罩），统一复用加载浮层
+
+- [x] **[体验阻断] 打开大文件夹时进度条永远是不确定态，阶段文案也不对**（`src/App.tsx` `loadDirectory`、`ingestFiles`）
+  - 现象：遮罩一直显示「正在扫描文件夹 / 扫描中 / —」，即便早已进入「正在加入 N 个项目…」阶段
+  - 原因：主路径只 `setLoadingCurrentFile`，从不 `setLoadingTotal`，`LoadingOverlay` 因此始终走不确定态分支
+  - 修复：扫描完成后 `setLoadingTotal(infos.length)`；`ingestFiles` 增加 `onProgress` 回调，在每批提交后上报进度（目录导入 / 拖放 / 文件多选三条路径统一接入）
+
+- [x] **[体验受损] 拖动缩略图会弹出全屏导入遮罩**（`src/App.tsx` `handleDragOver`、`ImageGrid` / `ThumbnailImage` 的 `<img>`）
+  - 现象：在网格里按住缩略图拖动，整屏「拖放图片或视频到此处」立即淡入，像误触了导入
+  - 修复：`handleDragOver` 只在 `dataTransfer.types` 含 `Files` 时置位；并给卡片图片加 `draggable={false}`
+
+- [x] **[体验受损] 无选中时方向键跳过首项 / 首行**（`src/App.tsx` `handleArrowNavigation`）
+  - 现象：未选中任何照片时按 `→` 直接选中第 2 张、按 `↓` 直接跳第 2 行，只有 `←`/`↑` 能落到第 1 张
+  - 修复：无锚点时任意方向键先选中第一项并返回，不再叠加步长
+
+- [x] **[体验受损] 缺少 Home / End，大库无法快速跳转**（`src/App.tsx` 键盘守卫）
+  - 修复：补 `Home` → 第一张、`End` → 最后一张（快捷键总览同步补录）
+
+- [x] **[体验受损] 筛选面板打开时全局快捷键未让行**（`Toolbar.tsx` + `App.tsx`）
+  - 触发：打开筛选面板 → 点某个筛选胶囊 → 按 `Delete` / `⌘A`
+  - 现象：在面板之上叠出「移至回收站」确认框；`⌘A` 静默改写背后图库的选中集
+  - 原因：面板开合状态只活在 `Toolbar` 内部，App 的守卫看不到它；面板里的胶囊是 `<button>`，也不受输入框守卫保护
+  - 修复：`Toolbar` 新增 `onFilterOpenChange` 上报，App 持 `isFilterPanelOpen` 并纳入快捷键守卫与依赖数组
+
+- [x] **[体验受损] AI 分析中切换照片，新照片的按钮卡在「分析中…」**（`src/components/detail/DetailsPane.tsx`）
+  - 现象：分析 A 期间选中 B，B 的「分析图片」按钮显示「分析中...」且不可点，实际跑的是 A
+  - 修复：切图重置 effect 补 `setIsAnalyzing(false)`
+
+- [x] **[体验受损] 批量重命名逐条弹错误 Toast，刷屏把汇总顶掉**（`src/App.tsx` `handleBatchRename`）
+  - 触发：选中 8 张、其中 5 张已被外部删除 → 批量重命名
+  - 现象：每条失败各弹一条含英文错误与完整路径的提示；Toast 队列上限 4 条，先弹的被静默丢弃，最终只剩「已重命名 3 项，5 项失败」——**哪 5 张、为什么失败全都看不到**
+  - 修复：循环内只 `logger.error` 并记录首个失败原因，结束后统一一条汇总（带原因）
+
+- [x] **[体验受损] 失败提示是「ENOENT + 完整绝对路径」，用户看不懂也不知道怎么办**（`src/lib/fs/fileOperations.ts` 新增 `humanizeFsError`）
+  - 现象：`重命名照片 "IMG_001.jpg" 失败：ENOENT: no such file or directory, rename '/Users/…' -> '/Users/…'`
+  - 修复：新增 `humanizeFsError`，把 ENOENT / EACCES / ENOSPC / EROFS / EBUSY 等映射成「文件已不在原位置（可能被移动或删除）」「没有权限」「磁盘空间不足」等说明，不再回显绝对路径；已接到重命名 / 删除 / 移动 / 导出四条链路
+
+- [x] **[体验受损] 「隐藏」零反馈、无动画、无去向提示**（`src/App.tsx` `setHidden`）
+  - 现象：照片立刻从当前视图消失，既无提示也无删除那样的塌陷动画，用户分不清是被隐藏还是被删除
+  - 修复：补一条带「查看」按钮的 Toast，可直接跳到「已隐藏」
+
+- [x] **[体验受损] 重复检测页「移至回收站」无二次确认**（`src/components/duplicate/DuplicateDetector.tsx`）
+  - 触发：点「只留每组原图」一键勾选成百上千张 → 再点紧邻的「移至回收站」
+  - 现象：一键即可批量移入回收站，中途没有任何确认；主图库删除有确认框，这里没有，风险不对等
+  - 修复：复用主图库的 `DeleteConfirmModal`，确认后才执行
+
+- [x] **[体验受损] 导出失败提示把原因一律归咎于「重名」，也从不告诉用户导到哪了**（`ExportModal` + `App.tsx`）
+  - 现象：文案固定为「Y 张失败（同名文件已自动加序号）」，而真实原因可能是解码失败 / 无权限；成功提示也不含目标文件夹
+  - 修复：`onFinish` 改为回传 `{ succeeded, failed, cancelled, firstError, targetDir }`；文案改为「已导出 X 张到「文件夹」，Y 张失败：<首个原因>」
+
+- [x] **[体验瑕疵] 调整日期预览只到分钟，改「秒」时看不出变化**（`src/components/modal/AdjustDateModal.tsx`）
+  - 现象：控件是秒级（`step={1}`），预览两列却完全相同，用户以为没生效而不敢点「应用」
+  - 修复：预览改用带秒的 `formatPreviewTime`，与控件精度一致
+
+- [x] **[体验瑕疵] QuickLook 不忽略 ⌘ 修饰键**（`src/components/detail/QuickLook.tsx`）
+  - 现象：`⌘F` 触发收藏、`⌘R` 旋转图片、`⌘0` 重置缩放，与系统习惯冲突
+  - 修复：`handleKeyDown` 开头过滤 `metaKey / ctrlKey / altKey`
+
+- [x] **[体验瑕疵] 「已隐藏」视图条件条显示「5 / 100 项」这种假比例**（`App.tsx` → `ActiveFiltersBar`）
+  - 原因：分子是隐藏项数，分母却是「非隐藏总数」，两个互斥集合相除
+  - 修复：分母按当前视图选择（`hiddenOnly ? counts.hidden : counts.all`）
+
+- [x] **[体验瑕疵] 错误级 Toast 超限时静默顶掉最早的条目（可能是带「重试」的那条）**（`src/hooks/useToasts.ts`）
+  - 修复：超限时优先淘汰「不带操作按钮」的旧条目，保留恢复入口
+
+- [x] **[体验瑕疵] 重复导入时提示含糊（「已添加 0 个项目」）**（`App.tsx` 三处）
+  - 修复：`added === 0` 时统一改为「已选中的 N 个项目已在列表中」/「文件夹「X」中的内容已在列表中」
+
+- [x] **[体验瑕疵] 无法「只看某天」**（`ImageGrid` 顶部日期胶囊 → `App.handleFilterByDate`）
+  - 现象：胶囊是纯展示且 `pointer-events-none`，想只看某天要开筛选面板填两次日期（约 4 步）
+  - 修复：胶囊改为可点击按钮，点击即把 `dateFrom` / `dateTo` 收敛到该本地日历日（走标准筛选条件，条件条可见可清除）；同时去掉导致每天重播动画的 `key`
+
+- [x] **[体验瑕疵] 网格视图排序项比列表少**（`ImageGrid` `SORT_OPTIONS`）
+  - 现象：网格只有「日期 / 名称 / 大小」，缺「修改时间 / 创建时间」，要按它们排序必须切到列表
+  - 修复：补齐五个键并把「日期」正名为「拍摄时间」
+
+- [x] **[体验瑕疵] 删除成功提示对「无磁盘文件的条目」说了假话**（`fileOperations.ts` + `DeleteConfirmModal`）
+  - 现象：确认框承诺「之后仍可从回收站找回」，但拖放降级的预览项根本没有磁盘文件，只是从列表消失
+  - 修复：`TrashResult` 增加 `pathlessRemoved`，成功提示追加「另有 K 项无磁盘文件，仅从列表移除」，确认框文案同步说明
+
+- [x] **[体验瑕疵] 快捷键总览缺项**（`ShortcutsOverlay`）
+  - 修复：补录 `⌘ 点击` 加选 / 减选、`Home / End` 跳首尾
+
+### 7.3 待办（本轮未改）
+
+- [ ] **从「时光画廊 / 重复检测」返回图库后，网格滚动位置丢失被拉回顶部**（`src/App.tsx` `mainView` 三元切换、`ImageGrid` 内部 `scrollTop`）
+  - `mainView` 变化会卸载整个图库子树，`VirtualGrid` 的 `scrollTop` 是组件内 state，随之清零；时光画廊自己用模块级变量记住了位置，图库没有
+  - 方案：沿用时光画廊已验证的 `savedScrollTop` 模式（滚动时写入模块级变量，挂载后 `requestAnimationFrame` 还原）
+
+- [ ] **一旦有选中项，排序与缩放入口整条消失**（`ImageGrid` `inSelectMode ? selectionBar : browseBar`）
+  - 浏览条与选择条二选一渲染，选中后必须先 `Esc` 才能再调排序 / 缩放
+  - 方案：把排序 / 缩放控件抽成一段共用 JSX，在选择条里也渲染
+
+- [ ] **缩放滑块在窄窗口（<1024px）被 `hidden lg:flex` 隐藏，网格大小完全无入口**（`ImageGrid`）
+  - 方案：去掉断点限制，或补 `⌘+ / ⌘-` 快捷键
+
+- [ ] **元数据回填导致网格持续重排、卡片跳动、滚动位置漂移**（`ImageGrid` `photoAspect`、`App.loadMetadata`）
+  - 入库时没有 `dimensions`，首屏按 4:3 兜底铺排，随后每 400ms 一批回填尺寸 → 行高与行数反复变化
+  - 方案：布局变化后把「首个可见照片」重新对齐到视口顶部
+
+- [ ] **网格上下键按固定列数跳步，justified 布局混排宽高比时会跳错列**（`ImageGrid` `itemsPerRow` 只取第 0 行）
+  - 方案：按 `rowOfItem` 找当前行号，再取下一行中 `left` 最接近的 cell
+
+- [ ] **弹层内的批量操作无进度、确认按钮不置灰**（`RenameModal` / `DeleteConfirmModal` / `handleMoveSelected`）
+  - 大量文件时表现为「卡死」，用户会重复操作；导出已有 `isExporting` + 进度 + 取消，是不对称的
+  - 方案：复用 `ExportModal` 的模式
+
+- [ ] **右键菜单对「视频 / 混合选择」的可用性与计数不对**（`src/lib/contextMenuActions.ts`）
+  - 选中「2 图 + 1 视频」右键图片 → 显示「导出 3 张」实际只导 2 张；右键视频则完全没有「导出」（即使组内有图片）
+  - 另：同一次多选里「收藏 / 复制图片」只作用于右键那一张且不带数量提示，与「隐藏 / 移动 / 重命名 N 项」的作用域不一致
+
+- [ ] **破坏性快捷键与 macOS 习惯冲突**（`App.tsx`）
+  - Finder 里 `⌫` 是重命名、`⌘⌫` 才是移到废纸篓；本应用单按 `⌫` 就弹删除确认
+  - 方案：改为 `⌘⌫`（可保留 `Delete` 兼容），并在 README / 总览层说明
+
+- [ ] **侧栏分类跳转与相簿跳转行为不一致**（`App.tsx` `handleSelectNav` vs `handleSelectAlbum`）
+  - 点「收藏夹」保留搜索词与高级筛选（侧栏只高亮单一分类，看不出还叠了条件）；点智能相簿却清空搜索词
+  - 且「收藏夹 + 媒体类型=视频」时侧栏两项都不高亮，出现无高亮的空白态
+
+- [ ] **调整相似度阈值后整页闪切到进度视图，无法连续微调**（`DuplicateDetector` `!isProcessing &&` 包裹参数面板）
+  - 方案：区分「首次算指纹」与「仅重新分组」，重分组时保留结果列表只显示细进度条
+
+- [ ] **ErrorBoundary 未覆盖 Toolbar / Sidebar / 各弹层，主进程无未捕获异常自恢复**（`src/main.tsx`、`electron/main.js`）
+  - 局部边界只覆盖 重复检测 / 时光画廊 / 图库 / 详情面板；Toolbar 或弹层渲染抛错会整屏降级到顶层兜底，而顶层「重试」以相同入参重挂载多半再次抛错 → 实际只能重新加载或重启
+
+- [ ] **主进程存在同步阻塞事件循环的调用**（`electron/main.js`）
+  - `nativeImage.createFromPath / toJPEG`（缩略图、哈希兜底、元数据兜底、`copy-image`）、`fs.existsSync / statSync`（`buildUniquePath`）、大 config 的 `JSON.stringify`
+  - 方案：解码移入 `utilityProcess`，至少把大配置序列化与写盘节流
+
+- [ ] **首屏入场 `introDelays` 永不被清除**（`ImageGrid`）—— 同 6.2，属体验瑕疵
+- [ ] **筛选把列表缩得很短时，虚拟列表被逐帧夹回顶部**（`ImageGrid` `VirtualList`）—— 同 6.2
+- [ ] **时光画廊新增月份区块后「当前月份」判定错乱**（`TimelineGallery`）—— 同 6.2
+
+### 7.4 已核对无问题的体验面向（不必再查）
+
+- **导入取消链路**：`handleCancelLoading` 立即关遮罩并 `abort` + `cancelScan`，`ingestFiles` 在批边界 `break`，取消即时生效、无残留回写
+- **多选语义**：`⌘` 追加、普通点击替换、`Shift` 以锚点向区间取并集、点击空白 / `Esc` 取消，与 macOS 直觉一致
+- **删除可逆性**：有二次确认、焦点落在主按钮、`Esc`/`Enter` 可用、走系统回收站，未被误点风险
+- **虚拟滚动本身**：滚动事件 `rAF` 节流、`overflow-anchor: none`、列表行高实测一次，机制正确
+- **缩略图按需层**：并发闸门 + 同 key 去重 + `generation` 丢弃清空后的旧回写 + `onerror` 回退原图交出重试
+- **空状态**：区分空库 / 全部隐藏 / 已隐藏为空 / 搜索无结果 / 筛选无结果 / 收藏为空 / 媒体类型为空共 6 种，均有单入口按钮
+- **Toast 基础行为**：底部居中不遮挡工具栏、纵向堆叠不互相遮挡、手动可关、悬停暂停倒计时、失败带「重试」且不自动消失
+- **右键菜单定位与关闭**：贴边翻转、点击外部 / 滚动 / `Esc` 关闭、危险项用粉色区分
+- **导出进度**：逐张进度、当前文件名、百分比、可取消（全项目体验最好的一处）
+- **按钮文案**：均为动词短语（重命名 / 移至回收站 / 导出 N 张 / 保存），未使用含糊的「确定」
+- **重复检测页其余项**：整页进出路径清晰、进度含已用时 / 预计剩余 / 跳过 / 缓存复用统计、可取消、空结果有引导与「重新检测」
+- **时光画廊导航**：年份轨点击跳转、月份密度网格可跳月、`↑/↓` 与 `j/k` 在锚点间移动、`Home/End` 跳首尾，均可预期
+- **详情面板多选**：明确显示「已选择 N 张照片」并提示操作用顶部操作条，只读展示总大小，无越权写入

@@ -153,7 +153,7 @@ function findRowAt(rows: GridRow[], y: number): number {
  * 行高按照片真实比例计算，长图（手机截屏等）会占据更高的行。
  * 额外支持：
  *  - onBlankClick：点击卡片间隙的空白 → 取消选择（Photos 式行为）
- *  - stickyLabel：滚动时在顶部贴住当前首行照片对应的日期标签
+ *  - stickyDay：滚动时在顶部贴住当前首行照片对应的日期标签（可点击 → 只看这一天）
  *  - onColumnsChange：每行张数上报（App 用于方向键导航步长）
  */
 const VirtualGrid = forwardRef<VirtualGridHandle, {
@@ -165,9 +165,16 @@ const VirtualGrid = forwardRef<VirtualGridHandle, {
   onBlankClick?: () => void;
   onContainerContextMenu?: (e: React.MouseEvent) => void;
   onColumnsChange?: (columns: number) => void;
-  stickyLabel?: (photo: Photo) => string | null;
+  /**
+   * 顶部日期胶囊的文案与时间戳；返回 null 表示这张照片没有可用日期。
+   * 时间戳要一并给出：胶囊可点击时会用它把筛选收敛到「这一天」，
+   * 只回传文案的话调用方还得反解析字符串。
+   */
+  stickyDay?: (photo: Photo) => { label: string; timestamp: number } | null;
+  /** 点击日期胶囊 → 只看这一天 */
+  onFilterByDate?: (timestamp: number) => void;
   children: (photo: Photo, style: React.CSSProperties, itemWidth: number) => React.ReactNode;
-}>(({ items, targetRowHeight, gap, overscan = 2, onBlankClick, onContainerContextMenu, onColumnsChange, stickyLabel, children }, ref) => {
+}>(({ items, targetRowHeight, gap, overscan = 2, onBlankClick, onContainerContextMenu, onColumnsChange, stickyDay, onFilterByDate, children }, ref) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [scrollTop, setScrollTop] = useState(0);
@@ -263,11 +270,11 @@ const VirtualGrid = forwardRef<VirtualGridHandle, {
 
   // 顶部日期胶囊：仅当用户向下滚动超过首行、且提供了格式化函数时出现。
   // 取“最上方已滚动到的首行”对应的照片，随滚动实时换文案。
-  let topCapsule: string | null = null;
-  if (stickyLabel && rows.length > 0) {
+  let topCapsule: { label: string; timestamp: number } | null = null;
+  if (stickyDay && rows.length > 0) {
     const row = rows[findRowAt(rows, scrollTop)];
     if (row && scrollTop >= (row.height + CARD_CHROME_HEIGHT) * 0.6 && row.cells.length > 0) {
-      topCapsule = stickyLabel(row.cells[0].photo);
+      topCapsule = stickyDay(row.cells[0].photo);
     }
   }
 
@@ -290,9 +297,15 @@ const VirtualGrid = forwardRef<VirtualGridHandle, {
           className="pointer-events-none flex justify-start"
           style={{ position: 'sticky', top: 4, zIndex: 30 }}
         >
-          <span
-            key={topCapsule}
-            className="date-capsule animate-scaleIn inline-flex items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-4 py-1.5 text-xs font-semibold text-[var(--text-primary)] border border-[var(--border-default)] shadow-lg shadow-[rgba(0,0,0,0.3)]"
+          {/* 不加 key：文案变化时原地更新即可，加 key 会让胶囊每换一天就重播一次入场动画 */}
+          <button
+            type="button"
+            onClick={() => onFilterByDate?.(topCapsule!.timestamp)}
+            disabled={!onFilterByDate}
+            title={onFilterByDate ? '只看这一天' : undefined}
+            className={`date-capsule animate-scaleIn inline-flex items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-4 py-1.5 text-xs font-semibold text-[var(--text-primary)] border border-[var(--border-default)] shadow-lg shadow-[rgba(0,0,0,0.3)] ${
+              onFilterByDate ? 'pointer-events-auto cursor-pointer hover:border-[var(--accent-cyan)] hover:text-[var(--accent-cyan)] transition-colors' : ''
+            }`}
           >
             <svg className="w-3.5 h-3.5 text-[var(--accent-cyan)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round">
               <rect x="3" y="4" width="18" height="18" rx="2"></rect>
@@ -300,8 +313,8 @@ const VirtualGrid = forwardRef<VirtualGridHandle, {
               <line x1="8" y1="2" x2="8" y2="6"></line>
               <line x1="3" y1="10" x2="21" y2="10"></line>
             </svg>
-            {topCapsule}
-          </span>
+            {topCapsule.label}
+          </button>
         </div>
       )}
       <div style={{ position: 'relative', height: totalHeight }}>
@@ -444,7 +457,7 @@ const ListRow = React.memo(({
       </td>
       <td className="px-4 py-3 text-[var(--text-tertiary)]">{formatDate(photo.dateTaken || 0)}</td>
       <td className="px-4 py-3 text-[var(--text-tertiary)]">{formatDate(photo.lastModified)}</td>
-      <td className="px-4 py-3 text-[var(--text-tertiary)]">{formatDate(photo.dateCreated || photo.lastModified)}</td>
+      <td className="px-4 py-3 text-[var(--text-tertiary)] tabular-nums">{photo.dateCreated ? formatDate(photo.dateCreated) : '—'}</td>
       <td className="px-4 py-3 text-[var(--text-tertiary)] font-mono text-xs">{formatBytes(photo.size)}</td>
     </tr>
   );
@@ -624,6 +637,8 @@ interface ImageGridProps {
   onExportSelected?: () => void;
   /** 列数变化上报：App 用于方向键导航步长 */
   onColumnsChange?: (columns: number) => void;
+  /** 点击顶部日期胶囊 → 只看这一天（由 App 落到日期筛选条件上） */
+  onFilterByDate?: (timestamp: number) => void;
   /** 情境条左侧展示的分类名（所有照片 / 收藏夹） */
   viewTitle?: string;
   /** 空状态引导 */
@@ -890,6 +905,8 @@ const ImageCard = React.memo(({
             }`}
             loading="lazy"
             decoding="async"
+            /* <img> 默认可拖，会拖出一张半透明残影并触发全局导入遮罩 */
+            draggable={false}
             onLoad={handleImageLoad}
             onError={handleImageError}
           />
@@ -949,8 +966,12 @@ const NO_INTRO_DELAYS: Map<string, number> = new Map();
 /** 网格模式列间距（对应 gap-1 = 4px）：加上卡片自身内边距，相邻图片净留白 8px */
 const GRID_GAP = 4;
 
+// 与列表视图表头的排序键保持一致：此前网格缺了「修改时间 / 创建时间」，
+// 想按它们排序必须切到列表视图，同一个功能两套入口
 const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
-  { key: 'dateTaken', label: '日期' },
+  { key: 'dateTaken', label: '拍摄时间' },
+  { key: 'dateModified', label: '修改时间' },
+  { key: 'dateCreated', label: '创建时间' },
   { key: 'name', label: '名称' },
   { key: 'size', label: '大小' },
 ];
@@ -998,6 +1019,7 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
   onMoveSelected,
   onExportSelected,
   onColumnsChange,
+  onFilterByDate,
   viewTitle,
   emptyTitle = '没有照片',
   emptyDescription = '拖放图片、视频或文件夹到此处，或点击上方「导入」按钮批量添加',
@@ -1513,7 +1535,15 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
           onBlankClick={handleBlankClick}
           onContainerContextMenu={(e) => onContextMenu?.(e)}
           onColumnsChange={onColumnsChange}
-          stickyLabel={sortByDate ? (photo) => formatDayCapsule(photo.dateTaken || photo.lastModified) : undefined}
+          onFilterByDate={onFilterByDate}
+          stickyDay={sortByDate ? (photo) => {
+            // 与 photoGrouping 的分组口径保持一致：按修改时间排序时用 lastModified 切天
+            const ts = sortConfig.key === 'dateModified'
+              ? photo.lastModified
+              : (photo.dateTaken || photo.lastModified);
+            const label = formatDayCapsule(ts);
+            return label ? { label, timestamp: ts } : null;
+          } : undefined}
         >
           {renderCard}
         </VirtualGrid>

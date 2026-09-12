@@ -3,6 +3,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef, memo } from '
 import { Photo, type DuplicateScope } from '@/types';
 import { formatBytes, hammingDistance, photoOriginalTime, type DuplicateScanProgress } from '@/utils';
 import { useThumbnailSrc } from '@/components/grid/ThumbnailImage';
+import DeleteConfirmModal from '@/components/modal/DeleteConfirmModal';
 
 const getFolderPath = (path: string): string => {
   if (!path) return '';
@@ -287,6 +288,8 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
   const [mountedGroups, setMountedGroups] = useState<Set<string>>(new Set());
   /** 被勾选「待删除」的照片 id，默认空，不做任何默认选择 */
   const [markedIds, setMarkedIds] = useState<Set<string>>(new Set());
+  /** 批量删除前的二次确认（复用主图库同一套确认框） */
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const wasProcessingRef = useRef(isProcessing);
 
@@ -513,7 +516,19 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
     setMarkedIds(next);
   }, [duplicateGroups]);
 
+  /**
+   * 「移至回收站」先弹确认框再执行。
+   *
+   * 这一页的「只留每组原图」是一键勾选成百上千张的高危动作，而按钮就挨着它，
+   * 主图库删除有二次确认、这里没有，风险不对等。
+   */
   const handleConfirmDelete = useCallback(() => {
+    if (markedPhotos.length === 0) return;
+    setIsDeleteConfirmOpen(true);
+  }, [markedPhotos.length]);
+
+  const handleDeleteConfirmed = useCallback(() => {
+    setIsDeleteConfirmOpen(false);
     if (markedPhotos.length === 0) return;
     onDeleteDuplicates(markedPhotos);
   }, [markedPhotos, onDeleteDuplicates]);
@@ -622,6 +637,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                   onClick={handleConfirmDelete}
                   className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-pink),var(--accent-pink-deep))] hover:brightness-110 rounded-lg shadow-lg shadow-[rgba(var(--accent-pink-rgb),0.25)] transition-all duration-200 active:scale-[0.98]"
                 >
+
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -1017,6 +1033,15 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
           </aside>
         )}
       </div>
+
+      {/* 与主图库共用同一个确认框：一键清空成百上千张之前必须先停下来确认一次 */}
+      <DeleteConfirmModal
+        isOpen={isDeleteConfirmOpen}
+        count={markedPhotos.length}
+        isDiskOperation
+        onClose={() => setIsDeleteConfirmOpen(false)}
+        onConfirm={handleDeleteConfirmed}
+      />
     </div>
   );
 };

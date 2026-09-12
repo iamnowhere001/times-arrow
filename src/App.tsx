@@ -23,7 +23,7 @@ import { createThumbnail, clearDragThumbnailCache } from '@/lib/cache/dragThumbn
 import { joinPath, sanitizeFilename } from '@/lib/fs/pathUtils';
 import { deriveLibraryViewState } from '@/lib/filter/libraryViewState';
 import { buildContextMenuActions } from '@/lib/contextMenuActions';
-import { movePhotosToTrash } from '@/lib/fs/fileOperations';
+import { humanizeFsError, movePhotosToTrash } from '@/lib/fs/fileOperations';
 import { useToasts } from '@/hooks/useToasts';
 import { useThemeMode } from '@/hooks/useThemeMode';
 import { useDuplicateDetection } from '@/hooks/useDuplicateDetection';
@@ -40,6 +40,7 @@ import {
 } from '@/lib/filter/filters';
 import { buildLivePhotoIds, isSelfiePhoto, isScreenshotPhoto } from '@/lib/media/mediaTypes';
 import {
+  forgetVideoMeta,
   getVideoMeta,
   rekeyVideoMeta,
   seedVideoMeta,
@@ -47,7 +48,11 @@ import {
   subscribeVideoMeta,
   videoMetaKeyOf,
 } from '@/lib/media/videoMeta';
-import { loadPersistedConfig, savePersistedConfig } from '@/lib/persistence/persistence';
+import {
+  loadPersistedConfig,
+  savePersistedConfig,
+  setPersistenceErrorHandler,
+} from '@/lib/persistence/persistence';
 import { loadAiCache, saveAiCache } from '@/lib/persistence/aiCache';
 import Sidebar from '@/components/layout/Sidebar';
 import Toolbar from '@/components/layout/Toolbar';
@@ -55,6 +60,7 @@ import ImageGrid, { ImageGridHandle } from '@/components/grid/ImageGrid';
 import DetailsPane from '@/components/detail/DetailsPane';
 import RenameModal from '@/components/modal/RenameModal';
 import DeleteConfirmModal from '@/components/modal/DeleteConfirmModal';
+import ClearListConfirmModal from '@/components/modal/ClearListConfirmModal';
 import QuickLook from '@/components/detail/QuickLook';
 import Toast from '@/components/common/Toast';
 import ContextMenu, { ContextMenuItem } from '@/components/common/ContextMenu';
@@ -124,6 +130,15 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const photosRef = useRef<Photo[]>([]);
   const [isAdjustDateModalOpen, setIsAdjustDateModalOpen] = useState(false);
   const [isSaveAlbumModalOpen, setIsSaveAlbumModalOpen] = useState(false);
+  /** 清空照片列表二次确认：入口在侧栏底部，这里统一收口确认与执行 */
+  const [isClearListConfirmOpen, setIsClearListConfirmOpen] = useState(false);
+  /**
+   * 筛选面板是否展开（状态在 Toolbar 内，由其上报）。
+   * 全局快捷键需要据此让行：面板里的胶囊是普通按钮，不隔离的话
+   * 按 Delete 会在面板之上再叠一个「移至回收站」确认框，⌘A 还会静默改写选中集。
+   */
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const handleFilterOpenChange = useCallback((open: boolean) => setIsFilterPanelOpen(open), []);
   /** AI 设置弹窗（配置 DeepSeek API Key / 接口地址 / 模型） */
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
   // 快捷键总览层（? 唤出，Esc 关闭）
@@ -150,6 +165,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
   // Toast 队列：支持多条同时展示，错误级常驻（见 hooks/useToasts）
   const { toasts, showToast, dismissToast } = useToasts();
+
+  // 配置 / AI 缓存落盘失败时统一提示：这类失败在界面上没有任何征兆，
+  // 不提示的话用户只会在下次启动时发现「收藏、相簿、标签全没了」
+  useEffect(() => {
+    setPersistenceErrorHandler(message => showToast(message, 'error'));
+    return () => setPersistenceErrorHandler(null);
+  }, [showToast]);
 
   // 搜索（文件名 / 相机 / 格式）
   const [searchQuery, setSearchQuery] = useState('');
@@ -193,7 +215,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
       // 释放降级路径（拖放无磁盘路径）产生的 blob: URL。
       // 这些条目在磁盘上没有对应文件，若不在这里回收，ObjectURL 会一直常驻内存，
-      // 直到「重置列表」才被清掉 —— 长时间增删就是典型的内存只增不减。
+      // 直到「清空照片列表」才被清掉 —— 长时间增删就是典型的内存只增不减。
       const blobUrls: string[] = [];
       photosRef.current.forEach(photo => {
         if (ids.has(photo.id) && photo.url.startsWith('blob:')) blobUrls.push(photo.url);
@@ -245,6 +267,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const activeScanIdRef = useRef<string | null>(null);
   const importAbortRef = useRef<AbortController | null>(null);
   const cancelRequestedRef = useRef(false);
+  /** 文件操作（重命名 / 删除）的提交锁：防止确认按钮被连点导致同一批文件提交两次 */
+  const fileOpLockRef = useRef(false);
   
   /** 主内容区当前视图：重复检测是独立整页，而非弹窗 */
   const [mainView, setMainView] = useState<MainView>('library');
@@ -530,7 +554,119 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     }
     setPhotos(prev => prev.map(p => (idSet.has(p.id) ? { ...p, isHidden: value || undefined } : p)));
     void savePersistedConfig({ hidden: [...hiddenRef.current] });
+
+    // 隐藏是唯一「静默消失」的整理动作（收藏有提示、删除有塌陷动画）。
+    // 不说明去向的话，用户分不清是被隐藏还是被删除，容易反复操作或跑去回收站找。
+    showToast(
+      value ? `已隐藏 ${ids.length} 项，可在「已隐藏」中找回` : `已取消隐藏 ${ids.length} 项`,
+      'info',
+      value
+        ? {
+            label: '查看',
+            onClick: () => setFilters(prev => ({ ...prev, hiddenOnly: true, favoritesOnly: false })),
+          }
+        : undefined
+    );
+  }, [showToast]);
+
+  /**
+   * 单个文件的磁盘路径发生变化时，迁移所有「按路径存储」的数据。
+   *
+   * 收藏 / 隐藏 / 标签 / 时间修正 / 封面 / 视频元数据 / AI 缓存全部以路径为键，
+   * 重命名或移动后如果只改 `photo.path` 而不改键，这些标记就指向了不存在的路径：
+   * 重启后表现为「收藏、标签、封面凭空消失」，而旧键会一直滞留在 config.json 里。
+   *
+   * @returns 哪些分段数据因此发生了变化，供调用方决定是否需要落盘
+   */
+  const rekeyPathData = useCallback((from: string, to: string) => {
+    if (!from || !to || from === to) return { cover: false, video: false, ai: false };
+
+    if (favoritesRef.current.delete(from)) favoritesRef.current.add(to);
+    if (hiddenRef.current.delete(from)) hiddenRef.current.add(to);
+
+    const tags = tagsRef.current.get(from);
+    if (tags !== undefined) {
+      tagsRef.current.delete(from);
+      if (!tagsRef.current.has(to)) tagsRef.current.set(to, tags);
+    }
+
+    const override = dateOverridesRef.current.get(from);
+    if (override !== undefined) {
+      dateOverridesRef.current.delete(from);
+      if (!dateOverridesRef.current.has(to)) dateOverridesRef.current.set(to, override);
+    }
+
+    let cover = false;
+    if (coverRef.current === from) {
+      coverRef.current = to;
+      cover = true;
+    }
+
+    const video = rekeyVideoMeta(from, to);
+
+    let ai = false;
+    const aiEntry = aiCacheRef.current.get(from);
+    if (aiEntry) {
+      aiCacheRef.current.delete(from);
+      if (!aiCacheRef.current.has(to)) aiCacheRef.current.set(to, aiEntry);
+      ai = true;
+    }
+
+    // 已导入路径集合同步跟随：否则改名后再次导入同一目录会把它当成新文件，产生重复条目
+    if (importedPathsRef.current.delete(from)) importedPathsRef.current.add(to);
+
+    return { cover, video, ai };
   }, []);
+
+  /**
+   * 文件从磁盘消失（删除 / 移出）后，摘掉它残留的按路径数据。
+   *
+   * 不清的话，日后只要有同名文件回到同一目录，就会立刻继承上一份的收藏 / 隐藏 /
+   * 时间修正 —— 最坏情况是「新导入的照片被隐藏，在库里根本找不到」。
+   */
+  const dropPathData = useCallback((paths: Iterable<string>) => {
+    let cover = false;
+    let video = false;
+    let ai = false;
+
+    for (const p of paths) {
+      if (!p) continue;
+      favoritesRef.current.delete(p);
+      hiddenRef.current.delete(p);
+      tagsRef.current.delete(p);
+      dateOverridesRef.current.delete(p);
+      if (coverRef.current === p) {
+        coverRef.current = null;
+        cover = true;
+      }
+      if (forgetVideoMeta(p)) video = true;
+      if (aiCacheRef.current.delete(p)) ai = true;
+      importedPathsRef.current.delete(p);
+    }
+
+    return { cover, video, ai };
+  }, []);
+
+  /**
+   * 路径迁移 / 清理后落盘：只写真正变化的分段，避免每次都把整份配置重写一遍。
+   * @param changed rekeyPathData / dropPathData 的变化标记（多次调用按位或累加）
+   */
+  const persistPathData = useCallback(
+    async (changed: { cover: boolean; video: boolean; ai: boolean }) => {
+      const patch: Partial<PersistedConfig> = {
+        favorites: [...favoritesRef.current],
+        hidden: [...hiddenRef.current],
+        tags: Object.fromEntries(tagsRef.current),
+        dateOverrides: Object.fromEntries(dateOverridesRef.current),
+      };
+      if (changed.cover) patch.cover = coverRef.current ?? '';
+      if (changed.video) patch.videoMeta = snapshotVideoMeta();
+
+      await savePersistedConfig(patch);
+      if (changed.ai) await saveAiCache(aiCacheRef.current);
+    },
+    []
+  );
 
   /** 应用拍摄时间修正：写入 override 并落盘（不改动原文件） */
   const handleApplyDateAdjustment = useCallback(async (adjustments: DateAdjustment[]) => {
@@ -594,8 +730,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     const next = albums.filter(album => album.id !== id);
     setAlbums(next);
     void savePersistedConfig({ albums: next });
+    // 删掉的正是当前在看的相簿时，界面会停在它留下的筛选条件上，
+    // 侧栏再无任何高亮、用户不知道自己在看什么，所以顺手把视图复位
+    if (removed && filtersEqual(normalizeFilters(removed.filters), filters)) {
+      setFilters(createEmptyFilters());
+      setSearchQuery('');
+    }
     showToast(removed ? `已删除相簿「${removed.name}」` : '已删除相簿', 'info');
-  }, [albums, showToast]);
+  }, [albums, filters, showToast]);
 
   /** 记录最近打开的目录（新在前，最多 8 条） */
   const pushRecentDirectory = useCallback((dir: string) => {
@@ -633,6 +775,23 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
   useEffect(() => () => cancelShowLoading(), [cancelShowLoading]);
 
+  /**
+   * 一次拖放可能同时走「文件」与「文件夹」两条异步分支。
+   * 用计数保证只有全部结束才收起遮罩，否则先完成的分支会把还在跑的遮罩提前关掉。
+   */
+  const dropBusyRef = useRef(0);
+  const beginDropWork = useCallback(() => {
+    dropBusyRef.current += 1;
+    showLoadingSoon();
+  }, [showLoadingSoon]);
+  const endDropWork = useCallback(() => {
+    dropBusyRef.current = Math.max(0, dropBusyRef.current - 1);
+    if (dropBusyRef.current === 0) {
+      cancelShowLoading();
+      clearLoading();
+    }
+  }, [cancelShowLoading, clearLoading]);
+
   /** 中断进行中的「扫描 + 入库」：主进程停止扫描，渲染进程停止分批提交 */
   const handleCancelLoading = useCallback(() => {
     cancelRequestedRef.current = true;
@@ -651,8 +810,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     showToast('已取消添加', 'info');
   }, [cancelShowLoading, clearLoading, showToast]);
 
-  // Handle list reset
-  const handleResetList = useCallback(() => {
+  // 清空照片列表：只清空列表与派生缓存，磁盘文件不动
+  const handleClearList = useCallback(() => {
     // 释放降级路径（拖放无磁盘路径）创建的 ObjectURL，避免 blob 常驻内存
     photos.forEach(photo => {
       if (photo.url && photo.url.startsWith('blob:')) {
@@ -669,12 +828,20 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     importedPathsRef.current.clear();
     clearDragThumbnailCache();
     clearThumbnailCache();
-    // 重置图库后指纹也失去意义，一并释放（否则切库后缓存只增不减）
+    // 列表清空后指纹也失去意义，一并释放（否则切库后缓存只增不减）
     clearImageHashCache();
     cancelRequestedRef.current = false;
-    releaseMemory('soft', 'reset-list');
-    showToast('列表已重置', 'info');
+    releaseMemory('soft', 'clear-list');
+    showToast('已清空照片列表', 'info');
   }, [photos, showToast]);
+
+  // 清空照片列表：入口只负责「请求」，确认与执行分开走。
+  // 侧栏底部与右键菜单共用这一条路径，都会先停下来确认一次
+  const handleRequestClearList = useCallback(() => setIsClearListConfirmOpen(true), []);
+  const handleConfirmClearList = useCallback(() => {
+    setIsClearListConfirmOpen(false);
+    handleClearList();
+  }, [handleClearList]);
 
   // 元数据（尺寸 / EXIF / 拍摄时间）批量补齐：
   // 主进程一次读取返回全部信息，渲染层按批合并成一次 setState
@@ -744,7 +911,11 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   // 统一导入管线：
   // 只登记「磁盘路径 + pm:// 原图地址」，缩略图改为卡片进入视口时按需生成。
   // 这样几万张也能秒级入库，且不会一次性占满 CPU / 磁盘缓存。
-  const ingestFiles = useCallback(async (infos: FileInfo[]): Promise<number> => {
+  const ingestFiles = useCallback(async (
+    infos: FileInfo[],
+    /** 每批提交后回调（已处理数 / 总数），供遮罩显示真实进度 */
+    onProgress?: (done: number, total: number) => void
+  ): Promise<number> => {
     if (!infos || infos.length === 0) return 0;
 
     // 按路径去重，重复打开同一目录时不再产生重复条目
@@ -799,6 +970,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         batch.forEach(photo => importedPathsRef.current.add(photo.path as string));
         created.push(...batch);
         setPhotos(prev => prev.concat(batch));
+        onProgress?.(end, total);
 
         // 让出主线程：保证进度条与「取消」按钮始终可响应
         await new Promise(resolve => setTimeout(resolve, 0));
@@ -848,8 +1020,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         return;
       }
 
+      // 扫描阶段 loadingTotal 为 0（不确定态），这里换成真实总数让进度条能走完
+      setLoadingTotal(infos.length);
       setLoadingCurrentFile(`正在加入 ${infos.length} 个项目…`);
-      const added = await ingestFiles(infos);
+      const added = await ingestFiles(infos, (done, total) => {
+        if (total > 0) setLoadingProgress(Math.min(done, total));
+      });
 
       if (activeScanIdRef.current !== scanId || cancelRequestedRef.current) return;
 
@@ -891,18 +1067,28 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     cancelRequestedRef.current = false;
 
     if (picked.files.length > 0) {
+      beginDropWork();
       try {
         // 补齐 size / birthtime / mtime，避免 size=0 让重复检测退化
         const infos = await window.electronAPI.statFiles(picked.files);
-        const added = await ingestFiles(infos);
+        setLoadingTotal(infos.length);
+        const added = await ingestFiles(infos, (done, total) => {
+          if (total > 0) setLoadingProgress(Math.min(done, total));
+        });
         const ignoreNote = picked.ignored > 0 ? `，已忽略 ${picked.ignored} 个不支持的文件` : '';
-        showToast(
-          `已添加 ${added} 个项目${ignoreNote}`,
-          picked.ignored > 0 ? 'warning' : 'success'
-        );
+        if (added === 0) {
+          showToast(
+            `已选中的 ${infos.length} 个项目已在列表中${ignoreNote}`,
+            picked.ignored > 0 ? 'warning' : 'info'
+          );
+        } else {
+          showToast(`已添加 ${added} 个项目${ignoreNote}`, picked.ignored > 0 ? 'warning' : 'success');
+        }
       } catch (error) {
         logger.error('Error importing files:', error);
         showToast('导入文件失败', 'error');
+      } finally {
+        endDropWork();
       }
     } else if (picked.ignored > 0 && picked.directories.length === 0) {
       showToast(`已忽略 ${picked.ignored} 个不支持的文件（仅支持图片与视频）`, 'warning');
@@ -912,7 +1098,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       if (cancelRequestedRef.current) break;
       await loadDirectory(dirPath);
     }
-  }, [ingestFiles, loadDirectory, showToast]);
+  }, [beginDropWork, endDropWork, ingestFiles, loadDirectory, showToast]);
 
   /** 工具栏 / 空状态 / 右键菜单统一入口 */
   const handleImport = useCallback(async () => {
@@ -970,7 +1156,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
   // 时光画廊：按拍摄时间升序排列的全部照片（忽略筛选 / 搜索），
   // 是「沿时间线回顾整段记忆」的数据源。缺失时间戳的条目排到末尾。
-  const timelinePhotos = useMemo(() => sortPhotosByTimeline(photos), [photos]);
+  // 已隐藏项一律不参与：隐藏是跨视图的语义，不能因为换了视图就重新可见
+  //（这一份数据同时决定 QuickLook 在时间线上的翻页范围）。
+  const timelinePhotos = useMemo(
+    () => sortPhotosByTimeline(photos.filter(p => !p.isHidden)),
+    [photos]
+  );
 
   // 实况照片需要「同目录同名视频配对」上下文，随照片集合变化预计算一次
   const livePhotoIds = useMemo(() => buildLivePhotoIds(photos), [photos]);
@@ -997,6 +1188,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       return changed ? next : prev;
     });
   }, [visiblePhotos]);
+
+  // 选区收敛后，锚点若已不在可见列表里（被筛掉 / 被删除）要跟着挪走。
+  // 否则下一次方向键导航会因为找不到锚点而从列表第一项重新开始。
+  useEffect(() => {
+    const anchor = selectionAnchorRef.current;
+    if (anchor && visiblePhotos.some(p => p.id === anchor)) return;
+    selectionAnchorRef.current = selectedIds.values().next().value ?? null;
+  }, [visiblePhotos, selectedIds]);
 
   /**
    * QuickLook 的翻页范围跟随当前视图：
@@ -1158,6 +1357,10 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
   // Handle single photo rename
   const handleRenamePhoto = async (id: string, newName: string) => {
+    // 提交锁：确认按钮在异步执行期间仍可点击，连点会把同一批文件提交两次
+    //（第二轮拿到的还是闭包里的旧路径，必然整批 ENOENT）
+    if (fileOpLockRef.current) return;
+    fileOpLockRef.current = true;
     try {
       // Check if we're in Electron environment
       if (!window.electronAPI) {
@@ -1208,7 +1411,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
         if (result.error) {
           logger.error('Failed to rename file:', result.error);
-          showToast(`重命名照片 "${photo.name}" 失败：${result.error}`, 'error');
+          showToast(`重命名「${photo.name}」失败：${humanizeFsError(result.error)}`, 'error');
           return;
         }
         // 主进程在重名时可能自动追加了序号，一律以返回的最终路径为准
@@ -1216,23 +1419,28 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         conflicted = Boolean(result.conflicted);
       } catch (electronError) {
         logger.error('Electron rename error:', electronError);
-        showToast(`重命名照片 "${photo.name}" 时发生错误：${electronError}`, 'error');
+        showToast(`重命名「${photo.name}」失败：${humanizeFsError((electronError as Error).message)}`, 'error');
         return;
-      }
+        }
 
       const actualName = finalPath.split(/[\\/]/).pop() || finalName;
 
-      // Update the photo in state
+      // 更新条目：pm:// 原图地址要跟着新路径走，缩略图按新路径重新生成
       setPhotos(prev => prev.map(p => {
         if (p.id === id) {
           return {
             ...p,
             name: actualName,
-            path: finalPath
+            path: finalPath,
+            url: pmFileUrl(finalPath),
+            thumbnail: undefined,
           };
         }
         return p;
       }));
+
+      // 按路径存储的用户数据一起迁移：不迁移的话，重启后收藏 / 标签 / 封面会全部丢失
+      await persistPathData(rekeyPathData(oldPath, finalPath));
 
       if (conflicted) {
         showToast(`「${finalName}」已存在，已自动重命名为「${actualName}」`, 'warning');
@@ -1243,6 +1451,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     } catch (err) {
       logger.error('Error renaming photo:', err);
       showToast(`重命名照片失败：${(err as Error).message}`, 'error');
+    } finally {
+      fileOpLockRef.current = false;
     }
   };
 
@@ -1250,6 +1460,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
   // Handle batch rename
   const handleBatchRename = async (options: RenameOptions) => {
+    if (fileOpLockRef.current) return;
+    fileOpLockRef.current = true;
     try {
       // Check if we're in Electron environment
       if (!window.electronAPI) {
@@ -1271,13 +1483,16 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         return dateA - dateB;
       });
 
-      const updates: Array<{ id: string; newName: string; newPath: string }> = [];
+      const updates: Array<{ id: string; oldPath: string; newName: string; newPath: string }> = [];
       // 只有同一个目录内才需要担心重名，不同文件夹下的同名文件互不影响
       const usedNames = new Set<string>();
       let renamedCount = 0;
       let unchangedCount = 0; // 名称本来就符合规则、无需改动
       let failedCount = 0;
       let conflictCount = 0; // 因重名被主进程自动追加序号的数量
+      // 循环内不逐条弹 Toast（队列上限 4 条，会把汇总顶掉、还看不到是哪些失败），
+      // 只留首个失败原因，结束后给一条统一汇总
+      let firstError: string | null = null;
 
       for (let i = 0; i < sortedPhotos.length; i++) {
         const photo = sortedPhotos[i];
@@ -1292,7 +1507,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         const fileExt = photo.name.split('.').pop();
         if (!fileExt) {
           logger.error('Cannot rename photo without file extension:', photo.name);
-          showToast(`无法重命名照片 "${photo.name}"：缺少文件扩展名`, 'error');
+          failedCount++;
+          firstError ??= `「${photo.name}」缺少文件扩展名`;
           continue;
         }
         
@@ -1386,8 +1602,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
           if (result.error) {
             logger.error('Failed to rename file:', result.error);
-            showToast(`重命名照片 "${photo.name}" 失败：${result.error}`, 'error');
             failedCount++;
+            firstError ??= `「${photo.name}」${humanizeFsError(result.error)}`;
             // Continue with other photos instead of failing all
             continue;
           }
@@ -1397,12 +1613,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           const actualName = finalPath.split(/[\\/]/).pop() || newName;
           if (result.conflicted) conflictCount++;
 
-          updates.push({ id: photo.id, newName: actualName, newPath: finalPath });
+          updates.push({ id: photo.id, oldPath, newName: actualName, newPath: finalPath });
           renamedCount++;
         } catch (electronError) {
           logger.error('Electron rename error:', electronError);
-          showToast(`重命名照片 "${photo.name}" 时发生错误：${electronError}`, 'error');
           failedCount++;
+          firstError ??= `「${photo.name}」${humanizeFsError((electronError as Error).message)}`;
           continue;
         }
       }
@@ -1415,18 +1631,35 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
             return { 
               ...p, 
               name: update.newName, 
-              path: update.newPath
+              path: update.newPath,
+              url: pmFileUrl(update.newPath),
+              thumbnail: undefined,
             };
           }
           return p;
         }));
+
+        // 批量改名同样要做路径迁移：收藏 / 隐藏 / 标签 / 时间修正 / 封面 / AI 缓存都按路径存储
+        let changed = { cover: false, video: false, ai: false };
+        for (const update of updates) {
+          const one = rekeyPathData(update.oldPath, update.newPath);
+          changed = {
+            cover: changed.cover || one.cover,
+            video: changed.video || one.video,
+            ai: changed.ai || one.ai,
+          };
+        }
+        await persistPathData(changed);
       }
 
       const summaryParts: string[] = [];
       if (renamedCount > 0) summaryParts.push(`已重命名 ${renamedCount} 项`);
       if (unchangedCount > 0) summaryParts.push(`${unchangedCount} 项无需修改`);
       if (conflictCount > 0) summaryParts.push(`${conflictCount} 项因重名追加了序号`);
-      if (failedCount > 0) summaryParts.push(`${failedCount} 项失败`);
+      // 失败项带上首个原因，让用户知道是「文件不见了」还是「没权限」
+      if (failedCount > 0) {
+        summaryParts.push(`${failedCount} 项失败${firstError ? `（如 ${firstError}）` : ''}`);
+      }
 
       if (failedCount > 0) {
         showToast(summaryParts.join('，'), 'warning');
@@ -1439,6 +1672,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     } catch (err) {
       logger.error('Error batch renaming photos:', err);
       showToast(`批量重命名照片失败：${(err as Error).message}`, 'error');
+    } finally {
+      fileOpLockRef.current = false;
     }
   };
 
@@ -1450,10 +1685,18 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       return;
     }
 
-    const { deletedIds, failedPhotos, errors } = await movePhotosToTrash(targets);
+    const { deletedIds, failedPhotos, errors, pathlessRemoved } = await movePhotosToTrash(targets);
 
     // 同步收敛状态：列表、选中项、重复检测结果
     if (deletedIds.size > 0) {
+      // 磁盘上已经没有这个文件了，它残留的收藏 / 隐藏 / 标签 / 时间修正等按路径数据
+      // 也要一并摘掉：否则日后同名的文件回到同一目录，会直接继承上一份标记
+      //（最坏情况是「新导入的照片一进来就是隐藏状态，在库里根本找不到」）
+      const removedPaths = targets
+        .filter(p => deletedIds.has(p.id) && p.path)
+        .map(p => p.path as string);
+      await persistPathData(dropPathData(removedPaths));
+
       // 卡片先淡出再摘除：磁盘上的文件已经没了，但界面上要让人看见它离开
       removeWithCollapse(deletedIds);
       setSelectedIds(new Set());
@@ -1461,8 +1704,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       pruneDuplicateGroups(deletedIds);
     }
 
+    // 无磁盘路径的条目（拖放降级预览）不会进回收站，必须说明，否则会给人「还能找回」的错觉
+    const pathlessNote = pathlessRemoved > 0
+      ? `，另有 ${pathlessRemoved} 项无磁盘文件，仅从列表移除`
+      : '';
+
     if (failedPhotos.length === 0) {
-      showToast(`已将 ${deletedIds.size} 张照片移至回收站`, 'success');
+      showToast(`已将 ${deletedIds.size - pathlessRemoved} 张照片移至回收站${pathlessNote}`, 'success');
       return;
     }
 
@@ -1471,7 +1719,11 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     const retryAction = { label: '重试', onClick: () => { void runDelete(failedPhotos); } };
 
     if (deletedIds.size > 0) {
-      showToast(`已删除 ${deletedIds.size} 张，${failedPhotos.length} 张失败：${detail}`, 'warning', retryAction);
+      showToast(
+        `已删除 ${deletedIds.size - pathlessRemoved} 张，${failedPhotos.length} 张失败${pathlessNote}：${detail}`,
+        'warning',
+        retryAction
+      );
     } else {
       showToast(`删除失败：${detail}`, 'error', retryAction);
     }
@@ -1493,8 +1745,15 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       return;
     }
 
-    await runDelete(targets);
-    setIsDeleteModalOpen(false);
+    // 连点「移至回收站」会让第二轮拿着已删除的路径重试，整批失败并刷屏
+    if (fileOpLockRef.current) return;
+    fileOpLockRef.current = true;
+    try {
+      await runDelete(targets);
+      setIsDeleteModalOpen(false);
+    } finally {
+      fileOpLockRef.current = false;
+    }
   };
 
   /**
@@ -1556,60 +1815,17 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           : p;
       }));
 
-      // 2) 迁移按路径存储的用户数据
-      const migrateSet = (set: Set<string>) => {
-        for (const [from, to] of pathMap) {
-          if (set.delete(from)) set.add(to);
-        }
-      };
-      migrateSet(favoritesRef.current);
-      migrateSet(hiddenRef.current);
-
-      const migrateMap = (map: Map<string, unknown>) => {
-        for (const [from, to] of pathMap) {
-          if (map.has(from)) {
-            const value = map.get(from);
-            map.delete(from);
-            if (!map.has(to)) map.set(to, value);
-          }
-        }
-      };
-      migrateMap(tagsRef.current);
-      migrateMap(dateOverridesRef.current);
-
-      let coverChanged = false;
-      if (coverRef.current && pathMap.has(coverRef.current)) {
-        coverRef.current = pathMap.get(coverRef.current) ?? coverRef.current;
-        coverChanged = true;
-      }
-
-      // 3) 视频时长 / 分辨率缓存跟随新路径，避免移动后重新解码探测
-      let videoMetaChanged = false;
+      // 2) 迁移按路径存储的用户数据（收藏 / 隐藏 / 标签 / 时间修正 / 封面 / 视频元数据 / AI 缓存）
+      let changed = { cover: false, video: false, ai: false };
       for (const [from, to] of pathMap) {
-        if (rekeyVideoMeta(from, to)) videoMetaChanged = true;
+        const one = rekeyPathData(from, to);
+        changed = {
+          cover: changed.cover || one.cover,
+          video: changed.video || one.video,
+          ai: changed.ai || one.ai,
+        };
       }
-
-      // 4) AI 描述 / 标签缓存同样按路径存储
-      let aiChanged = false;
-      for (const [from, to] of pathMap) {
-        if (aiCacheRef.current.has(from)) {
-          const value = aiCacheRef.current.get(from);
-          aiCacheRef.current.delete(from);
-          if (value && !aiCacheRef.current.has(to)) aiCacheRef.current.set(to, value);
-          aiChanged = true;
-        }
-      }
-
-      const patch: Partial<PersistedConfig> = {
-        favorites: [...favoritesRef.current],
-        hidden: [...hiddenRef.current],
-        tags: Object.fromEntries(tagsRef.current),
-        dateOverrides: Object.fromEntries(dateOverridesRef.current),
-      };
-      if (coverChanged) patch.cover = coverRef.current ?? '';
-      if (videoMetaChanged) patch.videoMeta = snapshotVideoMeta();
-      await savePersistedConfig(patch);
-      if (aiChanged) await saveAiCache(aiCacheRef.current);
+      await persistPathData(changed);
     }
 
     // 失败项映射回条目，供 Toast「重试」继续移动到同一目标
@@ -1628,7 +1844,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     if (moved.length > 0 && failedPhotos.length === 0) {
       showToast(`已移动 ${moved.length} 项到「${dirName}」${noteText}`, 'success');
     } else if (moved.length > 0) {
-      const detail = failedResults[0]?.error ?? '';
+      const detail = humanizeFsError(failedResults[0]?.error);
       showToast(
         `已移动 ${moved.length} 项到「${dirName}」，${failedPhotos.length} 项失败：${detail}`,
         'warning',
@@ -1637,7 +1853,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     } else if (skipped.length > 0 && failedPhotos.length === 0) {
       showToast(`所选项目都已在「${dirName}」中，无需移动`, 'info');
     } else {
-      const detail = failedResults[0]?.error ?? '未知错误';
+      const detail = humanizeFsError(failedResults[0]?.error);
       showToast(
         `移动失败：${detail}`,
         'error',
@@ -1679,7 +1895,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     onImport: handleImport,
     onSelectAllVisible: handleSelectAllVisible,
     onCheckDuplicates: handleCheckDuplicates,
-    onResetList: handleResetList,
+    onClearList: handleRequestClearList,
     onOpenQuickLook: setQuickLookPhoto,
     onToggleFavorite: toggleFavorite,
     onSetHidden: setHidden,
@@ -1693,7 +1909,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     onOpenAdjustDate: () => setIsAdjustDateModalOpen(true),
     onOpenRename: () => setIsRenameModalOpen(true),
     onOpenDelete: () => setIsDeleteModalOpen(true),
-  }), [contextMenu, visiblePhotos.length, photos.length, selectedIds, toggleFavorite, setHidden, handleCopyImage, handleShowInFolder, handleCopyPath, handleOpenInEditor, handleToggleCover, handleExportSelected, handleMoveSelected, handleSelectAllVisible, handleCheckDuplicates, handleResetList, handleImport]);
+  }), [contextMenu, visiblePhotos.length, photos.length, selectedIds, toggleFavorite, setHidden, handleCopyImage, handleShowInFolder, handleCopyPath, handleOpenInEditor, handleToggleCover, handleExportSelected, handleMoveSelected, handleSelectAllVisible, handleCheckDuplicates, handleRequestClearList, handleImport]);
 
   // 计算媒体统计数据（侧栏「图库 / 媒体类型」与顶部筛选共用）
   // 隐藏项不计入任何常规分类，只计入「已隐藏」，与 macOS 照片一致
@@ -1753,14 +1969,30 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     [albums, filters]
   );
 
-  // 筛选面板的可选项（相机 / 格式 / 标签）：随元数据与标签变化动态更新
-  const filterOptions = useMemo(
-    () => ({ ...buildFilterOptions(photos), tags: buildTagOptions(photos) }),
-    [photos]
-  );
+  // 筛选面板的可选项（相机 / 格式 / 标签）：随元数据与标签变化动态更新。
+  // 口径必须与 matchesFilters 一致 —— 隐藏项本来就不会出现在结果里，
+  // 若把「只存在于隐藏项」的相机 / 标签列成可选，用户选中后必然得到 0 条结果。
+  const filterOptions = useMemo(() => {
+    const candidates = photos.filter(p => !p.isHidden);
+    return { ...buildFilterOptions(candidates), tags: buildTagOptions(candidates) };
+  }, [photos]);
 
   // 传给 memo 组件（Toolbar / Sidebar）的回调必须保持引用稳定，
   // 否则每次 App 渲染都会生成新函数，React.memo 直接失效。
+  /**
+   * 点顶部日期胶囊 → 把筛选收敛到「这一天」。
+   * 走的是与筛选面板完全相同的 dateFrom / dateTo 条件（闭区间，本地日历日），
+   * 因此条件条上会出现可逐条清除的胶囊，不会变成一条看不见的暗规则。
+   */
+  const handleFilterByDate = useCallback((timestamp: number) => {
+    const d = new Date(timestamp);
+    if (Number.isNaN(d.getTime())) return;
+    updateFilters({
+      dateFrom: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime(),
+      dateTo: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime(),
+    });
+  }, [updateFilters]);
+
   const handleOpenSaveAlbum = useCallback(() => setIsSaveAlbumModalOpen(true), []);
   const handleSelectTimeline = useCallback(() => setMainView('timeline'), []);
   const handleOpenShortcuts = useCallback(() => setIsShortcutsOpen(true), []);
@@ -1820,21 +2052,33 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const handleArrowNavigation = useCallback((key: string) => {
     if (visiblePhotos.length === 0) return;
     const ids = visiblePhotos.map(p => p.id);
-    let currentIndex = selectionAnchorRef.current ? ids.indexOf(selectionAnchorRef.current) : -1;
-    if (currentIndex < 0) currentIndex = 0;
+    const currentIndex = selectionAnchorRef.current ? ids.indexOf(selectionAnchorRef.current) : -1;
+
+    // 还没有任何选中项时，任意方向键都先选中第一项并停住。
+    // 若照常叠加步长，会变成「按 → 从第 2 张开始、按 ↓ 跳掉一整行」，左右上下不对称。
+    if (currentIndex < 0) {
+      const firstId = ids[0];
+      setSelectedIds(new Set([firstId]));
+      selectionAnchorRef.current = firstId;
+      gridRef.current?.scrollToPhoto(firstId);
+      return;
+    }
+
+    // 上下键在网格里按「一行」跳步；列表视图没有列的概念，一次只移动一行
+    const verticalStep = viewMode === 'list' ? 1 : Math.max(1, gridColumns);
 
     let nextIndex = currentIndex;
     if (key === 'ArrowLeft') nextIndex = Math.max(0, currentIndex - 1);
     else if (key === 'ArrowRight') nextIndex = Math.min(ids.length - 1, currentIndex + 1);
-    else if (key === 'ArrowUp') nextIndex = Math.max(0, currentIndex - gridColumns);
-    else if (key === 'ArrowDown') nextIndex = Math.min(ids.length - 1, currentIndex + gridColumns);
+    else if (key === 'ArrowUp') nextIndex = Math.max(0, currentIndex - verticalStep);
+    else if (key === 'ArrowDown') nextIndex = Math.min(ids.length - 1, currentIndex + verticalStep);
 
     if (nextIndex === currentIndex && selectedIds.size === 1) return;
     const nextId = ids[nextIndex];
     setSelectedIds(new Set([nextId]));
     selectionAnchorRef.current = nextId;
     gridRef.current?.scrollToPhoto(nextId);
-  }, [visiblePhotos, gridColumns, selectedIds.size]);
+  }, [visiblePhotos, gridColumns, selectedIds.size, viewMode]);
 
   // 主视图键盘闭环：
   // 空格 / Enter → QuickLook；⌘A → 全选当前视图；⌘⇧F → 批量收藏；⌘F → 聚焦搜索；
@@ -1866,7 +2110,19 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         }
         return;
       }
-      if (quickLookPhoto || isRenameModalOpen || isDeleteModalOpen || isExportModalOpen || isAiSettingsOpen) return;
+      // 弹层打开时全局快捷键一律让行：尤其是 Delete / Backspace，
+      // 否则会在当前弹层之上再叠一个「移至回收站」确认框
+      if (
+        quickLookPhoto ||
+        isRenameModalOpen ||
+        isDeleteModalOpen ||
+        isExportModalOpen ||
+        isAiSettingsOpen ||
+        isAdjustDateModalOpen ||
+        isSaveAlbumModalOpen ||
+        isFilterPanelOpen ||
+        isClearListConfirmOpen
+      ) return;
 
       const target = e.target as HTMLElement | null;
       const isTextInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
@@ -1916,6 +2172,17 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         setQuickLookPhoto(targetPhoto);
         return;
       }
+      // Home / End：大库里逐行按方向键太慢，直接跳首尾
+      if (e.key === 'Home' || e.key === 'End') {
+        if (contextMenu) return;
+        if (visiblePhotos.length === 0) return;
+        e.preventDefault();
+        const target = e.key === 'Home' ? visiblePhotos[0] : visiblePhotos[visiblePhotos.length - 1];
+        setSelectedIds(new Set([target.id]));
+        selectionAnchorRef.current = target.id;
+        gridRef.current?.scrollToPhoto(target.id);
+        return;
+      }
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (contextMenu) return;
         e.preventDefault();
@@ -1934,7 +2201,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     quickLookPhoto, isRenameModalOpen, isDeleteModalOpen, isDuplicateDetectorOpen, isTimelineOpen, isExportModalOpen,
-    isShortcutsOpen, isAiSettingsOpen,
+    isShortcutsOpen, isAiSettingsOpen, isAdjustDateModalOpen, isSaveAlbumModalOpen, isFilterPanelOpen,
+    isClearListConfirmOpen,
     contextMenu, visiblePhotos, selectedIds,
     handleSelectAllVisible, handleFavoriteSelected, handleArrowNavigation, handleExitDuplicates,
   ]);
@@ -1976,6 +2244,10 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // 只有「从访达拖入文件」才亮起导入遮罩。
+    // 否则在网格里按住缩略图拖动（<img> 默认可拖）也会弹出一整屏「拖放图片或视频到此处」，
+    // 让人误以为误触了导入。
+    if (!e.dataTransfer.types.includes('Files')) return;
     setIsDraggingFile(true);
   }, []);
 
@@ -2038,6 +2310,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
     if (resolved.length > 0) {
       (async () => {
+        beginDropWork();
         try {
           // 拖放的 File 对象没有创建时间，补一次 stat 才能拿到 birthtime
           if (window.electronAPI) {
@@ -2051,12 +2324,25 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               item.created = info.created;
             });
           }
-          const added = await ingestFiles(resolved);
+          setLoadingTotal(resolved.length);
+          const added = await ingestFiles(resolved, (done, total) => {
+            if (total > 0) setLoadingProgress(Math.min(done, total));
+          });
           // 同一次拖放里混有不支持的文件时一并说明，避免「悄悄少了几个」
           const rejectNote = rejected.length > 0 ? `，已忽略 ${rejected.length} 个不支持的文件` : '';
-          showToast(`已添加 ${added} 个项目${rejectNote}`, rejected.length > 0 ? 'warning' : 'success');
+          if (added === 0) {
+            // 「已添加 0 个项目」会让人怀疑是导入失败，这里说清楚是重复
+            showToast(
+              `已选中的 ${resolved.length} 个项目已在列表中${rejectNote}`,
+              rejected.length > 0 ? 'warning' : 'info'
+            );
+          } else {
+            showToast(`已添加 ${added} 个项目${rejectNote}`, rejected.length > 0 ? 'warning' : 'success');
+          }
         } catch {
           showToast('处理拖拽文件失败', 'error');
+        } finally {
+          endDropWork();
         }
       })();
     }
@@ -2064,30 +2350,44 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     // 拖入的文件夹：解析真实路径后复用目录扫描管线（可取消）
     if (maybeDirs.length > 0 && window.electronAPI) {
       (async () => {
-        for (let i = 0; i < maybeDirs.length; i++) {
-          const dir = maybeDirs[i];
-          const dirPath = window.electronAPI.getFilePath(dir);
-          if (!dirPath) {
-            rejected.push(dir);
-            continue;
-          }
-          const scanId = `drop-${Date.now()}-${i}`;
-          activeScanIdRef.current = scanId;
-          try {
-            const infos = await window.electronAPI.scanDirectory(dirPath, scanId);
-            if (activeScanIdRef.current !== scanId) return; // 已被取消
-            if (infos.length === 0) {
-              showToast(`文件夹「${dir.name}」中没有可导入的图片或视频`, 'warning');
+        beginDropWork();
+        try {
+          for (let i = 0; i < maybeDirs.length; i++) {
+            const dir = maybeDirs[i];
+            const dirPath = window.electronAPI.getFilePath(dir);
+            if (!dirPath) {
+              rejected.push(dir);
               continue;
             }
-            const added = await ingestFiles(infos);
-            showToast(`已从文件夹「${dir.name}」加入 ${added} 个项目`, 'success');
-          } catch (error) {
-            logger.error('Error importing dropped folder:', error);
-            showToast(`导入文件夹「${dir.name}」失败`, 'error');
-          } finally {
-            if (activeScanIdRef.current === scanId) activeScanIdRef.current = null;
+            const scanId = `drop-${Date.now()}-${i}`;
+            activeScanIdRef.current = scanId;
+            try {
+              const infos = await window.electronAPI.scanDirectory(dirPath, scanId);
+              if (activeScanIdRef.current !== scanId) return; // 已被取消
+              if (infos.length === 0) {
+                showToast(`文件夹「${dir.name}」中没有可导入的图片或视频`, 'warning');
+                continue;
+              }
+              setLoadingTotal(infos.length);
+              setLoadingCurrentFile(`正在加入 ${infos.length} 个项目…`);
+              const added = await ingestFiles(infos, (done, total) => {
+                if (total > 0) setLoadingProgress(Math.min(done, total));
+              });
+              showToast(
+                added === 0
+                  ? `文件夹「${dir.name}」中的内容已在列表中`
+                  : `已从文件夹「${dir.name}」加入 ${added} 个项目`,
+                added === 0 ? 'info' : 'success'
+              );
+            } catch (error) {
+              logger.error('Error importing dropped folder:', error);
+              showToast(`导入文件夹「${dir.name}」失败`, 'error');
+            } finally {
+              if (activeScanIdRef.current === scanId) activeScanIdRef.current = null;
+            }
           }
+        } finally {
+          endDropWork();
         }
       })();
     }
@@ -2121,7 +2421,9 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               type: file.type || mediaMimeType(file.name),
               kind: mediaKindOf(file.name),
               lastModified: file.lastModified,
-              dateCreated: file.lastModified,
+              // 浏览器 File 只暴露 lastModified，没有创建时间。
+              // 这里刻意不拿 lastModified 冒充 dateCreated —— 否则详情面板里
+              // 「创建时间」和「修改时间」必然逐字相同，真值和兜底值无法区分
               isFavorite: false,
             });
           } catch (error) {
@@ -2176,7 +2478,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     >
       {/* Drag and Drop Overlay */}
       <DragOverlay mounted={isDragOverlayMounted} active={isDragOverlayActive} />
-      {/* 左栏只在图库视图出现：时光画廊 / 相似检测是自带导航的整页视图，
+      {/* 左栏只在图库视图出现：时光画廊 / 相似照片是自带导航的整页视图，
           它们的照片集合与图库不同一份，保留左栏会同时高亮两个条目并误导点击 */}
       {mainView === 'library' && (
         <Sidebar
@@ -2194,6 +2496,10 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onSelectRecentFolder={handleSelectRecentFolder}
           onSelectTimeline={handleSelectTimeline}
           isTimelineActive={isTimelineOpen}
+          onCheckDuplicates={handleCheckDuplicatesClick}
+          onRequestReset={handleRequestClearList}
+          hasPhotos={photos.length > 0}
+          onOpenShortcuts={handleOpenShortcuts}
           isOpen={isLeftPaneOpen}
           themeMode={theme}
           onThemeModeChange={setTheme}
@@ -2275,9 +2581,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onImport={handleImport}
           viewMode={viewMode}
           setViewMode={setViewMode}
-          onCheckDuplicates={handleCheckDuplicatesClick}
-          onResetList={handleResetList}
-          hasPhotos={photos.length > 0}
           isDetailsPaneOpen={isDetailsPaneOpen}
           setIsDetailsPaneOpen={setIsDetailsPaneOpen}
           isLeftPaneOpen={isLeftPaneOpen}
@@ -2289,16 +2592,18 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onFiltersChange={updateFilters}
           onResetFilters={resetFilters}
           filterOptions={filterOptions}
-          hasVideos={counts.videos > 0}
-          onOpenShortcuts={handleOpenShortcuts}
+          hasVideos={counts.videos > 0 || filters.durationFilter !== 'any'}
+          onFilterOpenChange={handleFilterOpenChange}
         />
+        {/* 「已隐藏」视图里分子是隐藏项数，分母必须也用隐藏总数，
+            否则会显示成「5 / 100 项」这种两个互斥集合相除的假比例 */}
         <ActiveFiltersBar
           filters={filters}
           onPatch={updateFilters}
           onReset={resetFilters}
           onSaveAsAlbum={() => setIsSaveAlbumModalOpen(true)}
           resultCount={visiblePhotos.length}
-          totalCount={counts.all}
+          totalCount={filters.hiddenOnly ? counts.hidden : counts.all}
         />
         <ErrorBoundary
           label="图库"
@@ -2306,12 +2611,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
             <div className="flex-1 flex items-center justify-center p-8 text-center">
               <div>
                 <p className="text-sm font-medium text-[var(--text-primary)] mb-1">图库渲染出错</p>
-                <p className="text-xs text-[var(--text-tertiary)] mb-4">工具栏与详情面板仍可使用，可尝试切换视图或重置列表。</p>
+                <p className="text-xs text-[var(--text-tertiary)] mb-4">工具栏与详情面板仍可使用，可尝试切换视图或清空照片列表。</p>
                 <button
-                  onClick={handleResetList}
+                  onClick={handleClearList}
                   className="px-4 py-2 text-sm font-medium rounded-xl text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-colors"
                 >
-                  重置列表
+                  清空照片列表
                 </button>
               </div>
             </div>
@@ -2348,6 +2653,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onMoveSelected={() => handleMoveSelected()}
           onExportSelected={handleExportSelected}
           onColumnsChange={setGridColumns}
+          onFilterByDate={handleFilterByDate}
           viewTitle={gridViewTitle}
           emptyTitle={
             isSearchEmpty ? '没有匹配的结果'
@@ -2454,6 +2760,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onConfirm={handleConfirmDelete}
         />
       )}
+      {/* 清空照片列表二次确认：侧栏底部入口与右键菜单都走这里 */}
+      <ClearListConfirmModal
+        isOpen={isClearListConfirmOpen}
+        count={photos.length}
+        onClose={() => setIsClearListConfirmOpen(false)}
+        onConfirm={handleConfirmClearList}
+      />
       {/* AI 分析设置：应用内配置 DeepSeek API Key / 接口地址 / 模型 */}
       <AiSettingsModal
         isOpen={isAiSettingsOpen}
@@ -2466,18 +2779,30 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           isOpen={isExportModalOpen}
           photos={exportTargets}
           onClose={() => { setIsExportModalOpen(false); setExportTargets([]); }}
-          onFinish={(succeeded, failed, cancelled) => {
+          onFinish={({ succeeded, failed, cancelled, firstError, targetDir }) => {
             setIsExportModalOpen(false);
+            // 重试必须带着目标重新打开弹层：只开弹层会得到一个空的「已选择 0 张照片」
+            const retryTargets = exportTargets;
             setExportTargets([]);
-            const retryExport = { label: '重新导出', onClick: () => setIsExportModalOpen(true) };
+            const retryExport = {
+              label: '重新导出',
+              onClick: () => {
+                setExportTargets(retryTargets);
+                setIsExportModalOpen(true);
+              },
+            };
+            // 失败原因不再一律归咎于重名：实际原因（解码失败 / 无权限 / 磁盘满）由弹层回传
+            const reason = firstError ? `：${firstError}` : '';
+            const dirName = targetDir.split(/[\\/]/).filter(Boolean).pop() ?? '';
+            const where = dirName ? `到「${dirName}」` : '';
             if (cancelled) {
-              showToast(`导出已取消：完成 ${succeeded} 张${failed > 0 ? `，失败 ${failed} 张` : ''}`, 'warning');
+              showToast(`导出已取消：完成 ${succeeded} 张${failed > 0 ? `，失败 ${failed} 张${reason}` : ''}`, 'warning');
             } else if (failed === 0) {
-              showToast(`已成功导出 ${succeeded} 张照片`, 'success');
+              showToast(`已导出 ${succeeded} 张${where}`, 'success');
             } else if (succeeded > 0) {
-              showToast(`已导出 ${succeeded} 张，${failed} 张失败（同名文件已自动加序号）`, 'warning', retryExport);
+              showToast(`已导出 ${succeeded} 张，${failed} 张失败${reason}`, 'warning', retryExport);
             } else {
-              showToast(`导出失败：${failed} 张照片均未成功`, 'error', retryExport);
+              showToast(`导出失败：${failed} 张照片均未成功${reason}`, 'error', retryExport);
             }
           }}
         />

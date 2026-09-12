@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { PhotoFilters, ViewMode } from '@/types';
 import { countAdvancedFilters } from '@/lib/filter/filters';
 import FilterPanel from '@/components/filter/FilterPanel';
@@ -9,10 +9,6 @@ interface ToolbarProps {
   onImport: () => void;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
-  onCheckDuplicates: () => void;
-  onResetList: () => void;
-  /** 库中是否已有内容：决定「检测重复 / 重置列表」是否可用 */
-  hasPhotos: boolean;
   isDetailsPaneOpen: boolean;
   setIsDetailsPaneOpen: (isOpen: boolean) => void;
   isLeftPaneOpen: boolean;
@@ -30,8 +26,12 @@ interface ToolbarProps {
   filterOptions: { cameras: string[]; formats: string[]; tags: string[] };
   /** 库中是否含视频：决定筛选面板是否展示时长条件 */
   hasVideos: boolean;
-  /** 打开快捷键总览层（? 唤出） */
-  onOpenShortcuts: () => void;
+  /**
+   * 筛选面板开合上报。
+   * App 的全局快捷键需要据此让行：面板里的胶囊是普通按钮，
+   * 不隔离的话按 Delete 会在面板之上再叠一个「移至回收站」确认框。
+   */
+  onFilterOpenChange?: (isOpen: boolean) => void;
 }
 
 const ImageIcon = () => (
@@ -39,21 +39,6 @@ const ImageIcon = () => (
     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
     <circle cx="8.5" cy="8.5" r="1.5"></circle>
     <polyline points="21 15 16 10 5 21"></polyline>
-  </svg>
-);
-
-const DuplicateIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="8" y="8" width="12" height="12" rx="2"></rect>
-    <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
-  </svg>
-);
-
-const RefreshIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23 4 23 10 17 10"></polyline>
-    <polyline points="1 20 1 14 7 14"></polyline>
-    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
   </svg>
 );
 
@@ -103,15 +88,6 @@ const SearchIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
 const FunnelIcon = () => (
   <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
     <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"></path>
-  </svg>
-);
-
-/** 问号帮助：唤起快捷键总览层 */
-const HelpIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"></circle>
-    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-    <line x1="12" y1="17" x2="12.01" y2="17"></line>
   </svg>
 );
 
@@ -216,16 +192,16 @@ const ActionButton: React.FC<{
 
 /**
  * 顶栏：三段式布局。
- * 左「主要导航」→ 中「搜索」→ 右「视图与辅助控制」，把常用操作压在左侧拇指/视线起点，
- * 右侧只留视图类开关；批量重命名 / 删除等条目级操作交给内容区的情境条与右键菜单。
+ * 左「侧栏开关 + 导入」→ 中「搜索 + 筛选」→ 右「视图控制」。
+ *
+ * 顶栏只放「作用于当前视图」的东西：左区一处主操作（导入），右区两处视图开关
+ * （网格 / 列表、详情面板）。凡是不作用于当前视图的——相似照片、清空照片列表、
+ * 快捷键帮助——一律归侧栏，那才是「除了整理照片之外的事」的归属。
  */
 const Toolbar: React.FC<ToolbarProps> = ({
   onImport,
   viewMode,
   setViewMode,
-  onCheckDuplicates,
-  onResetList,
-  hasPhotos,
   isDetailsPaneOpen,
   setIsDetailsPaneOpen,
   isLeftPaneOpen,
@@ -238,9 +214,13 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onResetFilters,
   filterOptions,
   hasVideos,
-  onOpenShortcuts,
+  onFilterOpenChange,
 }) => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const setFilterOpen = useCallback((open: boolean) => {
+    setIsFilterOpen(open);
+    onFilterOpenChange?.(open);
+  }, [onFilterOpenChange]);
   const advancedFilterCount = countAdvancedFilters(filters);
 
   return (
@@ -268,24 +248,6 @@ const Toolbar: React.FC<ToolbarProps> = ({
             label="导入图片 / 文件夹"
             compactLabel="导入"
             variant="solid"
-          />
-
-          <div className="w-px h-5 bg-[var(--border-default)] mx-1.5"></div>
-
-          <ToolButton
-            onClick={onCheckDuplicates}
-            icon={<DuplicateIcon />}
-            title="检测相似照片"
-            disabled={!hasPhotos}
-            hoverColor="var(--accent-purple)"
-          />
-
-          <ToolButton
-            onClick={onResetList}
-            icon={<RefreshIcon />}
-            title="重置列表"
-            disabled={!hasPhotos}
-            hoverColor="var(--accent-yellow)"
           />
         </div>
 
@@ -341,7 +303,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
           <div className="relative shrink-0">
             <button
               type="button"
-              onClick={() => setIsFilterOpen(open => !open)}
+              onClick={() => setFilterOpen(!isFilterOpen)}
               title="筛选条件"
               aria-label="筛选条件"
               aria-expanded={isFilterOpen}
@@ -361,14 +323,14 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
             {isFilterOpen && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsFilterOpen(false)} />
+                <div className="fixed inset-0 z-40" onClick={() => setFilterOpen(false)} />
                 <FilterPanel
                   filters={filters}
                   onChange={onFiltersChange}
                   onReset={onResetFilters}
                   options={filterOptions}
                   hasVideos={hasVideos}
-                  onClose={() => setIsFilterOpen(false)}
+                  onClose={() => setFilterOpen(false)}
                 />
               </>
             )}
@@ -399,15 +361,6 @@ const Toolbar: React.FC<ToolbarProps> = ({
             icon={<PanelIcon />}
             title={isDetailsPaneOpen ? '收起详情面板' : '展开详情面板'}
             active={isDetailsPaneOpen}
-          />
-
-          <div className="w-px h-5 bg-[var(--border-default)] mx-1"></div>
-
-          <ToolButton
-            onClick={onOpenShortcuts}
-            icon={<HelpIcon />}
-            title="快捷键（?）"
-            hoverColor="var(--accent-cyan)"
           />
         </div>
       </div>

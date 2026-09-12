@@ -61,6 +61,15 @@ export const rekeyVideoMeta = (oldKey: string, newKey: string): boolean => {
   return true;
 };
 
+/**
+ * 丢弃某条缓存：文件被删除后调用，避免旧路径的时长 / 分辨率长期滞留在
+ * config.json 里（同名文件再次入库时会直接套用上一条的时长）。
+ */
+export const forgetVideoMeta = (key: string): boolean => {
+  if (!key) return false;
+  return cache.delete(key);
+};
+
 /** 导出当前缓存快照，供持久化使用 */
 export const snapshotVideoMeta = (): Record<string, VideoMetaRecord> => {
   const result: Record<string, VideoMetaRecord> = {};

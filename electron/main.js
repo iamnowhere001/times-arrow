@@ -923,7 +923,12 @@ function createMenu() {
           accelerator: 'CmdOrCtrl+O',
           click: async () => {
             const picked = await openImportDialog();
-            if (picked) mainWindow.webContents.send('import-paths', picked);
+            // macOS 上关掉最后一个窗口后进程仍在运行（window-all-closed 不退出），
+            // 此时从菜单导入会拿到 null 窗口；先重建窗口再投递结果
+            if (picked) {
+              if (!mainWindow) createWindow();
+              mainWindow?.webContents?.send('import-paths', picked);
+            }
           },
         },
         {
@@ -1634,25 +1639,60 @@ async function readStore(fileName) {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') data = parsed;
   } catch {
-    // 首次运行或文件损坏：从空存储开始，不阻塞启动
+    // 首次运行或文件损坏：从空存储开始，不阻塞启动。
+    // 但损坏文件要先挪开留证 —— 否则紧接着的任意一次写入就会把它整体覆盖，
+    // 原本还有救的收藏 / 相簿 / 标签就真的没了。
+    try {
+      await rename(storePath(fileName), `${storePath(fileName)}.corrupt-${Date.now()}`);
+    } catch {
+      // 文件本来就不存在（首次运行），无需处理
+    }
   }
   storeCache.set(fileName, data);
   return data;
 }
 
+/**
+ * 同名文件的写队列：把「读-改-写」串行化。
+ *
+ * 渲染进程有多处并发落盘（视频元数据 1.5s 防抖、偏好 600ms 防抖、收藏 / 标签 / 相簿即时写），
+ * 不排队的话两次写入会共用同一个内存快照，后一次直接覆盖前一次的结果。
+ */
+const storeWriteChains = new Map();
+let storeTmpSeq = 0;
+
+function withStoreLock(fileName, task) {
+  const prev = storeWriteChains.get(fileName) ?? Promise.resolve();
+  const next = prev.then(task);
+  // 队列本身不能被上一次失败卡死：失败只影响调用方拿到的返回值
+  storeWriteChains.set(fileName, next.catch(() => {}));
+  return next;
+}
+
 async function writeStore(fileName) {
   const target = storePath(fileName);
-  const tmp = `${target}.tmp`;
-  await writeFile(tmp, JSON.stringify(storeCache.get(fileName) ?? {}, null, 2), 'utf8');
-  await rename(tmp, target);
+  // 临时文件名必须唯一：固定 .tmp 会让两次并发写入互相截断
+  //（后一次以 w 模式打开即清空前一次尚未落盘的内容）
+  const tmp = `${target}.${process.pid}.${(storeTmpSeq += 1)}.tmp`;
+  const payload = JSON.stringify(storeCache.get(fileName) ?? {}, null, 2);
+  try {
+    await writeFile(tmp, payload, 'utf8');
+    await rename(tmp, target);
+  } catch (error) {
+    // 留下半截临时文件会持续占用磁盘，且下次启动不会被清理
+    try { await unlink(tmp); } catch { /* 已被 rename 走，忽略 */ }
+    throw error;
+  }
 }
 
 async function mergeStore(fileName, patch) {
   if (!patch || typeof patch !== 'object') return false;
-  const store = await readStore(fileName);
-  Object.assign(store, patch);
-  await writeStore(fileName);
-  return true;
+  return withStoreLock(fileName, async () => {
+    const store = await readStore(fileName);
+    Object.assign(store, patch);
+    await writeStore(fileName);
+    return true;
+  });
 }
 
 /** 同步读取已加载的配置（窗口尺寸等主进程内部数据用） */
@@ -1989,7 +2029,9 @@ function persistWindowBounds() {
     config.windowMaximized = false;
   }
 
-  void writeStore(STORE_CONFIG).catch((error) => {
+  // 走同一把写锁：直接 writeStore 会与 mergeStore 的「读-改-写」交错，
+  // 虽然唯一 tmp 名已保证文件不会写坏，但可能把同时落盘的收藏 / 标签覆盖掉
+  void withStoreLock(STORE_CONFIG, () => writeStore(STORE_CONFIG)).catch((error) => {
     logger.warn('Failed to persist window bounds:', error.message);
   });
 }

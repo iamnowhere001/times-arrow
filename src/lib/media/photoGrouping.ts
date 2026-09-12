@@ -64,7 +64,13 @@ export interface PhotoGroup {
  */
 export function sortPhotos(photos: Photo[], sortConfig: SortConfig): Photo[] {
   return [...photos].sort((a, b) => {
-    if (sortConfig.key === 'dateModified' || sortConfig.key === 'dateTaken') {
+    if (sortConfig.key === 'dateModified') {
+      // 「修改时间」必须只看 lastModified：与 dateTaken 共用取值会让两列排出来完全一样
+      const dateA = a.lastModified || 0;
+      const dateB = b.lastModified || 0;
+      return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
+    }
+    if (sortConfig.key === 'dateTaken') {
       const dateA = a.dateTaken || a.lastModified || 0;
       const dateB = b.dateTaken || b.lastModified || 0;
       return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
@@ -105,8 +111,13 @@ export function groupPhotos(photos: Photo[], sortConfig: SortConfig): PhotoGroup
   const todayKey = today.toDateString();
   const yesterdayKey = yesterday.toDateString();
 
+  // 分组键与排序键保持一致：按修改时间排序时，日期分组也要按修改时间切，
+  // 否则会出现「组头写今天、里面却是一周前拍的照片」这类错位
+  const groupTimeOf = (photo: Photo): number =>
+    sortConfig.key === 'dateModified' ? photo.lastModified : photo.dateTaken || photo.lastModified;
+
   sorted.forEach(photo => {
-    const key = getDateGroupKey(photo.dateTaken || photo.lastModified, todayKey, yesterdayKey);
+    const key = getDateGroupKey(groupTimeOf(photo), todayKey, yesterdayKey);
 
     if (!groups[key]) {
       groups[key] = [];

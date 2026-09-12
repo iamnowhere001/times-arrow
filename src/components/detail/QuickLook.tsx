@@ -169,6 +169,10 @@ const QuickLook: React.FC<QuickLookProps> = ({
   }, [isSlideshow]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // 带修饰键的组合留给系统 / 应用级快捷键：否则 ⌘F 会被当成「收藏」、
+    // ⌘R 旋转图片、⌘0 重置缩放，与系统习惯直接冲突
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault();
     }

@@ -39,6 +39,14 @@ interface SidebarProps {
   onSelectTimeline: () => void;
   /** 当前是否处于时光画廊视图 */
   isTimelineActive: boolean;
+  /** 打开相似照片（整页视图）：与筛选无关，属「视图」而非分类 */
+  onCheckDuplicates: () => void;
+  /** 请求清空照片列表：破坏性操作，由 App 统一弹二次确认 */
+  onRequestReset: () => void;
+  /** 库中是否有内容：决定「相似照片 / 清空照片列表」是否可用 */
+  hasPhotos: boolean;
+  /** 打开快捷键总览层：与外观同属底部全局区，不作用于当前视图 */
+  onOpenShortcuts: () => void;
   isOpen: boolean;
   /** 当前外观模式 */
   themeMode: Theme;
@@ -119,6 +127,21 @@ const TimelineIcon = () => (
   </svg>
 );
 
+/** 相似照片检测：叠放的两张照片 */
+const DuplicateIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="8" y="8" width="12" height="12" rx="2"></rect>
+    <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+  </svg>
+);
+
+/** 整页视图入口的右侧标记：不是计数，而是「会离开当前列表」 */
+const ChevronRightIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="9 5 16 12 9 19"></polyline>
+  </svg>
+);
+
 const PlusIcon = () => (
   <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.2" strokeLinecap="round">
     <path d="M12 5v14M5 12h14"></path>
@@ -138,9 +161,8 @@ const ApertureIcon = () => (
   </svg>
 );
 
-/** 最近打开：带指针的时钟 */
 const HistoryIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
     <path d="M3 3v5h5"></path>
     <path d="M12 7.5V12l3 2"></path>
@@ -151,6 +173,26 @@ const TrashIcon = () => (
   <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="3 6 5 6 21 6"></polyline>
     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+  </svg>
+);
+
+/** 清空照片列表：刷新箭头，表达「回到空库重新开始」 */
+const ResetIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="23 4 23 10 17 10"></polyline>
+    <polyline points="1 20 1 14 7 14"></polyline>
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+  </svg>
+);
+
+/**
+ * 快捷键：键盘轮廓。比一个「?」更直说它打开的是什么 ——
+ * 「?」是「我不懂」的求助语义，而这里给的是操作说明。
+ */
+const KeyboardIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="5" width="20" height="14" rx="2.5"></rect>
+    <path d="M6 9.5h.01M10 9.5h.01M14 9.5h.01M18 9.5h.01M6 13h.01M18 13h.01M9 16.5h6"></path>
   </svg>
 );
 
@@ -183,10 +225,93 @@ const MonitorIcon = () => (
 );
 
 /**
- * 左栏：图库导航 + 媒体类型 + 最近打开 + 底部规模与外观设置。
- * 「图库」承载分类入口，「媒体类型」承载仿 macOS 照片的智能分类
- * （视频 / 自拍 / 实况照片 / 截屏），两组共用同一套选中语义与筛选状态。
- * 底部只承载「全局信息」（库规模、外观），选中态归顶部情境条，避免同一信息说两遍。
+ * 一行只有一套走法。全栏共用这三个片段拼行，
+ * 保证「导航行 / 相簿行 / 最近打开行」只是同一件事的不同密度，而不是三种控件。
+ */
+const ROW_BASE = 'group w-full flex items-center rounded-[10px] font-medium transition-colors duration-150';
+const ROW_STATE = (active: boolean, disabled?: boolean) =>
+  active
+    ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-md shadow-[rgba(var(--accent-blue-rgb),0.25)]'
+    : disabled
+      ? 'text-[var(--text-quaternary)] cursor-not-allowed'
+      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:bg-[var(--bg-glass-active)]';
+/** 图标静止时只作「行首标尺」存在，不参与彩色叙事；悬停才给一点琥珀 */
+const ROW_ICON = (active: boolean, dim?: boolean) =>
+  `shrink-0 transition-colors duration-150 ${
+    active
+      ? 'text-[var(--accent-contrast)]'
+      : dim
+        ? 'text-[var(--text-quaternary)]'
+        : 'text-[var(--text-tertiary)] group-hover:text-[var(--accent-cyan)]'
+  }`;
+
+interface NavRowProps {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  /** 计数列：整栏右对齐成一竖排，用等宽数字对齐（见 styles.css 的 --font-numeric） */
+  count?: number;
+  /** 整页视图入口：右端显示箭头，代替计数 */
+  chevron?: boolean;
+  active?: boolean;
+  disabled?: boolean;
+  title?: string;
+}
+
+const NavRow: React.FC<NavRowProps> = ({ icon, label, onClick, count, chevron, active, disabled, title }) => {
+  const isZero = count === 0;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-current={active ? 'page' : undefined}
+      title={title}
+      className={`${ROW_BASE} h-9 gap-2.5 px-2.5 text-[13px] ${ROW_STATE(!!active, disabled)}`}
+    >
+      <span className={ROW_ICON(!!active, isZero && !active)}>{icon}</span>
+      <span className={`truncate ${isZero && !active ? 'text-[var(--text-tertiary)]' : ''}`}>{label}</span>
+      {chevron ? (
+        <span className={`ml-auto shrink-0 transition-colors duration-150 ${
+          active ? 'text-[var(--accent-contrast)] opacity-70' : 'text-[var(--text-quaternary)] group-hover:text-[var(--text-tertiary)]'
+        }`}>
+          <ChevronRightIcon />
+        </span>
+      ) : (
+        <span className={`ml-auto shrink-0 font-numeric text-[11.5px] tabular-nums transition-colors duration-150 ${
+          active
+            ? 'text-[var(--accent-contrast)] opacity-75'
+            : isZero
+              ? 'text-[var(--text-quaternary)]'
+              : 'text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)]'
+        }`}>
+          {count}
+        </span>
+      )}
+    </button>
+  );
+};
+
+/** 分段标题：只做「这一段是什么」，不加总量（分类之间有重叠，加总会说谎） */
+const SectionLabel: React.FC<{ children: React.ReactNode; action?: React.ReactNode }> = ({ children, action }) => (
+  <div className="flex items-center justify-between h-6 px-2.5 mb-0.5">
+    <h2 className="text-[10.5px] font-semibold tracking-[0.09em] text-[var(--text-quaternary)] transition-colors">{children}</h2>
+    {action}
+  </div>
+);
+
+/**
+ * 左栏：视图入口 + 图库分类 + 媒体类型 + 智能相簿 + 最近打开，底部为全局设置。
+ *
+ * 组织原则：
+ * 1. 全栏只有「视图行」（去往整页视图，右端是箭头）与「筛选行」（留下并改变列表，
+ *    右端是计数）两类行；相簿与最近打开沿用同一套行走法，只调密度不做新控件。
+ * 2. 计数右对齐成等宽数字列，代替此前每行一颗的胶囊——胶囊是容器，数字才是信息。
+ * 3. 分隔线只出现在「内容类型改变」处（视图→分类→媒体类型→我的内容），
+ *    不再每段一条，避免把导航读成一串互不相干的清单。
+ * 4. 彩色与体量只留给当前选中行，其余一律退到文字层级里。
+ * 5. 底部是「除了整理照片之外的事」：外观、快捷键参考、清空列表，
+ *    以及全局偏好，都不作用于当前视图。
  */
 const Sidebar: React.FC<SidebarProps> = ({
   counts,
@@ -203,12 +328,17 @@ const Sidebar: React.FC<SidebarProps> = ({
   onSelectRecentFolder,
   onSelectTimeline,
   isTimelineActive,
+  onCheckDuplicates,
+  onRequestReset,
+  hasPhotos,
+  onOpenShortcuts,
   isOpen,
   themeMode,
   onThemeModeChange,
 }) => {
-  /** 最近打开：最多展示 5 条 */
-  const recentList = recentDirectories.slice(0, 5);
+  /** 最近打开：最多 3 条。它只是回访入口，再多就把分类挤出首屏 */
+  const recentList = recentDirectories.slice(0, 3);
+
   type NavItem = {
     id: string;
     label: string;
@@ -234,53 +364,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'screenshots', label: '截屏', category: 'all', filter: 'screenshot', count: counts.screenshots, icon: <ScreenshotIcon /> },
   ];
 
-  /** 一组导航项：选中态由「分类 + 媒体类型」共同决定 */
-  const renderNav = (items: NavItem[]) => (
-    <ul className="space-y-1">
-      {items.map(item => {
-        const active = activeCategory === item.category && mediaFilter === item.filter;
-        // 空分类降一级，别和真有内容的分类抢注意力
-        const isZero = item.count === 0;
-        return (
-          <li key={item.id}>
-            <button
-              type="button"
-              onClick={() => onSelectNav(item.category, item.filter)}
-              aria-current={active ? 'page' : undefined}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 ${
-                active
-                  ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)]'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
-              }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <span className={`shrink-0 ${
-                  active
-                    ? 'text-[var(--accent-contrast)]'
-                    : isZero
-                      ? 'text-[var(--text-quaternary)]'
-                      : 'text-[var(--accent-cyan)]'
-                }`}>
-                  {item.icon}
-                </span>
-                <span className={`truncate ${isZero && !active ? 'text-[var(--text-tertiary)]' : ''}`}>{item.label}</span>
-              </div>
-              <span className={`shrink-0 text-[11px] font-medium rounded-full px-2 py-0.5 ${
-                active
-                  ? 'text-[var(--accent-contrast)] bg-[var(--accent-contrast-soft)]'
-                  : isZero
-                    ? 'text-[var(--text-quaternary)] bg-transparent'
-                    : 'text-[var(--text-tertiary)] bg-[var(--bg-glass)]'
-              }`}>
-                {item.count}
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-
   return (
     <aside className={`${isOpen ? 'w-[220px]' : 'w-0 border-0'} bg-[var(--bg-secondary)] backdrop-blur-xl border-r border-[var(--border-subtle)] h-full select-none transition-[width] duration-300 ease-entrance overflow-hidden`}>
       {/* 抽屉式收展：外层只动宽度，内容整体滑出，避免被挤扁 */}
@@ -296,69 +379,92 @@ const Sidebar: React.FC<SidebarProps> = ({
           <span className="text-[10px] text-[var(--text-quaternary)] truncate">按时间线自动归档</span>
         </span>
       </div>
-      <nav className="flex-1 overflow-y-auto px-3 space-y-5 custom-scrollbar">
 
-        {/* 时光画廊：独立整页视图，按时间线沉浸式回顾全部记忆。
-            放在图库分类之前，用专属渐变底与时钟图标突出「换一种方式看照片」。 */}
+      <nav className="flex-1 overflow-y-auto px-3 py-3 custom-scrollbar">
+
+        {/* 视图：两个「换一种方式看照片」的整页入口。它们不筛选当前列表，
+            因此右端是箭头而不是计数——一眼就能和下面的分类区分开 */}
         <div>
-          <button
-            type="button"
-            onClick={onSelectTimeline}
-            aria-current={isTimelineActive ? 'page' : undefined}
-            className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-[13px] font-semibold transition-all duration-200 ${
-              isTimelineActive
-                ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-purple))] text-[var(--accent-contrast)] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.32)]'
-                : 'bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            <span className={`shrink-0 flex items-center justify-center w-8 h-8 rounded-xl transition-all duration-200 ${
-              isTimelineActive
-                ? 'bg-[rgba(var(--accent-contrast),0.18)] text-[var(--accent-contrast)]'
-                : 'bg-[rgba(var(--accent-blue-rgb),0.12)] text-[var(--accent-blue)]'
-            }`}>
-              <TimelineIcon />
-            </span>
-            <span className="flex flex-col items-start leading-tight min-w-0">
-              <span className="truncate">时光画廊</span>
-              <span className={`text-[10.5px] font-normal mt-0.5 truncate ${
-                isTimelineActive ? 'text-[rgba(var(--accent-contrast),0.72)]' : 'text-[var(--text-quaternary)]'
-              }`}>沿时间线回顾全部记忆</span>
-            </span>
-          </button>
-        </div>
-
-        <div>
-          <h2 className="px-2.5 text-[11px] font-semibold text-[var(--text-quaternary)] tracking-wider mb-2.5 transition-colors">图库</h2>
-          {renderNav(libraryItems)}
-        </div>
-
-        <div className="pt-4 border-t border-[var(--border-subtle)]">
-          <h2 className="px-2.5 text-[11px] font-semibold text-[var(--text-quaternary)] tracking-wider mb-2.5 transition-colors">媒体类型</h2>
-          {renderNav(mediaTypeItems)}
-        </div>
-
-        <div className="pt-4 border-t border-[var(--border-subtle)]">
-          <div className="flex items-center justify-between px-2.5 mb-2.5">
-            <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] tracking-wider transition-colors">
-              智能相簿
-            </h2>
-            <button
-              type="button"
-              onClick={onRequestSaveAlbum}
-              title="把当前筛选条件存为相簿"
-              aria-label="新建智能相簿"
-              className="flex items-center justify-center w-5 h-5 rounded-md text-[var(--text-quaternary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200"
-            >
-              <PlusIcon />
-            </button>
+          <SectionLabel>视图</SectionLabel>
+          <div className="space-y-[3px]">
+            <NavRow
+              icon={<TimelineIcon />}
+              label="时光画廊"
+              onClick={onSelectTimeline}
+              active={isTimelineActive}
+              chevron
+              title="按时间线沉浸式回顾全部记忆"
+            />
+            <NavRow
+              icon={<DuplicateIcon />}
+              label="相似照片"
+              onClick={onCheckDuplicates}
+              disabled={!hasPhotos}
+              chevron
+              title={hasPhotos ? '找出相似照片，逐组比对后清理' : '导入照片后可用'}
+            />
           </div>
+        </div>
+
+        <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
+          <SectionLabel>图库</SectionLabel>
+          <ul className="space-y-[3px]">
+            {libraryItems.map(item => (
+              <li key={item.id}>
+                <NavRow
+                  icon={item.icon}
+                  label={item.label}
+                  count={item.count}
+                  active={activeCategory === item.category && mediaFilter === item.filter}
+                  onClick={() => onSelectNav(item.category, item.filter)}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
+          <SectionLabel>媒体类型</SectionLabel>
+          <ul className="space-y-[3px]">
+            {mediaTypeItems.map(item => (
+              <li key={item.id}>
+                <NavRow
+                  icon={item.icon}
+                  label={item.label}
+                  count={item.count}
+                  active={activeCategory === item.category && mediaFilter === item.filter}
+                  onClick={() => onSelectNav(item.category, item.filter)}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* 智能相簿：从这里开始是「你的内容」，不再是系统分类，
+            所以分隔线继续保留，但内部不再切段 */}
+        <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
+          <SectionLabel
+            action={
+              <button
+                type="button"
+                onClick={onRequestSaveAlbum}
+                title="把当前筛选条件存为相簿"
+                aria-label="新建智能相簿"
+                className="flex items-center justify-center w-6 h-6 -mr-1 rounded-md text-[var(--text-quaternary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-colors duration-150"
+              >
+                <PlusIcon />
+              </button>
+            }
+          >
+            智能相簿
+          </SectionLabel>
 
           {albums.length === 0 ? (
             <p className="px-2.5 text-[11px] leading-relaxed text-[var(--text-quaternary)]">
-              设置筛选条件后，点右上角「+」即可存成相簿，内容会随图库自动更新。
+              设好筛选条件后按「+」存为相簿
             </p>
           ) : (
-            <ul className="space-y-1">
+            <ul className="space-y-[2px]">
               {albums.map(album => {
                 const active = activeAlbumId === album.id;
                 const count = albumCounts[album.id] ?? 0;
@@ -369,23 +475,15 @@ const Sidebar: React.FC<SidebarProps> = ({
                       onClick={() => onSelectAlbum(album)}
                       aria-current={active ? 'page' : undefined}
                       title={album.name}
-                      className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-200 ${
-                        active
-                          ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)]'
-                          : 'text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
-                      }`}
+                      className={`${ROW_BASE} h-8 gap-2.5 px-2.5 pr-8 text-[12.5px] ${ROW_STATE(active)}`}
                     >
-                      <span className="flex items-center gap-3 min-w-0">
-                        <span className={`shrink-0 ${active ? 'text-[var(--accent-contrast)]' : 'text-[var(--accent-cyan)]'}`}>
-                          <AlbumIcon />
-                        </span>
-                        <span className="truncate">{album.name}</span>
+                      <span className={ROW_ICON(active)}>
+                        <AlbumIcon />
                       </span>
+                      <span className="truncate">{album.name}</span>
                       <span
-                        className={`shrink-0 text-[11px] font-medium rounded-full px-2 py-0.5 transition-opacity group-hover/album:opacity-0 ${
-                          active
-                            ? 'text-[var(--accent-contrast)] bg-[var(--accent-contrast-soft)]'
-                            : 'text-[var(--text-tertiary)] bg-[var(--bg-glass)]'
+                        className={`ml-auto shrink-0 font-numeric text-[11px] tabular-nums transition-opacity duration-150 group-hover/album:opacity-0 ${
+                          active ? 'text-[var(--accent-contrast)] opacity-75' : 'text-[var(--text-tertiary)]'
                         }`}
                       >
                         {count}
@@ -396,7 +494,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       onClick={() => onDeleteAlbum(album.id)}
                       title={`删除相簿「${album.name}」`}
                       aria-label={`删除相簿 ${album.name}`}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-lg opacity-0 group-hover/album:opacity-100 text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.14)] transition-all duration-200"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md opacity-0 group-hover/album:opacity-100 focus-visible:opacity-100 text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.14)] transition-opacity duration-150"
                     >
                       <TrashIcon />
                     </button>
@@ -407,72 +505,103 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        <div className="pt-4 border-t border-[var(--border-subtle)]">
-          {recentList.length > 0 && (
-            <>
-              <h2 className="px-2.5 mb-1.5 text-[11px] font-semibold text-[var(--text-quaternary)] tracking-wider transition-colors">
-                最近打开
-              </h2>
-              <ul className="space-y-0.5">
-                {recentList.map(dir => (
-                  <li key={dir}>
-                    <button
-                      type="button"
-                      onClick={() => onSelectRecentFolder(dir)}
-                      title={dir}
-                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[12px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)] transition-all duration-200"
-                    >
-                      <span className="shrink-0 text-[var(--text-quaternary)]">
-                        <HistoryIcon />
-                      </span>
-                      <span className="truncate">{dir.split(/[\\/]/).filter(Boolean).pop() ?? dir}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
+        {/* 最近打开：与「智能相簿」同属「你的内容」，只靠间距分层，不再补一条分隔线 */}
+        {recentList.length > 0 && (
+          <div className="mt-4">
+            <SectionLabel>最近打开</SectionLabel>
+            <ul className="space-y-[2px]">
+              {recentList.map(dir => (
+                <li key={dir}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectRecentFolder(dir)}
+                    title={dir}
+                    className={`${ROW_BASE} h-7 gap-2 px-2.5 text-left text-[12px] text-[var(--text-tertiary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:bg-[var(--bg-glass-active)]`}
+                  >
+                    <span className="shrink-0 text-[var(--text-quaternary)]">
+                      <HistoryIcon />
+                    </span>
+                    <span className="truncate">{dir.split(/[\\/]/).filter(Boolean).pop() ?? dir}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </nav>
 
-      <div className="px-3 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-glass)] backdrop-blur-xs space-y-2.5">
-        {/* 外观：全局偏好，跟随左栏收展，不占用顶栏的视图控制位。
-            三态分段：「跟随系统」实时响应 OS 深浅色，明亮 / 暗黑为显式覆盖。 */}
-        <div className="flex items-center gap-1 p-0.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
-          {([
-            // 220px 的侧栏减去内边距后每段只有 ~61px，「跟随系统」四字加图标会溢出成省略号，
-            // 因此段内用两字短标签，完整语义交给 title / aria-label
-            { id: 'system', label: '系统', fullLabel: '跟随系统', icon: <MonitorIcon /> },
-            { id: 'light', label: '明亮', fullLabel: '明亮', icon: <SunIcon /> },
-            { id: 'dark', label: '暗黑', fullLabel: '暗黑', icon: <MoonIcon /> },
-          ] as const).map((option) => {
-            const active = themeMode === option.id;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => { if (!active) onThemeModeChange(option.id); }}
-                aria-pressed={active}
-                aria-label={`外观：${option.fullLabel}`}
-                title={
-                  active
-                    ? `当前为${option.fullLabel}模式`
-                    : option.id === 'system'
-                      ? '跟随系统深色 / 浅色偏好'
-                      : `切换到${option.fullLabel}模式`
-                }
-                className={`flex-1 flex items-center justify-center gap-1 h-7 rounded-[10px] text-[12px] font-medium transition-all duration-200 min-w-0 ${
-                  active
-                    ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-md shadow-[rgba(var(--accent-blue-rgb),0.3)]'
-                    : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
-                }`}
-              >
-                <span className="shrink-0">{option.icon}</span>
-                <span className="truncate">{option.label}</span>
-              </button>
-            );
-          })}
+      <div className="px-3 py-2.5 border-t border-[var(--border-subtle)] bg-[var(--bg-glass)] backdrop-blur-xs space-y-2">
+        {/* 底部第一行：全局偏好的两项 —— 外观与快捷键参考。
+            快捷键不再是顶栏的独立图标：它不作用于当前视图，与外观同属
+            「除了整理照片之外的事」。并进同一行，因此不额外增加底栏高度；
+            右侧留一个与分段控件等高的方钮，替代顶栏里那个孤立的「?」 */}
+        <div className="flex items-center gap-1">
+          {/* 外观：三态分段。「跟随系统」实时响应 OS 深浅色，明亮 / 暗黑为显式覆盖 */}
+          <div className="flex-1 min-w-0 flex items-center gap-1 p-0.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+            {([
+              // 分段被右侧快捷键钮挤窄后每段只有 ~52px，「跟随系统」四字加图标会溢出成省略号，
+              // 因此段内用两字短标签，完整语义交给 title / aria-label
+              { id: 'system', label: '系统', fullLabel: '跟随系统', icon: <MonitorIcon /> },
+              { id: 'light', label: '明亮', fullLabel: '明亮', icon: <SunIcon /> },
+              { id: 'dark', label: '暗黑', fullLabel: '暗黑', icon: <MoonIcon /> },
+            ] as const).map((option) => {
+              const active = themeMode === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => { if (!active) onThemeModeChange(option.id); }}
+                  aria-pressed={active}
+                  aria-label={`外观：${option.fullLabel}`}
+                  title={
+                    active
+                      ? `当前为${option.fullLabel}模式`
+                      : option.id === 'system'
+                        ? '跟随系统深色 / 浅色偏好'
+                        : `切换到${option.fullLabel}模式`
+                  }
+                  className={`flex-1 flex items-center justify-center gap-1 h-7 rounded-[10px] text-[12px] font-medium transition-colors duration-150 min-w-0 ${
+                    active
+                      ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-md shadow-[rgba(var(--accent-blue-rgb),0.3)]'
+                      : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
+                  }`}
+                >
+                  <span className="shrink-0">{option.icon}</span>
+                  <span className="truncate">{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenShortcuts}
+            title="键盘快捷键（? 也可唤出）"
+            aria-label="键盘快捷键"
+            className="shrink-0 flex items-center justify-center w-8 h-8 rounded-xl text-[var(--text-quaternary)] hover:text-[var(--accent-cyan)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)] transition-colors duration-150"
+          >
+            <KeyboardIcon />
+          </button>
         </div>
+
+        {/* 清空照片列表：低频破坏性操作，退到最次要的一层——静止时几乎看不见，
+            只有悬停才亮出危险色，靠位置而非按钮样式存在。
+            名字直说它做什么：清空的是列表，磁盘文件不动，所以不叫「重置」 */}
+        <button
+          type="button"
+          onClick={onRequestReset}
+          disabled={!hasPhotos}
+          title={hasPhotos ? '清空列表中的全部照片并重置筛选与缓存；磁盘上的原文件不会被删除' : '列表为空'}
+          aria-label="清空照片列表"
+          className={`w-full flex items-center justify-center gap-1.5 h-7 rounded-[10px] text-[12px] font-medium transition-colors duration-150 ${
+            hasPhotos
+              ? 'text-[var(--text-quaternary)] hover:text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.1)]'
+              : 'text-[var(--text-quaternary)] opacity-40 cursor-not-allowed'
+          }`}
+        >
+          <ResetIcon />
+          清空照片列表
+        </button>
       </div>
       </div>
     </aside>

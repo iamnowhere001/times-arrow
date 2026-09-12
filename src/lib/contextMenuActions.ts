@@ -2,7 +2,7 @@
  * 图库右键菜单项构造（从 App 抽出的纯逻辑）。
  *
  * 分两种情境：
- * - 空白区右键：图库级操作（导入 / 全选 / 检测相似 / 重置列表）；
+ * - 空白区右键：图库级操作（导入 / 全选 / 检测相似 / 清空照片列表）；
  * - 条目右键：单张 + 选中集操作，右键项若在选中集内则对整组生效。
  *
  * 所有副作用通过 `ContextMenuActionsDeps` 注入，函数本身不读取任何组件状态，
@@ -28,7 +28,7 @@ export interface ContextMenuActionsDeps {
   onImport: () => void;
   onSelectAllVisible: () => void;
   onCheckDuplicates: () => void;
-  onResetList: () => void;
+  onClearList: () => void;
   onOpenQuickLook: (photo: Photo) => void;
   onToggleFavorite: (id: string) => void;
   onSetHidden: (ids: string[], value: boolean) => void;
@@ -54,7 +54,7 @@ export function buildContextMenuActions(deps: ContextMenuActionsDeps): ContextMe
     onImport,
     onSelectAllVisible,
     onCheckDuplicates,
-    onResetList,
+    onClearList,
     onOpenQuickLook,
     onToggleFavorite,
     onSetHidden,
@@ -91,8 +91,8 @@ export function buildContextMenuActions(deps: ContextMenuActionsDeps): ContextMe
         onClick: () => onCheckDuplicates(),
       },
       ...(photoCount > 0 ? [{ separator: true } as ContextMenuItem, {
-        label: '重置列表',
-        onClick: () => onResetList(),
+        label: '清空照片列表',
+        onClick: () => onClearList(),
       }] : []),
     ];
   }

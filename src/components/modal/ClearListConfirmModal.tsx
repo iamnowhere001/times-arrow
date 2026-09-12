@@ -1,19 +1,26 @@
 import React, { useEffect, useRef } from 'react';
 
-interface DeleteConfirmModalProps {
+interface ClearListConfirmModalProps {
   isOpen: boolean;
+  /** 将被清空的条目数，让「清空」这件事有具体规模，而不是抽象按钮 */
   count: number;
-  isDiskOperation: boolean;
   onClose: () => void;
   onConfirm: () => void;
 }
 
-const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({ 
-  isOpen, 
-  count, 
-  isDiskOperation, 
-  onClose, 
-  onConfirm 
+/**
+ * 清空照片列表确认框。
+ *
+ * 名字直说后果：清空的是列表，磁盘文件不动。此前的入口写作「重置」，
+ * 既没说是清空照片、也没说清空的是哪一层，且是无确认的直接执行 ——
+ * 与「移至回收站」的谨慎程度不对等。这里统一收口：
+ * 入口可以做得更轻（侧栏底部次级按钮），但执行前必须把代价说清楚。
+ */
+const ClearListConfirmModal: React.FC<ClearListConfirmModalProps> = ({
+  isOpen,
+  count,
+  onClose,
+  onConfirm,
 }) => {
   const confirmRef = useRef<HTMLButtonElement>(null);
 
@@ -40,15 +47,13 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
 
   if (!isOpen) return null;
 
-  const photoCount = `${count} 个项目`;
-
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(0,0,0,0.7)] backdrop-blur-md animate-fadeIn">
-      <div 
-        className="bg-[var(--bg-modal)] backdrop-blur-xl rounded-xl shadow-2xl w-[380px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] animate-scaleIn p-6"
+      <div
+        className="bg-[var(--bg-modal)] backdrop-blur-xl rounded-xl shadow-2xl w-[400px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] animate-scaleIn p-6"
         role="dialog"
         aria-modal="true"
-        aria-label={isDiskOperation ? '移至回收站确认' : '移除确认'}
+        aria-label="清空照片列表确认"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-4 mb-5">
@@ -58,30 +63,27 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
             </svg>
           </div>
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-[var(--text-primary)]">
-              {isDiskOperation ? '移至回收站' : '移除'}
-            </h3>
+            <h3 className="text-base font-semibold text-[var(--text-primary)]">清空照片列表</h3>
             <p className="text-sm text-[var(--text-secondary)] mt-1 leading-relaxed">
-              {isDiskOperation
-                ? `将 ${photoCount}移至系统回收站，之后仍可从回收站找回，不会立刻永久删除。列表中无磁盘文件的预览项除外——它们只会从列表移除。`
-                : `将从列表中移除 ${photoCount}，磁盘上的原文件不会被改动。`}
+              当前的 {count} 个照片将从列表中全部移除，筛选、搜索与缩略图缓存一并重置。
+              磁盘上的原文件不会被删除，之后重新导入即可恢复。
             </p>
           </div>
         </div>
 
         <div className="flex justify-end gap-3">
-          <button 
+          <button
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] rounded-lg transition-colors"
           >
             取消
           </button>
-          <button 
+          <button
             ref={confirmRef}
             onClick={onConfirm}
             className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-pink)] hover:opacity-90 rounded-lg transition-opacity"
           >
-            {isDiskOperation ? '移至回收站' : '移除'}
+            清空列表
           </button>
         </div>
       </div>
@@ -89,4 +91,4 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   );
 };
 
-export default DeleteConfirmModal;
+export default ClearListConfirmModal;

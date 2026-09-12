@@ -1,6 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Photo } from '@/types';
-import { formatDate } from '@/utils';
+/**
+ * 预览专用的时间格式：精确到秒。
+ * 基准时间控件是秒级（`step={1}`），若预览只到分钟，改「秒」时两列看起来完全一样，
+ * 用户会以为没生效而不敢点「应用」。
+ */
+const formatPreviewTime = (ts: number): string => {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+};
 
 export type AdjustMode = 'shift' | 'set';
 
@@ -27,11 +43,18 @@ const baseTimeOf = (photo: Photo): number =>
 
 const pad2 = (value: number) => String(value).padStart(2, '0');
 
-/** 时间戳 → `<input type="datetime-local">` 的 yyyy-MM-ddTHH:mm */
+/**
+ * 时间戳 → `<input type="datetime-local">` 的 yyyy-MM-ddTHH:mm:ss。
+ *
+ * 必须带上秒：控件初值来自「最早一张」的现有时间，若截断到分钟，
+ * 用户什么都不改直接点「应用」，求出的位移就是 -(秒+毫秒)，
+ * 于是每张照片被静默回退几十秒并打上「已修正」——而预览只显示到分钟，看不出来。
+ */
 const toLocalInputValue = (ts: number): string => {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const date = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  return `${date}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 };
 
 const fromLocalInputValue = (value: string): number | null => {
@@ -113,6 +136,8 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
     // 保持间隔：以最早一张为锚点整体平移
     const anchor = earliest || target;
     const delta = target - anchor;
+    // 位移为 0 说明用户没改动基准时间，此时不应产生任何「已修正」记录
+    if (delta === 0) return [];
     return photos.map(photo => ({ photo, timestamp: baseTimeOf(photo) + delta }));
   }, [photos, mode, offsetMs, targetValue, keepRelative, earliest]);
 
@@ -201,6 +226,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
                 </label>
                 <input
                   type="datetime-local"
+                  step={1}
                   value={targetValue}
                   onChange={e => setTargetValue(e.target.value)}
                   className="w-full px-3 py-2 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
@@ -237,10 +263,10 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
                         {photo.name}
                       </span>
                       <span className="text-[var(--text-quaternary)] shrink-0">
-                        {formatDate(baseTimeOf(photo))}
+                        {formatPreviewTime(baseTimeOf(photo))}
                       </span>
                       <span className="text-[var(--text-quaternary)] shrink-0">→</span>
-                      <span className="text-[var(--text-primary)] shrink-0">{formatDate(timestamp)}</span>
+                      <span className="text-[var(--text-primary)] shrink-0">{formatPreviewTime(timestamp)}</span>
                     </div>
                   ))}
                   {adjustments.length > preview.length && (

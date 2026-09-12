@@ -2,17 +2,38 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Photo } from '@/types';
 import { logger } from '@/lib/logger';
+import { humanizeFsError } from '@/lib/fs/fileOperations';
 
 export type ExportFormat = 'original' | 'image/jpeg' | 'image/png' | 'image/webp';
+
+export interface ExportSummary {
+  succeeded: number;
+  failed: number;
+  cancelled: boolean;
+  /** 首个失败原因（已翻译成用户可读的说明），供调用方在汇总里带上 */
+  firstError?: string;
+  /** 实际写入的目标目录，让用户知道文件去哪了 */
+  targetDir: string;
+}
 
 interface ExportModalProps {
   isOpen: boolean;
   /** 待导出的照片（通常是当前选中项） */
   photos: Photo[];
   onClose: () => void;
-  /** 导出结束回调：成功数 / 失败数 / 取消 */
-  onFinish: (succeeded: number, failed: number, cancelled: boolean) => void;
+  /** 导出结束回调：计入成功 / 失败 / 取消与首个失败原因 */
+  onFinish: (summary: ExportSummary) => void;
 }
+
+/**
+ * 导出失败原因：已经是面向用户的中文说明（如「图片解码失败」）就原样保留，
+ * 只有 fs 原始错误（ENOENT / ENOSPC…）才需要翻译。
+ */
+const describeExportError = (err: unknown): string => {
+  const message = (err as Error)?.message ?? '';
+  if (/[\u4e00-\u9fa5]/.test(message)) return message;
+  return humanizeFsError(message);
+};
 
 /** 格式 → 扩展名 */
 const extOf = (format: ExportFormat, originalName: string): string => {
@@ -144,6 +165,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
     let succeeded = 0;
     let failed = 0;
     let cancelled = false;
+    let firstError: string | undefined;
 
     for (let i = 0; i < photos.length; i++) {
       if (cancelRef.current) {
@@ -157,12 +179,14 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
       } catch (err) {
         logger.error(`导出 ${photos[i].name} 失败:`, err);
         failed++;
+        // 只留首个原因：汇总里带一句就够，逐条弹提示反而会被 Toast 队列顶掉
+        firstError ??= describeExportError(err);
       }
       setProgress(i + 1);
     }
 
     setIsExporting(false);
-    onFinish(succeeded, failed, cancelled);
+    onFinish({ succeeded, failed, cancelled, firstError, targetDir });
   }, [targetDir, photos, format, quality, onFinish]);
 
   if (!isOpen) return null;
