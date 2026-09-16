@@ -9,7 +9,16 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "electron:dev": "ELECTRON_START_URL=http://localhost:3000 electron .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run test:main && npm run test:unit",
+    "test:main": "node tests/main-process/unique-path.test.cjs && node tests/main-process/storage-recovery.test.cjs && node tests/main-process/ipc-security.test.cjs",
+    "test:smoke": "electron tests/smoke/electron-smoke.cjs",
+    "test:smoke:no-sandbox": "PHOTOMINDER_DISABLE_SANDBOX=1 electron tests/smoke/electron-smoke.cjs",
+    "test:unit": "vitest run",
+    "electron:dev": "ELECTRON_START_URL=http://127.0.0.1:3000 electron .",
     "electron:build": "npm run build && electron-builder && node build/recompressDmg.js",
     "dist:mac": "npm run build && electron-builder --mac --arm64 && node build/recompressDmg.js"
   },
@@ -18,6 +27,7 @@
     "heic-convert": "^2.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.2",
     "@types/react": "^19.3.0",
@@ -25,11 +35,19 @@
     "@vitejs/plugin-react": "^6.1.1",
     "electron": "^44.3.0",
     "electron-builder": "^26.15.3",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.3.0"
+    "typescript-eslint": "^8.70.0",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   },
   "build": {
     "appId": "com.photominder.app",

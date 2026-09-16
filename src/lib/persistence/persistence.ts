@@ -38,7 +38,12 @@ export const loadPersistedConfig = async (): Promise<PersistedConfig> => {
   if (!api?.loadConfig) return {};
 
   try {
-    const config = await api.loadConfig();
+    const response = await api.loadConfig();
+    if (!response.ok) {
+      logger.warn('读取配置失败:', response.error);
+      return {};
+    }
+    const config = response.data;
     if (!config || typeof config !== 'object') return {};
     return config;
   } catch (error) {
@@ -58,9 +63,9 @@ export const savePersistedConfig = async (patch: Partial<PersistedConfig>): Prom
   if (!api?.saveConfig) return false;
 
   try {
-    const ok = await api.saveConfig({ ...patch, version: CONFIG_VERSION });
-    if (ok === false) {
-      logger.warn('写入配置失败：主进程返回失败');
+    const response = await api.saveConfig({ ...patch, version: CONFIG_VERSION });
+    if (!response.ok) {
+      logger.warn('写入配置失败：', response.error);
       notifyPersistenceError?.('配置未能保存到磁盘，重启后可能丢失');
       return false;
     }

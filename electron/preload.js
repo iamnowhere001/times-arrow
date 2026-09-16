@@ -1,6 +1,14 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // 向渲染进程暴露安全的API
+//
+// 返回协议：所有 invoke 类接口都返回 IpcResult<T>（见 src/types/global.d.ts）：
+//   成功 → { ok: true,  data: T }
+//   失败 → { ok: false, error: string, code?: string }
+// 主进程侧由 wrapHandler 统一兜底（异常也会被转成 ok:false），因此这里不需要 try/catch，
+// 也不需要为每个接口单独约定返回形状。
+//
+// 事件订阅类接口（onXxx）返回取消订阅函数，不属于 invoke 协议。
 contextBridge.exposeInMainWorld('electronAPI', {
   // 统一导入：同一对话框可多选图片 / 视频文件与文件夹（可混合）
   selectPaths: () => ipcRenderer.invoke('select-paths'),
@@ -40,6 +48,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   statFiles: (filePaths) => ipcRenderer.invoke('stat-files', filePaths),
   /** 批量检查路径是否存在（启动时标注「不可用来源」） */
   checkPaths: (paths) => ipcRenderer.invoke('check-paths', paths),
+  /**
+   * 登记「拖放进窗口」的路径为本次会话可访问。
+   * 拖放不经过系统对话框，是除对话框之外的另一个用户主动选择入口；
+   * 未登记的路径会被主进程的文件类 IPC 与 pm:// 协议拒绝。
+   */
+  authorizePaths: (paths) => ipcRenderer.invoke('authorize-paths', paths),
 
   // 目录监听（N5）：感知当前目录的外部增删，主进程聚合后回推事件
   /** 监听目录（递归）；切换目录时自动替换旧 watcher */
@@ -66,6 +80,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** AI 分析结果缓存（单独文件，便于限量与清理） */
   loadAiCache: () => ipcRenderer.invoke('load-ai-cache'),
   saveAiCache: (entries) => ipcRenderer.invoke('save-ai-cache', entries),
+  /**
+   * 取走「存储损坏并已备份」的通知（取走即清空）。
+   * 启动加载完配置后调用一次；非空时应当提示用户，否则他会以为数据凭空消失。
+   */
+  storageNotices: () => ipcRenderer.invoke('storage-notices'),
 
   /** AI 图片分析：主进程代理 DeepSeek，密钥不出主进程 */
   analyzeImage: (payload) => ipcRenderer.invoke('ai-analyze', payload),
@@ -85,7 +104,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFilePath: (file) => {
     try {
       return webUtils.getPathForFile(file);
-    } catch (error) {
+    } catch {
+      // 拿不到路径（非 Electron 的 File 对象等）时返回空串，
+      // 由调用方走「无磁盘路径」的降级分支，不在这里抛错打断拖放
       return '';
     }
   },

@@ -1,8 +1,23 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, shell, protocol, nativeImage, clipboard } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell, protocol, nativeImage, clipboard, session } = require('electron');
 
-app.commandLine.appendSwitch('no-sandbox');
-app.commandLine.appendSwitch('disable-setuid-sandbox');
-app.commandLine.appendSwitch('disable-gpu-sandbox');
+// 沙箱默认开启 —— 这是 Electron 的默认值，也是渲染进程与操作系统之间的最后一道隔离。
+// 这里不再无条件追加 no-sandbox / disable-setuid-sandbox / disable-gpu-sandbox：
+// 那三个开关会整体关掉 Chromium 的进程沙箱，等于放弃隔离，一旦渲染层被注入，
+// 攻击者就直接获得主进程级别的系统能力。
+//
+// 但确实存在一类受限环境（容器、部分 CI、无权限初始化 Chromium 沙箱的内核配置）
+// 无法启动沙箱，表现为反复输出 "sandbox initialization failed: Operation not permitted"。
+// 因此保留一个「必须主动打开」的逃生口，而不是把不安全配置写死进发布产物：
+//   PHOTOMINDER_DISABLE_SANDBOX=1 npm run electron:dev
+//
+// 注意 !app.isPackaged 这一层：打包产物永远强制开启沙箱，
+// 避免这个开关被用户机器上的环境变量静默关掉。
+const SANDBOX_DISABLED = !app.isPackaged && process.env.PHOTOMINDER_DISABLE_SANDBOX === '1';
+if (SANDBOX_DISABLED) {
+  app.commandLine.appendSwitch('no-sandbox');
+  app.commandLine.appendSwitch('disable-setuid-sandbox');
+  app.commandLine.appendSwitch('disable-gpu-sandbox');
+}
 
 // 自定义协议：向渲染进程以流的方式提供「原图」与「磁盘缩略图」，
 // 避免把整张图片以 base64 常驻在渲染进程内存中（这是 OOM 的根因）。
@@ -41,6 +56,181 @@ const readdir = promisify(fs.readdir);
 const stat = promisify(fs.stat);
 const crypto = require('crypto');
 const logger = require('./lib/logger.cjs');
+// CSP 策略的唯一定义处：主进程响应头与 vite 构建期注入的 meta 共用同一份字符串
+const { policyFor } = require('./lib/csp.cjs');
+// dHash 算法本体的唯一定义处：与渲染层共用，避免同一算法两份实现互相漂移
+const { dHashFromBGRA } = require('./lib/dhash.cjs');
+
+// ---------------------------------------------------------------------------
+// 会话级路径授权（安全边界）
+// ---------------------------------------------------------------------------
+// 渲染进程能访问的磁盘路径必须来自「用户主动选择」：系统对话框里选中的文件 / 文件夹、
+// 拖放进窗口的文件，或应用自己持久化后在启动时恢复的来源。其余一律拒绝。
+//
+// 为什么需要这一层：
+//   1. pm:// 注册为 standard + secure + corsEnabled + bypassCSP 的特权协议，
+//      原图 / 原视频都经由 pm://file/<base64url> 流式返回。若不设白名单，
+//      任意一段 base64 就是「读取本机任意文件」的完整原语 ——
+//      一旦渲染层出现内容级注入（被当作图片加载的 SVG、将来引入的远程内容等），
+//      <img src="pm://local/file/…"> 就能把文件读进页面。
+//   2. 文件类 IPC（read / write / delete / rename / move / open）同理：
+//      它们直接作用于磁盘，不应接受渲染层任意指定的路径。
+//
+// 边界说明：这层防的是「内容级攻击」（无法调用 IPC 的注入内容），
+// 而不是「渲染进程被完全攻破」——后者天然拥有全部 IPC 能力，无法在 IPC 层拦住。
+const authorizedRoots = new Set();
+const authorizedFiles = new Set();
+
+/**
+ * 取规范路径：优先解析符号链接（realpath）。
+ *
+ * 为什么不能「realpath 失败就简单退回 path.resolve」：
+ * 目标可能**尚不存在** —— 「重命名到新名字」「导出为新文件」的目标路径本来就不在磁盘上，
+ * realpath 必然抛 ENOENT。此时若退化成 path.resolve，拿到的是**未解析符号链接**的形式，
+ * 而授权根目录里存的是解析后的形式，两者一比就永远不相等。
+ * 在 macOS 上这不是边缘情况：/var 与 /tmp 都是指向 /private/var、/private/tmp 的符号链接，
+ * 于是「临时目录下的合法目标」会被整体判为未授权，重命名与导出直接失败。
+ *
+ * 正确做法：向上找到**最深的已存在祖先**做 realpath，再把剩余的不存在部分原样拼回去。
+ * 这样 `…/lib/new-name.jpg` 与授权根 `…/lib` 落在同一套规范形式上，比较才有意义。
+ */
+function canonicalize(target) {
+  if (typeof target !== 'string' || !target) return '';
+  let resolved;
+  try {
+    resolved = path.resolve(target);
+  } catch {
+    return '';
+  }
+
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    // 目标不存在：继续向上找已存在的祖先
+  }
+
+  const tail = [path.basename(resolved)];
+  let ancestor = path.dirname(resolved);
+  // 到根目录为止（path.dirname('/') === '/'）
+  while (ancestor !== path.dirname(ancestor)) {
+    try {
+      return path.join(fs.realpathSync.native(ancestor), ...tail);
+    } catch {
+      tail.unshift(path.basename(ancestor));
+      ancestor = path.dirname(ancestor);
+    }
+  }
+  // 连根都解析不了（极罕见）：退回 resolve 的结果，至少保持绝对路径语义
+  return resolved;
+}
+
+/** 比较用路径：Windows 文件系统大小写不敏感，统一小写 */
+function comparable(target) {
+  const canonical = canonicalize(target);
+  if (!canonical) return '';
+  return process.platform === 'win32' ? canonical.toLowerCase() : canonical;
+}
+
+function authorizeRoot(dirPath) {
+  const key = comparable(dirPath);
+  if (key) authorizedRoots.add(key);
+}
+
+function authorizeFile(filePath) {
+  const key = comparable(filePath);
+  if (key) authorizedFiles.add(key);
+}
+
+/**
+ * 批量授权：目录进 roots（其下所有内容随之可访问），文件进 files。
+ * 路径当前不存在时按「有无扩展名」猜测形态 —— 恢复来源时目标目录可能临时不可用
+ * （外接卷未挂载），此时仍要授权，否则卷挂载后整库都读不到。
+ */
+function authorizePaths(paths) {
+  if (!Array.isArray(paths)) return;
+  for (const target of paths) {
+    if (typeof target !== 'string' || !target) continue;
+    let isDir;
+    try {
+      isDir = fs.statSync(target).isDirectory();
+    } catch {
+      isDir = !path.extname(target);
+    }
+    if (isDir) authorizeRoot(target);
+    else authorizeFile(target);
+  }
+}
+
+/** 目标路径是否落在某个已授权根目录之下（或本身就是已授权的单个文件） */
+function isPathAuthorized(targetPath) {
+  const target = comparable(targetPath);
+  if (!target) return false;
+  if (authorizedFiles.has(target)) return true;
+  for (const root of authorizedRoots) {
+    if (target === root) return true;
+    const rel = path.relative(root, target);
+    // rel 为空 = 同一路径（上面已判）；以 .. 开头或为绝对路径 = 在根目录之外。
+    // 用 path.relative 而非字符串前缀比较，避免 /a/bc 被误判为在 /a/b 之下。
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return true;
+  }
+  return false;
+}
+
+/** 统一的拒绝文案：不区分「不存在」与「未授权」，避免变成路径探测接口 */
+const UNAUTHORIZED_ERROR = '未授权的路径（该路径不在本次会话已打开的图库范围内）';
+
+// ---------------------------------------------------------------------------
+// IPC 统一返回协议
+// ---------------------------------------------------------------------------
+// 改造前的问题：31 个 handler 各自返回 { error } / { success } / 裸值 / null 四种形态，
+// 渲染层每调用一个 API 都要先猜「这次失败是以什么形式表达的」，漏判就会把错误当成数据。
+// 更糟的是有的 handler 根本没有 try/catch，抛出的异常会以 Electron 包装过的
+// rejected promise 形式到达渲染层，里面的消息既不稳定也不可读。
+//
+// 统一为：
+//   { ok: true,  data: T }          —— 成功，业务数据在 data
+//   { ok: false, error: string, code?: string } —— 失败，error 一定是可直接展示的中文文案
+//
+// 两条纪律：
+//   1. 所有 handler 一律经 `handle()` 注册，由 wrapHandler 兜底捕获异常，
+//      不允许直接调用 ipcMain.handle —— 否则就绕过了这层保障。
+//   2. 业务性的失败（如「目标不是文件夹」）也走 fail()，不要既返回 ok:true 又带 error 字段。
+//      这样渲染层只需判一个 ok 布尔值。
+// ---------------------------------------------------------------------------
+
+/** 成功结果 */
+const ok = (data = null) => ({ ok: true, data });
+
+/** 失败结果。message 直接面向用户，应当是中文且可操作 */
+function fail(message, code) {
+  const text = typeof message === 'string' && message ? message : String(message ?? '未知错误');
+  return code ? { ok: false, error: text, code } : { ok: false, error: text };
+}
+
+/** 已注册的通道，用于防止重复注册（重复注册会让 Electron 直接抛错，且报错信息不指向调用点） */
+const registeredChannels = new Set();
+
+/**
+ * 注册一个 IPC handler，自动获得：
+ *  - 异常兜底：handler 抛错不会变成渲染层的 rejected promise，而是 { ok:false, error }
+ *  - 统一日志：带通道名，便于定位是哪个接口出的问题
+ *  - 重复注册检测
+ */
+function handle(channel, handler) {
+  if (registeredChannels.has(channel)) {
+    throw new Error(`IPC 通道重复注册: ${channel}`);
+  }
+  registeredChannels.add(channel);
+
+  ipcMain.handle(channel, async (event, ...args) => {
+    try {
+      return await handler(event, ...args);
+    } catch (error) {
+      logger.error(`[ipc:${channel}] handler threw:`, error);
+      return fail(error?.message || String(error), error?.code);
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // 环境变量：主进程不经过 Vite，需要自行加载 .env。
@@ -313,7 +503,7 @@ async function readExifOrientation(filePath) {
       const { size } = await handle.stat();
       const chunk = Buffer.alloc(Math.min(256 * 1024, size));
       await handle.read(chunk, 0, chunk.length, 0);
-      // eslint-disable-next-line global-require
+      // 惰性加载：exifreader 体积不小，只在真的解析 EXIF 时才拉起来
       const ExifReader = require('exifreader');
       const tags = ExifReader.load(chunk) || {};
       const value = Number(tags.Orientation?.value);
@@ -565,6 +755,9 @@ async function scanDirectory(rootPath, scanId) {
   let failedFiles = 0;
 
   try {
+    // 目录遍历本身是串行的：每层都要先 realpath 去重、再 readdir 才知道下一层。
+    // 目录内的条目 stat 已经用 Promise.all 并发（见下方 pending），这里不必再并行。
+    /* eslint-disable no-await-in-loop */
     while (stack.length > 0 && !isCancelled()) {
       const { dir, depth } = stack.pop();
       if (depth > MAX_SCAN_DEPTH) continue;
@@ -621,6 +814,7 @@ async function scanDirectory(rootPath, scanId) {
         );
       }
     }
+    /* eslint-enable no-await-in-loop */
 
     if (isCancelled()) return { files: [], cancelled: true };
 
@@ -722,20 +916,22 @@ function flushWatchEvents() {
   });
 }
 
-ipcMain.handle('watch-directory', async (event, dirPath) => {
+handle('watch-directory', async (event, dirPath) => {
   if (typeof dirPath !== 'string' || !dirPath) {
-    return { success: false, error: 'Invalid directory path' };
+    return fail('无效的目录路径');
   }
+  const resolved = path.resolve(dirPath);
+  if (watchedDir === resolved && dirWatcher) {
+    return ok({ already: true });
+  }
+  stopDirWatcher();
   try {
-    const resolved = path.resolve(dirPath);
-    if (watchedDir === resolved && dirWatcher) {
-      return { success: true, already: true };
-    }
-    stopDirWatcher();
     const dirStat = await stat(dirPath);
     if (!dirStat.isDirectory()) {
-      return { success: false, error: '路径不是文件夹' };
+      return fail('路径不是文件夹');
     }
+    // 监听目录意味着它属于当前图库，一并授权
+    authorizeRoot(dirPath);
     watchedDir = resolved;
     dirWatcher = fs.watch(resolved, { recursive: true }, (type, relPath) => {
       if (!watchedDir || !relPath) return;
@@ -757,17 +953,18 @@ ipcMain.handle('watch-directory', async (event, dirPath) => {
       });
     });
     logger.debug(`[watch] watching ${resolved}`);
-    return { success: true };
+    return ok({ already: false });
   } catch (error) {
     logger.error('Error watching directory:', error);
+    // 监听失败后必须清掉半初始化状态，否则下一次 watch 会因为 watchedDir 残留而误判为「已在监听」
     stopDirWatcher();
-    return { success: false, error: error.message };
+    throw error;
   }
 });
 
-ipcMain.handle('unwatch-directory', async () => {
+handle('unwatch-directory', async () => {
   stopDirWatcher();
-  return true;
+  return ok(true);
 });
 
 // ---------------------------------------------------------------------------
@@ -813,7 +1010,7 @@ function toDecimalGps(coord, ref) {
 
 function parseExifBuffer(buffer) {
   try {
-    // eslint-disable-next-line global-require
+    // 惰性加载：只在真的解析 EXIF 时才把 exifreader 拉起来
     const ExifReader = require('exifreader');
     const tags = ExifReader.load(buffer) || {};
 
@@ -861,7 +1058,7 @@ function parseExifBuffer(buffer) {
         gps: latitude !== undefined && longitude !== undefined ? { latitude, longitude } : undefined,
       },
     };
-  } catch (error) {
+  } catch {
     return { dateTaken: undefined, exif: undefined };
   }
 }
@@ -1026,7 +1223,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false,
+      // 渲染进程沙箱：preload 只用到 contextBridge / ipcRenderer / webUtils，
+      // 这三者在沙箱下都可用，无需 Node 完整能力，因此默认开启。
+      // 与上方 SANDBOX_DISABLED 联动，保证命令行开关与 webPreferences 口径一致。
+      sandbox: !SANDBOX_DISABLED,
     },
   });
 
@@ -1118,20 +1318,53 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
+/** 同名文件的重试上限：超过这个数量说明不是正常场景（多半是逻辑出错），直接报错而不是空转 */
+const UNIQUE_NAME_MAX_ATTEMPTS = 100;
+
 /**
- * 在目录下构造不冲突的文件名：同名时依次追加 -1、-2 …
- * 用于「重命名」与「导出写盘」，绝不静默覆盖用户已有文件。
+ * 原子地占用一个不冲突的目标路径，同名时依次追加 -1、-2 …
+ * 用于「重命名」「移动」与「导出写盘」，绝不静默覆盖用户已有文件。
+ *
+ * 为什么不能用「existsSync 探测 + 再写」：那是典型的 TOCTOU ——
+ * 探测与真正落盘之间存在窗口，并发的两次导出（或另一个进程）可能探测到同一个空闲名字，
+ * 后落盘的一方就静默覆盖了先落盘的一方。照片导出最不能接受的就是静默丢数据。
+ *
+ * 这里改用 `open(candidate, 'wx')`：'wx' 的语义是「独占创建，已存在则失败」，
+ * 由内核保证原子性。成功即代表这个名字归本次调用所有；EEXIST 说明被别人抢先，
+ * 递增序号重试即可。其余错误（EACCES / ENOENT / EROFS）重试没有意义，直接抛出。
+ *
+ * 返回占用成功的完整路径。占位用的文件句柄在这里立即关闭 —— 名字一旦被内核判给
+ * 本次调用，就不会再被别的进程抢走，后续用普通写入打开它是安全的。
+ * 调用方**必须**负责：若最终决定不使用这个路径，调用 `discardReservedPath()` 清掉占位
+ * 文件，否则会在用户目录里留下一个空文件。
  */
-function buildUniquePath(dir, fileName) {
+async function reserveUniquePath(dir, fileName) {
   const ext = path.extname(fileName);
   const base = path.basename(fileName, ext);
-  let candidate = path.join(dir, fileName);
-  let counter = 1;
-  while (fs.existsSync(candidate)) {
-    candidate = path.join(dir, `${base}-${counter}${ext}`);
-    counter += 1;
+  for (let attempt = 0; attempt < UNIQUE_NAME_MAX_ATTEMPTS; attempt += 1) {
+    const candidate = path.join(dir, attempt === 0 ? fileName : `${base}-${attempt}${ext}`);
+    let handle;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      handle = await fs.promises.open(candidate, 'wx');
+    } catch (error) {
+      if (error.code === 'EEXIST') continue;
+      throw error;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await handle.close();
+    return candidate;
   }
-  return candidate;
+  throw new Error(`同名文件过多，无法生成不冲突的文件名（已尝试 ${UNIQUE_NAME_MAX_ATTEMPTS} 次）`);
+}
+
+/** 丢弃一个已占位但最终没有使用的路径。best-effort：清理失败只记日志，不掩盖主流程的错误 */
+async function discardReservedPath(reservedPath) {
+  try {
+    await fs.promises.unlink(reservedPath);
+  } catch (error) {
+    logger.warn(`Failed to clean up reserved placeholder ${reservedPath}:`, error.message);
+  }
 }
 
 /**
@@ -1166,12 +1399,16 @@ function isSameDirectory(a, b) {
 
 /**
  * 跨磁盘 / 跨卷移动：rename 抛 EXDEV 时退化为「复制成功后再删源文件」。
- * COPYFILE_EXCL 兜底保证绝不覆盖（正常路径已由 buildUniquePath 保证）。
+ *
+ * 目标路径已由 reserveUniquePath 原子占位，因此这里用**普通** copyFile 覆写自己的
+ * 占位文件即可 —— 不需要 COPYFILE_EXCL（那会因为占位文件已存在而必然失败），
+ * 也不会与并发的另一次移动互相覆盖（名字已被我们独占）。
+ *
  * K2：源文件删除失败（如只读卷）不再整体抛错——副本已落盘，返回 partial 中间态，
  * 由渲染层提示并可通过 priorTargets 幂等重试，绝不重复复制。
  */
 async function moveAcrossDevices(srcPath, destPath) {
-  await fs.promises.copyFile(srcPath, destPath, fs.constants.COPYFILE_EXCL);
+  await fs.promises.copyFile(srcPath, destPath);
   try {
     await fs.promises.unlink(srcPath);
   } catch (error) {
@@ -1206,41 +1443,54 @@ async function resumePartialMove(srcPath, copiedPath) {
 }
 
 // 重命名：目标不存在直接改；目标已存在（且不是自身）时自动追加序号，绝不覆盖
-ipcMain.handle('rename-file', async (event, oldPath, newPath) => {
-  try {
-    if (!oldPath || !newPath || typeof oldPath !== 'string' || typeof newPath !== 'string') {
-      return { error: 'Invalid file path', success: false };
-    }
-
-    if (fs.existsSync(newPath) && !isSameFile(oldPath, newPath)) {
-      const uniquePath = buildUniquePath(path.dirname(newPath), path.basename(newPath));
-      logger.debug(`Rename conflict: ${newPath} exists, using ${uniquePath}`);
-      await rename(oldPath, uniquePath);
-      return { success: true, path: uniquePath, conflicted: true };
-    }
-
-    await rename(oldPath, newPath);
-    logger.debug(`Renamed file: ${oldPath} -> ${newPath}`);
-    return { success: true, path: newPath, conflicted: false };
-  } catch (error) {
-    logger.error('Error renaming file:', error);
-    return { error: error.message, success: false };
+handle('rename-file', async (event, oldPath, newPath) => {
+  if (!oldPath || !newPath || typeof oldPath !== 'string' || typeof newPath !== 'string') {
+    return fail('无效的文件路径');
   }
+  // 源与目标都必须在已授权范围内：目标由 dirname(源) + 新文件名推出，
+  // 正常路径必然通过；若渲染层传入越界的 newPath，则在此拦下。
+  if (!isPathAuthorized(oldPath) || !isPathAuthorized(newPath)) {
+    return fail(UNAUTHORIZED_ERROR);
+  }
+
+  // 目标就是源自身（仅大小写变化等）：无需任何落盘操作
+  if (isSameFile(oldPath, newPath)) {
+    return ok({ path: newPath, conflicted: false });
+  }
+
+  // 原子占位目标名：并发的两次重命名不会拿到同一个路径，也就不会互相覆盖。
+  // 这里刻意不再用 existsSync 预判 —— 预判与 rename 之间的窗口正是竞态所在。
+  const reservedPath = await reserveUniquePath(path.dirname(newPath), path.basename(newPath));
+  const conflicted = reservedPath !== newPath;
+
+  try {
+    // POSIX 的 rename 会原子地替换已存在的目标 —— 而那个目标正是我们刚占下的占位文件，
+    // 替换它是预期行为，不是覆盖用户数据。
+    await rename(oldPath, reservedPath);
+  } catch (error) {
+    // 落盘失败：清掉占位文件，别在用户目录里留下空文件
+    await discardReservedPath(reservedPath);
+    throw error;
+  }
+
+  if (conflicted) {
+    logger.debug(`Rename conflict: ${newPath} exists, using ${reservedPath}`);
+  }
+  logger.debug(`Renamed file: ${oldPath} -> ${reservedPath}`);
+  return ok({ path: reservedPath, conflicted });
 });
 
-ipcMain.handle('delete-file', async (event, filePath) => {
-  try {
-    if (!filePath || typeof filePath !== 'string') {
-      return { error: 'Invalid file path', success: false };
-    }
-
-    // Electron 官方回收站 API：跨平台、无 shell 注入风险
-    await shell.trashItem(filePath);
-    return { success: true, error: null };
-  } catch (error) {
-    logger.error('Error moving file to trash:', error);
-    return { error: error.message, success: false };
+handle('delete-file', async (event, filePath) => {
+  if (!filePath || typeof filePath !== 'string') {
+    return fail('无效的文件路径');
   }
+  if (!isPathAuthorized(filePath)) {
+    return fail(UNAUTHORIZED_ERROR);
+  }
+
+  // Electron 官方回收站 API：跨平台、无 shell 注入风险
+  await shell.trashItem(filePath);
+  return ok(true);
 });
 
 /**
@@ -1252,25 +1502,37 @@ ipcMain.handle('delete-file', async (event, filePath) => {
  * 逐个串行执行：前一个落盘后后一个才能探测同名，避免批内互相覆盖。
  * 返回整体错误 + 每个文件独立结果，失败项由渲染进程组织重试。
  */
-ipcMain.handle('move-files', async (event, filePaths, targetDir, priorTargets) => {
+handle('move-files', async (event, filePaths, targetDir, priorTargets) => {
   if (!Array.isArray(filePaths) || typeof targetDir !== 'string' || !targetDir) {
-    return { error: 'Invalid arguments', results: [] };
+    return fail('无效的参数');
   }
 
   let targetStat;
   try {
     targetStat = await fs.promises.stat(targetDir);
   } catch {
-    return { error: '目标文件夹不存在', results: [] };
+    return fail('目标文件夹不存在');
   }
   if (!targetStat.isDirectory()) {
-    return { error: '目标位置不是文件夹', results: [] };
+    return fail('目标位置不是文件夹');
+  }
+  // 目标目录必须已授权（来自「选择文件夹」对话框）；
+  // 越界时整批拒绝，避免半批移动后才发现问题。
+  if (!isPathAuthorized(targetDir)) {
+    return fail(UNAUTHORIZED_ERROR);
   }
 
   const results = [];
+  // 这个循环**必须**串行：每一项都要先原子占位、落盘之后，下一项才能正确探测同名。
+  // 改成并发会让批内同名文件互相抢名字（也正是旧实现静默覆盖的成因之一）。
+  /* eslint-disable no-await-in-loop */
   for (const srcPath of filePaths) {
     if (typeof srcPath !== 'string' || !srcPath) {
       results.push({ from: String(srcPath ?? ''), error: '无效的文件路径' });
+      continue;
+    }
+    if (!isPathAuthorized(srcPath)) {
+      results.push({ from: srcPath, error: UNAUTHORIZED_ERROR });
       continue;
     }
 
@@ -1278,7 +1540,6 @@ ipcMain.handle('move-files', async (event, filePaths, targetDir, priorTargets) =
     const priorTo =
       priorTargets && typeof priorTargets === 'object' ? priorTargets[srcPath] : null;
     if (typeof priorTo === 'string' && priorTo) {
-      // eslint-disable-next-line no-await-in-loop
       const resumed = await resumePartialMove(srcPath, priorTo);
       if (resumed) {
         if (resumed.ok) {
@@ -1299,16 +1560,22 @@ ipcMain.handle('move-files', async (event, filePaths, targetDir, priorTargets) =
       }
 
       const fileName = path.basename(srcPath);
-      const destPath = buildUniquePath(targetDir, fileName);
+      // 原子占位目标名：批内多个同名文件、或并发的另一次移动，都不会拿到同一路径。
+      const destPath = await reserveUniquePath(targetDir, fileName);
+      const conflicted = destPath !== path.join(targetDir, fileName);
       let finalDest = destPath;
       let partialMove = null;
       try {
+        // 目标是我们刚占下的占位文件，POSIX rename 会原子替换它
         await rename(srcPath, destPath);
       } catch (err) {
         if (err.code === 'EXDEV') {
+          // 跨卷：占位文件仍在，moveAcrossDevices 用普通 copyFile 覆写它
           partialMove = await moveAcrossDevices(srcPath, destPath);
           finalDest = partialMove.to;
         } else {
+          // 其他失败：清掉占位文件，避免留下空文件
+          await discardReservedPath(destPath);
           throw err;
         }
       }
@@ -1322,92 +1589,100 @@ ipcMain.handle('move-files', async (event, filePaths, targetDir, priorTargets) =
         from: srcPath,
         to: finalDest,
         success: true,
-        conflicted: finalDest !== path.join(targetDir, fileName),
+        conflicted,
       });
     } catch (error) {
       logger.error('Error moving file:', error);
       results.push({ from: srcPath, error: error.message });
     }
   }
+  /* eslint-enable no-await-in-loop */
 
-  return { success: true, results };
+  return ok({ results });
 });
 
 // 在访达 / 资源管理器中定位文件
-ipcMain.handle('show-in-folder', async (event, filePath) => {
-  try {
-    if (!filePath || typeof filePath !== 'string') {
-      return { error: 'Invalid file path', success: false };
-    }
-    shell.showItemInFolder(filePath);
-    return { success: true };
-  } catch (error) {
-    return { error: error.message, success: false };
+handle('show-in-folder', async (event, filePath) => {
+  if (!filePath || typeof filePath !== 'string') {
+    return fail('无效的文件路径');
   }
+  if (!isPathAuthorized(filePath)) {
+    return fail(UNAUTHORIZED_ERROR);
+  }
+  shell.showItemInFolder(filePath);
+  return ok(true);
 });
 
 // 复制图片到系统剪贴板（HEIC 先转 JPEG）
-ipcMain.handle('copy-image', async (event, filePath) => {
-  try {
-    let image = nativeImage.createFromPath(filePath);
-    if (image.isEmpty() && isHeicFile(filePath)) {
-      image = nativeImage.createFromBuffer(await readHeicAsJpeg(filePath));
-    }
-    if (image.isEmpty()) {
-      return { error: '无法读取图片', success: false };
-    }
-    clipboard.writeImage(image);
-    return { success: true };
-  } catch (error) {
-    return { error: error.message, success: false };
+handle('copy-image', async (event, filePath) => {
+  if (!filePath || typeof filePath !== 'string') {
+    return fail('无效的文件路径');
   }
+  if (!isPathAuthorized(filePath)) {
+    return fail(UNAUTHORIZED_ERROR);
+  }
+  let image = nativeImage.createFromPath(filePath);
+  if (image.isEmpty() && isHeicFile(filePath)) {
+    image = nativeImage.createFromBuffer(await readHeicAsJpeg(filePath));
+  }
+  if (image.isEmpty()) {
+    return fail('无法读取图片');
+  }
+  clipboard.writeImage(image);
+  return ok(true);
 });
 
 // 复制纯文本（如文件路径）到系统剪贴板
-ipcMain.handle('copy-text', async (event, text) => {
-  try {
-    if (!text || typeof text !== 'string') {
-      return { error: 'Invalid text', success: false };
-    }
-    clipboard.writeText(text);
-    return { success: true };
-  } catch (error) {
-    return { error: error.message, success: false };
+handle('copy-text', async (event, text) => {
+  if (!text || typeof text !== 'string') {
+    return fail('无效的文本');
   }
+  clipboard.writeText(text);
+  return ok(true);
 });
 
 // 用系统默认应用 / 外部编辑器打开文件
-ipcMain.handle('open-path', async (event, filePath) => {
-  try {
-    if (!filePath || typeof filePath !== 'string') {
-      return { error: 'Invalid file path', success: false };
-    }
-    const error = await shell.openPath(filePath);
-    if (error) {
-      return { error, success: false };
-    }
-    return { success: true };
-  } catch (error) {
-    return { error: error.message, success: false };
+handle('open-path', async (event, filePath) => {
+  if (!filePath || typeof filePath !== 'string') {
+    return fail('无效的文件路径');
   }
+  if (!isPathAuthorized(filePath)) {
+    return fail(UNAUTHORIZED_ERROR);
+  }
+  const openError = await shell.openPath(filePath);
+  if (openError) {
+    return fail(openError);
+  }
+  return ok(true);
 });
 
 // 写入二进制文件（base64）。同名冲突时自动追加序号，返回最终写入路径。
 // 用于批量导出：渲染进程 canvas 完成格式转换后落盘。
-ipcMain.handle('write-file-unique', async (event, targetDir, fileName, base64) => {
-  try {
-    if (!targetDir || !fileName || typeof base64 !== 'string') {
-      return { error: 'Invalid arguments', success: false };
-    }
-    await fs.promises.access(targetDir);
-
-    const finalPath = buildUniquePath(targetDir, fileName);
-    await writeFile(finalPath, Buffer.from(base64, 'base64'));
-    return { success: true, path: finalPath };
-  } catch (error) {
-    logger.error('Error writing file:', error);
-    return { error: error.message, success: false };
+handle('write-file-unique', async (event, targetDir, fileName, base64) => {
+  if (!targetDir || !fileName || typeof base64 !== 'string') {
+    return fail('无效的参数');
   }
+  if (!isPathAuthorized(targetDir)) {
+    return fail(UNAUTHORIZED_ERROR);
+  }
+  await fs.promises.access(targetDir);
+
+  // 只取文件名部分：否则 ../ 前缀能让 path.join 把文件写到授权目录之外
+  const safeName = path.basename(fileName);
+  if (!safeName || safeName === '.' || safeName === '..') {
+    return fail('无效的文件名');
+  }
+
+  // 原子占位：并发导出同名文件时不会互相覆盖（名字一旦占下就是本次调用独有的）
+  const finalPath = await reserveUniquePath(targetDir, safeName);
+  try {
+    await writeFile(finalPath, Buffer.from(base64, 'base64'));
+  } catch (error) {
+    // 写入失败：清掉占位文件，否则用户会看到一个 0 字节的「导出成功」
+    await discardReservedPath(finalPath);
+    throw error;
+  }
+  return ok({ path: finalPath });
 });
 
 /**
@@ -1447,16 +1722,15 @@ async function openImportDialog() {
     }
   }));
 
+  // 用户主动选择的路径 → 授权本次会话可访问（后续 pm://file 与文件类 IPC 依赖它）
+  authorizePaths([...files, ...directories]);
+
   return { files, directories, ignored };
 }
 
-ipcMain.handle('select-paths', async () => {
-  try {
-    return await openImportDialog();
-  } catch (error) {
-    logger.error('Error selecting paths:', error);
-    return null;
-  }
+handle('select-paths', async () => {
+  // 取消选择是正常的业务结果，不是错误：ok(null) 让渲染层只需判 data 是否为空
+  return ok(await openImportDialog());
 });
 
 /**
@@ -1464,46 +1738,63 @@ ipcMain.handle('select-paths', async () => {
  * options.allowCreate：macOS 下面板内允许直接「新建文件夹」（移动整理用）；
  * Windows 的目录选择器自带新建按钮，无需额外属性。
  */
-ipcMain.handle('choose-directory', async (event, options) => {
-  try {
-    const properties = ['openDirectory'];
-    if (options?.allowCreate && process.platform === 'darwin') {
-      properties.push('createDirectory');
-    }
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: options?.allowCreate ? '移动到文件夹' : '选择目标文件夹',
-      properties,
-    });
-    if (!result.canceled && result.filePaths.length > 0) {
-      return result.filePaths[0];
-    }
-    return null;
-  } catch (error) {
-    logger.error('Error choosing directory:', error);
-    return null;
+handle('choose-directory', async (event, options) => {
+  const properties = ['openDirectory'];
+  if (options?.allowCreate && process.platform === 'darwin') {
+    properties.push('createDirectory');
   }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: options?.allowCreate ? '移动到文件夹' : '选择目标文件夹',
+    properties,
+  });
+  if (!result.canceled && result.filePaths.length > 0) {
+    // 用户主动选定的目录 → 授权（导出 / 移动整理的目标目录依赖它）
+    authorizeRoot(result.filePaths[0]);
+    return ok(result.filePaths[0]);
+  }
+  return ok(null);
 });
+
+/** read-file 单次读取上限：base64 会把体积放大约 1.33 倍并整块驻留内存，必须设闸门 */
+const MAX_READ_FILE_BYTES = 64 * 1024 * 1024;
+const formatMb = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 
 // 读取文件为 base64（供 AI 分析与「原格式」导出使用）。
 // HEIC/HEIF 与缩略图 / pm:// 协议共用同一份带缓存的转换，避免重复解码。
-ipcMain.handle('read-file', async (event, filePath) => {
-  try {
-    if (!filePath || typeof filePath !== 'string') {
-      return { error: 'Invalid file path' };
-    }
-    if (isHeicFile(filePath)) {
-      const jpeg = await readHeicAsJpeg(filePath);
-      return { data: jpeg.toString('base64') };
-    }
-    const data = await readFile(filePath);
-    return { data: data.toString('base64') };
-  } catch (error) {
-    return { error: error.message };
+handle('read-file', async (event, filePath) => {
+  if (!filePath || typeof filePath !== 'string') {
+    return fail('无效的文件路径');
   }
+  if (!isPathAuthorized(filePath)) {
+    return fail(UNAUTHORIZED_ERROR);
+  }
+
+  // 先按源文件体积设闸门：等 base64 已经进了内存再判断就晚了
+  let sourceSize;
+  try {
+    sourceSize = (await stat(filePath)).size;
+  } catch {
+    return fail('文件不存在或无法访问');
+  }
+  if (sourceSize > MAX_READ_FILE_BYTES) {
+    return fail(`文件过大（${formatMb(sourceSize)}），超过 ${formatMb(MAX_READ_FILE_BYTES)} 的单次读取上限`);
+  }
+
+  if (isHeicFile(filePath)) {
+    const jpeg = await readHeicAsJpeg(filePath);
+    // 转码后可能显著变大（HEIC 压缩率高），对产物再判一次
+    if (jpeg.length > MAX_READ_FILE_BYTES) {
+      return fail(`转码后体积过大（${formatMb(jpeg.length)}），超过单次读取上限`);
+    }
+    return ok(jpeg.toString('base64'));
+  }
+  const buffer = await readFile(filePath);
+  return ok(buffer.toString('base64'));
 });
 
 // ---------------------------------------------------------------------------
 // 感知哈希（dHash）：在主进程计算，避免渲染进程用 canvas 解码阻塞 UI
+// 算法本体在 ./lib/dhash.cjs —— 与渲染层共用同一份实现，避免两处漂移（见该文件注释）
 // ---------------------------------------------------------------------------
 const imageHashCache = new Map();
 const HASH_CACHE_LIMIT = 50000;
@@ -1542,29 +1833,15 @@ function trimHashCache(keepRatio = 0.25) {
   }
 }
 
-/** bitmap 为 BGRA 排列；返回 64 bit 十六进制哈希 */
+/**
+ * 由 bitmap 计算 dHash。
+ *
+ * 算法本身已收敛到 ./lib/dhash.cjs，这里只是把 Electron 的 BGRA 排布转交过去。
+ * 保留这个薄封装而不是让调用点直接用 dHashFromBGRA，是为了让「主进程用哪种排布」
+ * 这个知识只出现在一处。
+ */
 function dHashFromBitmap(bitmap, width, height) {
-  const expected = width * height * 4;
-  if (!bitmap || bitmap.length < expected) return null;
-
-  const gray = new Float64Array(width * height);
-  for (let i = 0, p = 0; i < expected; i += 4, p += 1) {
-    gray[p] = 0.299 * bitmap[i + 2] + 0.587 * bitmap[i + 1] + 0.114 * bitmap[i];
-  }
-
-  const bits = [];
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width - 1; x += 1) {
-      const idx = y * width + x;
-      bits.push(gray[idx] > gray[idx + 1] ? 1 : 0);
-    }
-  }
-
-  let hex = '';
-  for (let i = 0; i < bits.length; i += 4) {
-    hex += (bits[i] * 8 + bits[i + 1] * 4 + bits[i + 2] * 2 + bits[i + 3]).toString(16);
-  }
-  return hex;
+  return dHashFromBGRA(bitmap, width, height);
 }
 
 async function computeImageHash(filePath) {
@@ -1707,6 +1984,13 @@ function setupProtocol() {
       if (kind === 'file' && payload) {
         const filePath = Buffer.from(payload, 'base64url').toString('utf8');
 
+        // 白名单：只允许本次会话中用户主动打开过的图库范围内文件。
+        // 这是本协议最关键的一道闸门 —— 没有它，任意 base64 都能读到本机任意文件。
+        if (!isPathAuthorized(filePath)) {
+          logger.warn('[pm] blocked unauthorized file request');
+          return new Response('Forbidden', { status: 403 });
+        }
+
         // HEIC 走转换缓存，避免每次打开大图都重新解码
         if (isHeicFile(filePath)) {
           const jpeg = await readHeicAsJpeg(filePath);
@@ -1729,67 +2013,108 @@ function setupProtocol() {
   });
 }
 
+/**
+ * 内容安全策略（CSP）。
+ *
+ * 为什么需要它：P0 把「主进程能读哪些文件」收紧了，但渲染层自身仍是一块可被注入的
+ * 执行环境 —— 图库里任何一张图片都可能是精心构造的 SVG。CSP 是唯一能在渲染层内部
+ * 收敛「注入之后还能做什么」的机制：即便有内容被当作脚本执行，也无法外联、无法加载
+ * 远程代码、无法把数据 POST 出去。
+ *
+ * 两条注入路径，互为补充：
+ *  1. `onHeadersReceived` —— 覆盖开发（http://127.0.0.1:3000）与生产（file://）两种加载方式，
+ *     且能按环境下发不同策略（开发必须给 Vite 让路）；
+ *  2. `index.html` 里的 `<meta http-equiv>` —— 由 Vite 在生产构建时注入，
+ *     防止将来更换加载方式（改成 loadFile、自定义协议等）时头部策略被漏掉。
+ *     两处同时存在时浏览器取交集（最严格者生效），所以 meta 只需覆盖生产场景。
+ *
+ * 策略本身定义在 `./lib/csp.cjs`，与 vite 构建期注入 meta 时用的是同一份字符串，
+ * 避免两处各写一份导致的漂移。
+ */
+function setupContentSecurityPolicy() {
+  const isDev = Boolean(process.env.ELECTRON_START_URL);
+  const policy = policyFor(isDev);
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    // 只给「文档本身」注入 CSP，不对 pm:// 返回的图片 / 视频重复注入 ——
+    // 那些响应的 Content-Type 不是文档，注入头部既无意义也会干扰 Range 请求。
+    const isDocument =
+      details.resourceType === 'mainFrame' ||
+      details.resourceType === 'subFrame' ||
+      /text\/html/i.test(details.responseHeaders?.['Content-Type']?.[0] ?? '');
+    if (!isDocument) {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
+
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [policy],
+      },
+    });
+  });
+
+  logger.info(`[csp] ${isDev ? 'development' : 'production'} policy installed`);
+}
+
 // 扫描目录（递归，返回图片文件清单）
 // K1：根目录不可访问时明确报错，部分子项失败以 failedDirs / failedFiles 计数返回，
 // 不再吞错伪装成「空目录」，渲染层可区分「为空 / 无权限 / 部分失败」
-ipcMain.handle('scan-directory', async (event, dirPath, scanId) => {
-  try {
-    const rootStat = await stat(dirPath);
-    if (!rootStat.isDirectory()) {
-      return { files: [], error: '路径不是文件夹', errorCode: 'ENOTDIR' };
-    }
-    return await scanDirectory(dirPath, scanId);
-  } catch (error) {
-    logger.error('Error scanning directory:', error);
-    return { files: [], error: error.message, errorCode: error.code };
+handle('scan-directory', async (event, dirPath, scanId) => {
+  const rootStat = await stat(dirPath);
+  if (!rootStat.isDirectory()) {
+    return fail('路径不是文件夹', 'ENOTDIR');
   }
+  // 扫描即授权：目录内容随后会经由 pm://file 与各文件类 IPC 访问
+  authorizeRoot(dirPath);
+  return ok(await scanDirectory(dirPath, scanId));
 });
 
 // 取消进行中的目录扫描（用户中途放弃添加时调用）
-ipcMain.handle('cancel-scan', async (event, scanId) => {
+handle('cancel-scan', async (event, scanId) => {
   if (typeof scanId === 'string' && scanId.length > 0) {
     activeScans.delete(scanId);
   }
-  return true;
+  return ok(true);
 });
 
 // 生成/命中磁盘缩略图，返回 pm:// 地址
-ipcMain.handle('get-thumbnail', async (event, filePath, maxSize) => {
-  try {
-    const url = await ensureThumbnail(filePath, maxSize || 320);
-    // 视频首帧需由渲染进程抓取：pending 表示「暂无缓存，请生成后回写」
-    if (!url) return { url: null, pending: true };
-    return { url };
-  } catch (error) {
-    return { error: error.message };
+handle('get-thumbnail', async (event, filePath, maxSize) => {
+  if (!isPathAuthorized(filePath)) {
+    return fail(UNAUTHORIZED_ERROR);
   }
+  const url = await ensureThumbnail(filePath, maxSize || 320);
+  // 视频首帧需由渲染进程抓取：pending 表示「暂无缓存，请生成后回写」
+  if (!url) return ok({ url: null, pending: true });
+  return ok({ url });
 });
 
 // 回写渲染进程抓取的视频首帧（key 与 get-thumbnail 一致，命中即永久复用）
-ipcMain.handle('cache-thumbnail', async (event, filePath, maxSize, base64) => {
-  try {
-    if (!filePath || typeof base64 !== 'string' || !base64) {
-      return { error: 'Invalid arguments' };
-    }
-    const url = await cacheThumbnail(filePath, maxSize || 320, base64);
-    return { url };
-  } catch (error) {
-    return { error: error.message };
+handle('cache-thumbnail', async (event, filePath, maxSize, base64) => {
+  if (!filePath || typeof base64 !== 'string' || !base64) {
+    return fail('无效的参数');
   }
+  if (!isPathAuthorized(filePath)) {
+    return fail(UNAUTHORIZED_ERROR);
+  }
+  const url = await cacheThumbnail(filePath, maxSize || 320, base64);
+  return ok({ url });
 });
 
 // 一次读取同时返回尺寸 + EXIF + 拍摄时间
-ipcMain.handle('get-metadata', async (event, filePath) => {
-  try {
-    return await metaLimiter(() => readMetadata(filePath));
-  } catch (error) {
-    return { error: error.message };
+handle('get-metadata', async (event, filePath) => {
+  if (!isPathAuthorized(filePath)) {
+    return fail(UNAUTHORIZED_ERROR);
   }
+  return ok(await metaLimiter(() => readMetadata(filePath)));
 });
 
 // 批量检查路径是否存在（N8：启动时标注「不可用来源」——目录被挪走 / 卷未挂载）。
 // 只做一次 stat，不递归；返回 { 路径: 是否存在 }，缺失的路径显式返回 false。
-ipcMain.handle('check-paths', async (event, paths) => {
+// 这些路径来自应用自己持久化的图库来源（用户此前主动选过），因此存在的就地授权，
+// 保证「重启后恢复图库」这条链路无需再次弹窗。
+handle('check-paths', async (event, paths) => {
   const list = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string' && p.length > 0) : [];
   const settled = await Promise.all(
     list.map(async (target) => {
@@ -1801,49 +2126,72 @@ ipcMain.handle('check-paths', async (event, paths) => {
       }
     })
   );
-  return Object.fromEntries(settled);
+  authorizePaths(settled.filter(([, exists]) => exists).map(([target]) => target));
+  return ok(Object.fromEntries(settled));
+});
+
+// 显式授权一批路径。用于「拖放进窗口」——拖放不经过系统对话框，
+// 是除对话框之外的另一个用户主动选择入口。只授权实际存在的路径。
+handle('authorize-paths', async (event, paths) => {
+  if (!Array.isArray(paths)) {
+    return fail('无效的参数');
+  }
+  const existing = [];
+  for (const target of paths) {
+    if (typeof target !== 'string' || !target) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await stat(target);
+      existing.push(target);
+    } catch {
+      // 不存在（拖入后立即被移走等）不授权，也不报错
+    }
+  }
+  authorizePaths(existing);
+  return ok({ count: existing.length });
 });
 
 // 批量计算感知哈希（主进程并发受控 + 内存缓存，不阻塞渲染进程）
-ipcMain.handle('get-image-hashes', async (event, filePaths) => {
+// 未授权的路径按「算不出」返回 null，与解码失败同一条降级路径（不额外暴露路径是否存在）
+handle('get-image-hashes', async (event, filePaths) => {
   const list = Array.isArray(filePaths) ? filePaths : [];
-  try {
-    return await Promise.all(list.map(filePath => computeImageHash(filePath)));
-  } catch (error) {
-    return list.map(() => null);
-  }
+  const hashes = await Promise.all(
+    list.map(filePath =>
+      isPathAuthorized(filePath) ? computeImageHash(filePath) : Promise.resolve(null)
+    )
+  );
+  // 单项解码失败降级为 null，整体不失败 —— 哈希算不出来不该让整批重复检测停摆
+  return ok(hashes);
 });
 
 // 批量获取文件信息（用于拖放/单文件选择时补齐 size/mtime）
 // K1：单项失败不再过滤丢弃，路径进 failedPaths 返回，渲染层可提示跳过数量并重试
-ipcMain.handle('stat-files', async (event, filePaths) => {
+// 未授权的路径同样进 failedPaths —— 对调用方而言「拿不到信息」，不区分原因。
+handle('stat-files', async (event, filePaths) => {
   const list = Array.isArray(filePaths) ? filePaths : [];
-  try {
-    const settled = await Promise.all(
-      list.map(async (filePath) => {
-        try {
-          const s = await stat(filePath);
-          return {
-            path: filePath,
-            name: path.basename(filePath),
-            size: s.size,
-            mtime: s.mtimeMs,
-            created: s.birthtimeMs || s.ctimeMs || 0,
-          };
-        } catch {
-          return null;
-        }
-      })
-    );
-    return {
-      infos: settled.filter(Boolean),
-      failedPaths: settled
-        .map((item, index) => (item ? null : list[index]))
-        .filter((p) => typeof p === 'string'),
-    };
-  } catch (error) {
-    return { infos: [], failedPaths: list.filter((p) => typeof p === 'string'), error: error.message };
-  }
+  const settled = await Promise.all(
+    list.map(async (filePath) => {
+      if (!isPathAuthorized(filePath)) return null;
+      try {
+        const s = await stat(filePath);
+        return {
+          path: filePath,
+          name: path.basename(filePath),
+          size: s.size,
+          mtime: s.mtimeMs,
+          created: s.birthtimeMs || s.ctimeMs || 0,
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+  return ok({
+    infos: settled.filter(Boolean),
+    failedPaths: settled
+      .map((item, index) => (item ? null : list[index]))
+      .filter((p) => typeof p === 'string'),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1864,6 +2212,23 @@ function storePath(fileName) {
   return path.join(app.getPath('userData'), fileName);
 }
 
+/**
+ * 存储损坏的通知队列。
+ *
+ * 损坏文件已经被改名留证（见 readStore），但**用户不知道** —— 他只会发现
+ * 「我的相册/收藏没了」，既不知道原因，也不知道有备份可捞。
+ * 这里把恢复事件攒起来，由渲染进程在启动后取走并提示一次。
+ *
+ * 用「取走即清空」而不是持续状态：这是一次性事件，反复提示只会变成噪音。
+ */
+const storageNotices = [];
+
+/** 取出并清空待提示的存储恢复事件 */
+function drainStorageNotices() {
+  const notices = storageNotices.splice(0, storageNotices.length);
+  return notices;
+}
+
 async function readStore(fileName) {
   if (storeCache.has(fileName)) return storeCache.get(fileName);
 
@@ -1876,8 +2241,16 @@ async function readStore(fileName) {
     // 首次运行或文件损坏：从空存储开始，不阻塞启动。
     // 但损坏文件要先挪开留证 —— 否则紧接着的任意一次写入就会把它整体覆盖，
     // 原本还有救的收藏 / 相簿 / 标签就真的没了。
+    const backupPath = `${storePath(fileName)}.corrupt-${Date.now()}`;
     try {
-      await rename(storePath(fileName), `${storePath(fileName)}.corrupt-${Date.now()}`);
+      await rename(storePath(fileName), backupPath);
+      // 只有真的挪成功了才算「损坏」：文件不存在（首次运行）不该提示用户
+      storageNotices.push({
+        file: fileName,
+        backupPath,
+        at: Date.now(),
+      });
+      logger.warn(`[store] ${fileName} 无法解析，已备份到 ${backupPath}`);
     } catch {
       // 文件本来就不存在（首次运行），无需处理
     }
@@ -1934,42 +2307,59 @@ function currentConfig() {
   return storeCache.get(STORE_CONFIG) ?? {};
 }
 
-ipcMain.handle('load-config', async () => {
+/**
+ * 读取配置。
+ * 注意这里的 fail-soft：配置文件损坏时返回空配置而不是 fail —— 配置读不出来
+ * 不应该让应用起不来（用户会看到「图库打不开」而不是「配置坏了」，更难自救）。
+ * 损坏本身记在日志里；「备份损坏文件并提示用户」是 P2 的独立事项。
+ */
+handle('load-config', async () => {
   try {
-    return await readStore(STORE_CONFIG);
+    return ok(await readStore(STORE_CONFIG));
   } catch (error) {
-    logger.warn('Failed to load config:', error.message);
-    return {};
+    logger.warn('Failed to load config, falling back to empty:', error.message);
+    return ok({});
   }
 });
 
 // 每次保存都直接落盘：写入量很小，但「改完就退出」不应丢数据
-ipcMain.handle('save-config', async (event, patch) => {
+handle('save-config', async (event, patch) => {
+  if (!patch || typeof patch !== 'object') {
+    return fail('无效的配置内容');
+  }
+  const saved = await mergeStore(STORE_CONFIG, patch);
+  if (!saved) {
+    return fail('配置保存失败');
+  }
+  return ok(true);
+});
+
+handle('load-ai-cache', async () => {
   try {
-    return await mergeStore(STORE_CONFIG, patch);
+    return ok(await readStore(STORE_AI_CACHE));
   } catch (error) {
-    logger.warn('Failed to persist config:', error.message);
-    return false;
+    // 与配置同理：AI 缓存只是可再生的加速数据，读不出来就当没有
+    logger.warn('Failed to load AI cache, falling back to empty:', error.message);
+    return ok({});
   }
 });
 
-ipcMain.handle('load-ai-cache', async () => {
-  try {
-    return await readStore(STORE_AI_CACHE);
-  } catch (error) {
-    logger.warn('Failed to load AI cache:', error.message);
-    return {};
-  }
-});
+/**
+ * 取走「存储损坏并已备份」的通知（取走即清空）。
+ *
+ * 渲染进程在启动加载完配置后调用一次，非空时提示用户：
+ * 「配置已重置，旧文件已备份到 xxx」。没有这条，用户只会发现相册/收藏消失，
+ * 既不知道原因也不知道有备份可捞 —— 那才是真正让人恼火的地方。
+ */
+handle('storage-notices', async () => ok(drainStorageNotices()));
 
 // AI 结果由渲染进程整体维护（含条数上限），这里直接替换 entries
-ipcMain.handle('save-ai-cache', async (event, entries) => {
-  try {
-    return await mergeStore(STORE_AI_CACHE, { version: 1, entries });
-  } catch (error) {
-    logger.warn('Failed to persist AI cache:', error.message);
-    return false;
+handle('save-ai-cache', async (event, entries) => {
+  const saved = await mergeStore(STORE_AI_CACHE, { version: 1, entries });
+  if (!saved) {
+    return fail('AI 缓存保存失败');
   }
+  return ok(true);
 });
 
 // ---------------------------------------------------------------------------
@@ -2092,7 +2482,9 @@ async function analyzeImageWithDeepSeek(base64, mimeType) {
     if (!content) throw new Error('DeepSeek 返回空内容');
     return parseAnalysisContent(content);
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error('DeepSeek 请求超时');
+    // 超时换成对用户更明确的文案，但保留原始错误作为 cause ——
+    // 否则排查时只能看到「请求超时」，丢掉了是 AbortError 还是网络错误的线索
+    if (error.name === 'AbortError') throw new Error('DeepSeek 请求超时', { cause: error });
     throw error;
   } finally {
     clearTimeout(timer);
@@ -2100,60 +2492,65 @@ async function analyzeImageWithDeepSeek(base64, mimeType) {
 }
 
 // 渲染进程提交 base64，主进程完成请求并返回「描述 + 标签」
-ipcMain.handle('ai-analyze', async (event, payload) => {
+/**
+ * AI 分析单次上传上限（base64 字符数，约合 15MB 原图）。
+ * 渲染层目前提交的是原图 base64，大图既会把主进程内存顶起来，
+ * 也会被上游接口按体积拒绝 —— 在这里先拦下并给出可操作的提示，
+ * 比让请求打到远端再失败更省时间、也更容易理解。
+ */
+const MAX_AI_IMAGE_BASE64 = 20 * 1024 * 1024;
+
+handle('ai-analyze', async (event, payload) => {
   const base64 = payload?.base64;
   const mimeType = payload?.mimeType;
   if (!base64 || typeof base64 !== 'string') {
-    return { error: '缺少图片数据' };
+    return fail('缺少图片数据');
+  }
+  if (base64.length > MAX_AI_IMAGE_BASE64) {
+    const actualMb = (base64.length / 1024 / 1024).toFixed(1);
+    const limitMb = (MAX_AI_IMAGE_BASE64 / 1024 / 1024).toFixed(0);
+    return fail(`图片过大（约 ${actualMb}MB），AI 分析单次上限约 ${limitMb}MB。可先用「导出」转成较小的 JPEG 后再分析。`);
   }
 
-  try {
-    const result = await analyzeImageWithDeepSeek(
-      base64,
-      typeof mimeType === 'string' && mimeType ? mimeType : 'image/jpeg'
-    );
-    return { result };
-  } catch (error) {
-    logger.error('DeepSeek analysis failed:', error);
-    return { error: error.message };
-  }
+  const result = await analyzeImageWithDeepSeek(
+    base64,
+    typeof mimeType === 'string' && mimeType ? mimeType : 'image/jpeg'
+  );
+  return ok(result);
 });
 
 // 读取当前生效的 AI 配置（供应用内「AI 设置」回显）
-ipcMain.handle('ai-config-get', async () => {
+handle('ai-config-get', async () => {
   const { apiKey, baseUrl, model, keySource } = resolveAiConfig();
-  return {
+  return ok({
     apiKey,
     baseUrl,
     model,
     keySource,
     defaults: { baseUrl: DEEPSEEK_DEFAULT_BASE_URL, model: DEEPSEEK_DEFAULT_MODEL },
-  };
+  });
 });
 
 // 保存 AI 配置：只接受字符串字段，空串表示「清除该覆盖项，回退到环境变量 / 默认值」
-ipcMain.handle('ai-config-set', async (event, patch) => {
-  try {
-    const clean = {};
-    if (patch && typeof patch.apiKey === 'string') clean.apiKey = patch.apiKey.trim();
-    if (patch && typeof patch.baseUrl === 'string') clean.baseUrl = patch.baseUrl.trim();
-    if (patch && typeof patch.model === 'string') clean.model = patch.model.trim();
-    if (Object.keys(clean).length === 0) return { success: false, error: '没有可保存的内容' };
-
-    await mergeStore(STORE_AI_CONFIG, clean);
-    const { keySource } = resolveAiConfig();
-    return { success: true, keySource };
-  } catch (error) {
-    logger.warn('Failed to persist AI config:', error.message);
-    return { success: false, error: error.message };
+handle('ai-config-set', async (event, patch) => {
+  const clean = {};
+  if (patch && typeof patch.apiKey === 'string') clean.apiKey = patch.apiKey.trim();
+  if (patch && typeof patch.baseUrl === 'string') clean.baseUrl = patch.baseUrl.trim();
+  if (patch && typeof patch.model === 'string') clean.model = patch.model.trim();
+  if (Object.keys(clean).length === 0) {
+    return fail('没有可保存的内容');
   }
+
+  await mergeStore(STORE_AI_CONFIG, clean);
+  const { keySource } = resolveAiConfig();
+  return ok({ keySource });
 });
 
 /**
  * 测试连接：用最省的一次对话请求校验「密钥 + 地址 + 模型」是否可用。
  * 支持传入尚未保存的草稿值，方便「先测通再保存」。
  */
-ipcMain.handle('ai-config-test', async (event, draft) => {
+handle('ai-config-test', async (event, draft) => {
   const current = resolveAiConfig();
   const pick = (value, fallback) =>
     typeof value === 'string' && value.trim() ? value.trim() : fallback;
@@ -2162,7 +2559,7 @@ ipcMain.handle('ai-config-test', async (event, draft) => {
   const baseUrl = pick(draft?.baseUrl, current.baseUrl).replace(/\/+$/, '');
   const model = pick(draft?.model, current.model);
 
-  if (!apiKey) return { ok: false, error: '请先填写 API Key' };
+  if (!apiKey) return fail('请先填写 API Key');
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AI_TEST_TIMEOUT);
@@ -2184,15 +2581,12 @@ ipcMain.handle('ai-config-test', async (event, draft) => {
 
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
-      return {
-        ok: false,
-        error: `请求失败（${response.status}）：${detail.slice(0, 300)}`,
-      };
+      return fail(`请求失败（${response.status}）：${detail.slice(0, 300)}`);
     }
-    return { ok: true, model };
+    return ok({ model });
   } catch (error) {
-    if (error.name === 'AbortError') return { ok: false, error: '连接超时' };
-    return { ok: false, error: error.message };
+    if (error.name === 'AbortError') return fail('连接超时');
+    return fail(error.message);
   } finally {
     clearTimeout(timer);
   }
@@ -2326,6 +2720,8 @@ function startMemoryWatchdog() {
 
 app.on('ready', () => {
   setupProtocol();
+  // CSP 必须在创建窗口之前装好：晚于首次导航就会漏掉第一个文档
+  setupContentSecurityPolicy();
   pruneThumbCache().then(loadThumbKeys);
   createMenu();
   startMemoryWatchdog();

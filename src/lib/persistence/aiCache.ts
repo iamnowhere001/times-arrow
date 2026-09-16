@@ -36,7 +36,12 @@ export const loadAiCache = async (): Promise<Map<string, AiCacheEntry>> => {
   if (!electronApi?.loadAiCache) return cache;
 
   try {
-    const store: PersistedAiCache = await electronApi.loadAiCache();
+    const response = await electronApi.loadAiCache();
+    if (!response.ok) {
+      logger.warn('读取 AI 缓存失败:', response.error);
+      return cache;
+    }
+    const store: PersistedAiCache = response.data;
     Object.entries(store?.entries ?? {}).forEach(([key, entry]) => {
       if (!key) return;
       const normalized = normalizeEntry(entry);
@@ -69,10 +74,10 @@ export const saveAiCache = async (cache: Map<string, AiCacheEntry>): Promise<boo
   });
 
   try {
-    const ok = await electronApi.saveAiCache(entries);
+    const response = await electronApi.saveAiCache(entries);
     // 缓存本身丢了只是要重新分析，但「以为存上了」会导致下次启动白白重跑一遍
-    if (ok === false) reportPersistenceError('AI 分析结果未能保存到磁盘');
-    return ok !== false;
+    if (!response.ok) reportPersistenceError('AI 分析结果未能保存到磁盘');
+    return response.ok;
   } catch (error) {
     logger.warn('写入 AI 缓存失败:', error);
     reportPersistenceError('AI 分析结果未能保存到磁盘');

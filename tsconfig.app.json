@@ -9,6 +9,9 @@
     "skipLibCheck": true,
     "types": ["node"],
     "moduleResolution": "bundler",
+    // 地名表外置为 places.data.json（P2-27）：Vite 原生支持 JSON 导入，
+    // 但 tsc 需要显式打开才会给它推导类型，否则 typecheck 直接报错。
+    "resolveJsonModule": true,
     "isolatedModules": true,
     "moduleDetection": "force",
     "jsx": "react-jsx",

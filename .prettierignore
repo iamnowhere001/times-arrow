@@ -1,0 +1,7 @@
+dist
+release
+node_modules
+package-lock.json
+*.md
+src/lib/geo/places.ts
+src/lib/geo/landMask.ts

@@ -7,6 +7,8 @@
 
 import { Photo, SortConfig } from '@/types';
 import { createLruCache } from '@/lib/cache/cacheManager';
+// 时间语义统一从 photoTime 取：本文件原先内联了 5 处 `dateTaken || lastModified || 0`
+import { photoTakenTime, calendarDayKey, hasUsableTime } from '@/lib/media/photoTime';
 
 /**
  * 日期分组 key 缓存。
@@ -17,7 +19,7 @@ const dateKeyCache = createLruCache<number, string>('dateGroupKey', 5000, 'volat
 let dateKeyCacheDay = '';
 
 export function getDateGroupKey(timestamp: number, todayKey: string, yesterdayKey: string): string {
-  if (!timestamp || Number.isNaN(timestamp)) return 'Unknown Date';
+  if (!hasUsableTime(timestamp)) return 'Unknown Date';
 
   // 跨天时缓存失效
   if (todayKey !== dateKeyCacheDay) {
@@ -25,14 +27,14 @@ export function getDateGroupKey(timestamp: number, todayKey: string, yesterdayKe
     dateKeyCacheDay = todayKey;
   }
 
-  const date = new Date(timestamp);
-  // 用「本地日历日」（yyyymmdd）做 key。
-  // 不能用 floor(ts / 86400000)：那是 UTC 日界，东八区里同一天 23:00 与次日 01:00
-  // 会落进同一个 UTC 日，导致两天被错误地合并为同一组。
-  const dayKey = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+  // 用「本地日历日」做 key（见 photoTime.calendarDayKey 的说明：
+  // 不能用 floor(ts / 86400000)，那是 UTC 日界，东八区会把两天并成一天）
+  const dayKey = calendarDayKey(timestamp);
   const cached = dateKeyCache.get(dayKey);
   if (cached !== undefined) return cached;
 
+  // 缓存未命中才构造 Date（toDateString / toLocaleDateString 是这里的 CPU 热点）
+  const date = new Date(timestamp);
   const dateKey = date.toDateString();
   let key: string;
   if (dateKey === todayKey) {
@@ -71,8 +73,8 @@ export function sortPhotos(photos: Photo[], sortConfig: SortConfig): Photo[] {
       return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
     }
     if (sortConfig.key === 'dateTaken') {
-      const dateA = a.dateTaken || a.lastModified || 0;
-      const dateB = b.dateTaken || b.lastModified || 0;
+      const dateA = photoTakenTime(a);
+      const dateB = photoTakenTime(b);
       return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
     }
     if (sortConfig.key === 'dateCreated') {
@@ -114,7 +116,7 @@ export function groupPhotos(photos: Photo[], sortConfig: SortConfig): PhotoGroup
   // 分组键与排序键保持一致：按修改时间排序时，日期分组也要按修改时间切，
   // 否则会出现「组头写今天、里面却是一周前拍的照片」这类错位
   const groupTimeOf = (photo: Photo): number =>
-    sortConfig.key === 'dateModified' ? photo.lastModified : photo.dateTaken || photo.lastModified;
+    sortConfig.key === 'dateModified' ? photo.lastModified : photoTakenTime(photo);
 
   sorted.forEach(photo => {
     const key = getDateGroupKey(groupTimeOf(photo), todayKey, yesterdayKey);
@@ -133,9 +135,5 @@ export function groupPhotos(photos: Photo[], sortConfig: SortConfig): PhotoGroup
  * 缺失时间戳的条目排到末尾。
  */
 export function sortPhotosByTimeline(photos: Photo[]): Photo[] {
-  return [...photos].sort((a, b) => {
-    const ta = a.dateTaken || a.lastModified || 0;
-    const tb = b.dateTaken || b.lastModified || 0;
-    return ta - tb;
-  });
+  return [...photos].sort((a, b) => photoTakenTime(a) - photoTakenTime(b));
 }

@@ -2,6 +2,8 @@
 import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect, forwardRef, useImperativeHandle } from 'react';
 import { Photo, ViewMode, SortConfig, SortKey, SortDirection } from '@/types';
 import { formatBytes, formatDate, formatVideoDuration, isVideoPhoto } from '@/utils';
+// 时间语义统一入口：本文件原先内联了 `dateTaken || lastModified`
+import { photoTakenTime } from '@/lib/media/photoTime';
 import { useThumbnailSrc, useVideoPoster, ThumbImage } from '@/components/grid/ThumbnailImage';
 
 /**
@@ -1665,10 +1667,11 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
           onColumnsChange={onColumnsChange}
           onFilterByDate={onFilterByDate}
           stickyDay={sortByDate ? (photo) => {
-            // 与 photoGrouping 的分组口径保持一致：按修改时间排序时用 lastModified 切天
+            // 与 photoGrouping 的分组口径保持一致：按修改时间排序时用 lastModified 切天，
+            // 否则用统一的「拍摄时间」语义（见 @/lib/media/photoTime）
             const ts = sortConfig.key === 'dateModified'
               ? photo.lastModified
-              : (photo.dateTaken || photo.lastModified);
+              : photoTakenTime(photo);
             const label = formatDayCapsule(ts);
             return label ? { label, timestamp: ts } : null;
           } : undefined}

@@ -9,6 +9,8 @@
 import { DurationFilter, MediaFilter, Photo, PhotoFilters, SizeFilter } from '@/types';
 import { extOfName, isVideoPhoto } from '@/utils';
 import { isSelfiePhoto, isScreenshotPhoto } from '@/lib/media/mediaTypes';
+// 时间语义统一入口：本文件原先内联了 `dateTaken || lastModified`
+import { photoTakenTime } from '@/lib/media/photoTime';
 
 /** 空筛选（默认视图：全部媒体、不限定任何条件） */
 export const EMPTY_FILTERS: PhotoFilters = {
@@ -173,22 +175,54 @@ export const buildTagOptions = (photos: Photo[]): string[] => {
 };
 
 /**
- * 关键词匹配：文件名 / MIME / 相机机型 / AI 标签与描述。
+ * 参与搜索的文本片段。
+ *
+ * 注意这里放的是 `cameraKeyOf(photo)` 的**计算结果**而不是 exif.make / exif.model 原值：
+ * 相机标识可能是「厂商 + 机型」拼接出来的，拆开放进索引会让 `canon eos` 这类
+ * 跨字段关键词匹配不到（`'…canon\u0000eos r5…'.includes('canon eos')` 为 false）。
+ */
+const searchParts = (photo: Photo): string[] => [
+  photo.name,
+  photo.type,
+  cameraKeyOf(photo) ?? '',
+  ...(photo.tags ?? []),
+  ...(photo.aiTags ?? []),
+  photo.aiDescription ?? '',
+];
+
+/**
+ * 搜索索引缓存。
+ *
+ * 改造前每次按键都要对**每张照片**重新做一遍 `toLowerCase()`（文件名 / MIME / 相机 /
+ * 每个标签 / AI 描述），一万张图就是每帧几万次字符串分配 —— 输入框因此明显发涩。
+ *
+ * 用 `WeakMap` 而不是普通 Map：照片对象被更新时是**整体替换**（`{...p, ...updates}`），
+ * 旧对象失去引用后 WeakMap 条目会自动回收，不需要手工清理，也不会随编辑次数增长。
+ *
+ * 额外存一份指纹并逐次比对，是为了兜住「万一有人原地修改了 photo 字段」的情况 ——
+ * 指纹与 haystack 都从同一份 `searchParts` 派生，因此两者不可能漂移。
+ */
+const searchIndexCache = new WeakMap<Photo, { fingerprint: string; haystack: string }>();
+
+/** 取（或建立）照片的搜索用 haystack —— 已小写、可直接 includes */
+const searchHaystack = (photo: Photo): string => {
+  const fingerprint = searchParts(photo).join('\u0000');
+  const cached = searchIndexCache.get(photo);
+  if (cached && cached.fingerprint === fingerprint) return cached.haystack;
+
+  const haystack = fingerprint.toLowerCase();
+  searchIndexCache.set(photo, { fingerprint, haystack });
+  return haystack;
+};
+
+/**
+ * 关键词匹配：文件名 / MIME / 相机机型 / 用户标签 / AI 标签与描述。
  * AI 结果接入搜索后，「海边」「猫」这类语义词也能直接命中。
  */
 export const matchesSearch = (photo: Photo, rawQuery: string): boolean => {
   const query = rawQuery.trim().toLowerCase();
   if (!query) return true;
-  if (photo.name.toLowerCase().includes(query)) return true;
-  if (photo.type.toLowerCase().includes(query)) return true;
-
-  const camera = cameraKeyOf(photo);
-  if (camera && camera.toLowerCase().includes(query)) return true;
-
-  if (photo.aiTags?.some(tag => tag.toLowerCase().includes(query))) return true;
-  if (photo.tags?.some(tag => tag.toLowerCase().includes(query))) return true;
-  if (photo.aiDescription?.toLowerCase().includes(query)) return true;
-  return false;
+  return searchHaystack(photo).includes(query);
 };
 
 /** 媒体类型展示名（侧栏 / 筛选面板 / 条件条 / 空状态共用） */
@@ -262,7 +296,8 @@ export const matchesFilters = (
   }
 
   if (filters.dateFrom !== null || filters.dateTo !== null) {
-    const time = photo.dateTaken || photo.lastModified;
+    // 与分组/排序共用同一个「拍摄时间」语义，否则筛选出的结果与列表头会自相矛盾
+    const time = photoTakenTime(photo);
     if (!time) return false;
     if (filters.dateFrom !== null && time < filters.dateFrom) return false;
     if (filters.dateTo !== null && time > filters.dateTo) return false;

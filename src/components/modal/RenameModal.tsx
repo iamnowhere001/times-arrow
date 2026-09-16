@@ -2,6 +2,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Photo, RenameOptions } from '@/types';
 import { folderOfPath, formatDateForNaming, repairFileName } from '@/utils';
+// 文件名规则只有一处定义：预览校验与落盘规范化共用同一套，避免两边漂移
+import { validateFilename } from '@/lib/fs/pathUtils';
+// 时间语义统一入口：本文件原先内联了 3 处 `dateTaken || lastModified`
+import { photoTakenTime } from '@/lib/media/photoTime';
 
 interface RenameModalProps {
   isOpen: boolean;
@@ -14,15 +18,7 @@ interface RenameModalProps {
   isBusy?: boolean;
 }
 
-const INVALID_CHARS = /[<>:"|?*\\/]/;
-const RESERVED_WINDOW_NAMES = new Set([
-  'con', 'prn', 'aux', 'nul',
-  ...Array.from({ length: 9 }, (_, i) => `com${i + 1}`),
-  ...Array.from({ length: 9 }, (_, i) => `lpt${i + 1}`),
-]);
-
-const sortByTakenTime = (a: Photo, b: Photo) =>
-  (a.dateTaken || a.lastModified || 0) - (b.dateTaken || b.lastModified || 0);
+const sortByTakenTime = (a: Photo, b: Photo) => photoTakenTime(a) - photoTakenTime(b);
 
 /** 扩展名（含点）；无扩展名返回空串 */
 const extWithDot = (name: string): string => {
@@ -140,7 +136,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
         const repaired = repairFileName(
           photo.name,
           { fixMojibake, stripJunkPrefix, stripCopyMarks, fallbackToDate, dateFormat, datePrefix },
-          photo.dateTaken || photo.lastModified
+          photoTakenTime(photo)
         );
         to = repaired.name;
         note = repaired.changed ? (repaired.notes.join('、') || '已处理') : '无需修改';
@@ -155,7 +151,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
         }
         to = `${base}${ext}`;
       } else {
-        const photoDate = new Date(photo.dateTaken || photo.lastModified || Date.now());
+        const photoDate = new Date(photoTakenTime(photo) || Date.now());
         const dateStr = formatDateForNaming(photoDate, dateFormat || 'yyyy-MM-dd_HHmmss');
         to = `${datePrefix}${dateStr}${ext}`;
       }
@@ -175,8 +171,11 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
       }
       used.add(`${dirKey}\u0000${finalTo}`);
 
-      if (INVALID_CHARS.test(finalTo) || RESERVED_WINDOW_NAMES.has(toStem.toLowerCase())) {
-        error = `「${finalTo}」包含系统不允许的字符（<>:"/\\|?*）或为保留名称`;
+      // 用与落盘时完全相同的规则校验：这样「预览显示合法」与「磁盘上的名字」不可能不一致。
+      // 校验通过还额外保证 sanitizeFilename 是恒等变换（见 pathUtils 的不变式说明）。
+      const verdict = validateFilename(finalTo);
+      if (!verdict.ok) {
+        error = `「${finalTo}」${verdict.reason}`;
         break;
       }
 

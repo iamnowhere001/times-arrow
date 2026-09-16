@@ -13,6 +13,10 @@ dist-ssr
 release
 *.local
 
+# 性能剖析产物（Clang/LLVM profile data）：构建与本地 profiling 的残留，不入库
+*.profraw
+*.profdata
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

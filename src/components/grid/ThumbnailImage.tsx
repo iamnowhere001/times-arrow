@@ -204,7 +204,7 @@ async function captureVideoPoster(photo: Photo, size: number): Promise<string | 
           quantizeThumbSize(size),
           base64
         );
-        finish(saved?.url || dataUrl);
+        finish(saved.ok ? saved.data.url : dataUrl);
       } catch {
         finish(null);
       }
@@ -258,9 +258,10 @@ async function resolveVideoPoster(photo: Photo, size: number): Promise<string | 
       // 1) 磁盘缓存优先（上一轮已抓过的帧无需重复解码）
       if (photo.path && window.electronAPI) {
         const res = await window.electronAPI.getThumbnail(photo.path, target);
-        if (res?.url) {
-          cacheThumbUrl(key, res.url);
-          return res.url;
+        const url = res.ok ? res.data.url : null;
+        if (url) {
+          cacheThumbUrl(key, url);
+          return url;
         }
       }
       // 2) 渲染进程抓帧（同时回写磁盘缓存）

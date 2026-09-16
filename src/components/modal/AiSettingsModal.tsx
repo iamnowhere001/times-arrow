@@ -66,8 +66,14 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
     setIsLoading(true);
     api
       .getAiConfig()
-      .then(config => {
+      .then(response => {
         if (cancelled) return;
+        if (!response.ok) {
+          setLoadError(response.error);
+          setIsLoading(false);
+          return;
+        }
+        const config = response.data;
         setApiKey(config.apiKey ?? '');
         setBaseUrl(config.baseUrl ?? '');
         setModel(config.model ?? '');
@@ -115,8 +121,8 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
       });
       setTestResult(
         result.ok
-          ? { ok: true, message: `连接成功，模型：${result.model || model.trim() || defaults.model}` }
-          : { ok: false, message: result.error ?? '连接失败' }
+          ? { ok: true, message: `连接成功，模型：${result.data.model || model.trim() || defaults.model}` }
+          : { ok: false, message: result.error }
       );
     } catch (error) {
       setTestResult({ ok: false, message: describeIpcError(error) });
@@ -135,12 +141,12 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
         baseUrl: baseUrl.trim(),
         model: model.trim(),
       });
-      if (result.success) {
-        setKeySource(result.keySource ?? 'none');
+      if (result.ok) {
+        setKeySource(result.data.keySource ?? 'none');
         onNotify?.('AI 设置已保存', 'success');
         onClose();
       } else {
-        onNotify?.(result.error || '保存 AI 设置失败', 'error');
+        onNotify?.(result.error, 'error');
       }
     } catch (error) {
       onNotify?.(describeIpcError(error), 'error');

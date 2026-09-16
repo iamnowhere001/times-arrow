@@ -96,7 +96,7 @@ export const movePhotosToTrash = async (
     } else {
       try {
         const result = await window.electronAPI.deleteFile(photo.path);
-        if (result?.error) {
+        if (!result.ok) {
           failedPhotos.push(photo);
           errors.push(`「${photo.name}」：${humanizeFsError(result.error)}`);
         } else {

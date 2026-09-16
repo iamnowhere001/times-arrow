@@ -2,6 +2,8 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import { Photo } from '@/types';
 import { ThumbImage } from '@/components/grid/ThumbnailImage';
 import { formatVideoDuration, isVideoPhoto } from '@/utils';
+// 时间语义统一入口：本文件原先内联了 `dateTaken || lastModified || 0`
+import { photoTakenTime } from '@/lib/media/photoTime';
 
 interface TimelineGalleryProps {
   /** 已按拍摄时间升序排列的照片 */
@@ -47,14 +49,14 @@ const SPINE_CENTER = SPINE_LEFT + SPINE_WIDTH / 2;
 /** 节点相对「内容列起点」的左偏移（负值，向左探进装订线） */
 const MONTH_DOT_LEFT = SPINE_CENTER - CONTENT_PAD - MONTH_DOT / 2;
 const YEAR_DOT_LEFT = SPINE_CENTER - CONTENT_PAD - YEAR_DOT / 2;
+/** 月份胶囊节点在月份块内的垂直偏移：sticky 容器的 py-1.5（6）+ 28px 胶囊的一半（14） */
+const MONTH_NODE_CENTER = 20;
 
 /** 记住上次离开时的滚动位置：图库 ↔ 时光画廊来回切换不丢进度 */
 let savedScrollTop = 0;
 
-/** 取照片的有效时间戳：拍摄时间优先，其次文件修改时间 */
-function photoTimestamp(photo: Photo): number {
-  return photo.dateTaken || photo.lastModified || 0;
-}
+/** 取照片的有效时间戳：拍摄时间优先，其次文件修改时间（语义见 @/lib/media/photoTime） */
+const photoTimestamp = photoTakenTime;
 
 interface MonthGroup {
   key: string; // YYYY-MM（月份 0 基）
@@ -138,13 +140,13 @@ function formatYearMonth(ts: number): string {
   return `${d.getFullYear()}年${d.getMonth() + 1}月`;
 }
 
-/** 单个月份的跨度文案：同一天只显示一天，否则「4月2日 – 28日」 */
+/** 单个月份的跨度文案：月份名已经在胶囊里，这里只说「哪几天」，不再重复「8月」 */
 function monthRangeLabel(photos: Photo[]): string {
   if (photos.length === 0) return '';
   const first = new Date(photoTimestamp(photos[0]));
   const last = new Date(photoTimestamp(photos[photos.length - 1]));
-  if (first.toDateString() === last.toDateString()) return formatMonthDay(first.getTime());
-  return `${first.getMonth() + 1}月${first.getDate()}日 – ${last.getDate()}日`;
+  if (first.toDateString() === last.toDateString()) return `${first.getDate()} 日`;
+  return `${first.getDate()} – ${last.getDate()} 日`;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,21 +171,11 @@ const ChevronLeftSmallIcon = () => (
   </svg>
 );
 
-const CalendarIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="4" width="18" height="18" rx="2"></rect>
-    <line x1="16" y1="2" x2="16" y2="6"></line>
-    <line x1="8" y1="2" x2="8" y2="6"></line>
-    <line x1="3" y1="10" x2="21" y2="10"></line>
-  </svg>
-);
-
-const ImagesIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-    <circle cx="8.5" cy="8.5" r="1.5"></circle>
-    <polyline points="21 15 16 10 5 21"></polyline>
-  </svg>
+/** 统计项之间的分隔点：比竖线轻，比空格清楚 */
+const Dot = () => (
+  <span aria-hidden className="text-[var(--text-quaternary)]">
+    ·
+  </span>
 );
 
 const ArrowUpIcon = () => (
@@ -282,7 +274,7 @@ const TimelineCard = memo(function TimelineCard({
       onClick={() => onOpen(photo)}
       title={photo.name}
       style={{ width, height }}
-      className="group relative shrink-0 snap-start overflow-hidden rounded-[11px] border border-[var(--border-subtle)] bg-[var(--bg-card)] outline-hidden transition-[transform,box-shadow,border-color] duration-300 ease-entrance hover:-translate-y-0.5 hover:border-[var(--border-hover)] hover:shadow-[var(--shadow-lg)] focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] focus-visible:ring-offset-0 active:translate-y-0"
+      className="group relative shrink-0 snap-start overflow-hidden rounded-[6px] border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-[var(--shadow-photo)] outline-hidden transition-[transform,box-shadow,border-color] duration-300 ease-entrance hover:-translate-y-1 hover:border-[var(--border-hover)] hover:shadow-[var(--shadow-lg)] focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] focus-visible:ring-offset-0 active:translate-y-0"
     >
       {everActive ? (
         <ThumbImage
@@ -570,7 +562,7 @@ const MonthBlockBase: React.FC<MonthBlockProps> = ({
           {[1.4, 1, 1.6, 1.05, 1.35, 0.9].map((aspect, i) => (
             <div
               key={i}
-              className="skeleton shrink-0 rounded-[11px] border border-[var(--border-subtle)]"
+              className="skeleton shrink-0 rounded-[6px] border border-[var(--border-subtle)]"
               style={{ height, width: Math.round(height * aspect) }}
             />
           ))}
@@ -620,9 +612,10 @@ const YearSectionBase: React.FC<YearSectionProps> = ({
 
   return (
     <section ref={setRef} className="mb-12" aria-label={`${group.year} 年`}>
-      {/* 年份大标题：等宽数字，读起来像胶片边缘的刻度，而不是普通的粗体标题 */}
+      {/* 年份大标题：New York 衬线。等宽数字是仪表刻度，衬线才像画册的年份——
+          这一处是整个界面唯一「不工程化」的时刻，时间因此有了重量 */}
       <div className="mb-7 mt-2 flex items-end gap-4 md:gap-6">
-        <span className="relative inline-block font-numeric text-[44px] font-semibold leading-[0.85] tracking-tight text-[var(--text-primary)] sm:text-[56px] md:text-[68px]">
+        <span className="relative inline-block font-display lining-nums tabular-nums text-[44px] font-medium leading-[0.9] tracking-[-0.01em] text-[var(--text-primary)] sm:text-[56px] md:text-[68px]">
           <span
             aria-hidden
             className="absolute rounded-full bg-[var(--bg-primary)] ring-2 ring-[rgba(var(--accent-blue-rgb),0.7)]"
@@ -641,7 +634,7 @@ const YearSectionBase: React.FC<YearSectionProps> = ({
             {monthSpan}
           </span>
           <span className="font-numeric text-[11px] tabular-nums text-[var(--text-quaternary)]">
-            {group.months.length} 个月 · {group.total} 项
+            {group.total} 项
             {group.videos > 0 ? ` · 视频 ${group.videos}` : ''}
           </span>
         </div>
@@ -692,86 +685,105 @@ const YearRailBase: React.FC<YearRailProps> = ({
   monthCountsByYear,
   onJumpYear,
   onJumpMonth,
-}) => (
-  <nav
-    aria-label="年份导航"
-    className="custom-scrollbar h-full w-[60px] shrink-0 overflow-y-auto border-r border-[var(--border-subtle)] bg-[var(--bg-secondary)] md:w-[104px]"
-  >
-    <div className="flex flex-col gap-1 px-2 py-6">
-      {years.map(({ year, total }) => {
-        const active = activeYear === year;
-        const barPct = maxYearTotal > 0 ? Math.max(0.08, total / maxYearTotal) : 0;
-        const counts = monthCountsByYear.get(year) ?? [];
-        return (
-          <div key={year} className="flex flex-col">
-            <button
-              type="button"
-              onClick={() => onJumpYear(year)}
-              aria-current={active ? 'true' : undefined}
-              title={`${year} 年 · ${total} 项`}
-              aria-label={`跳转到 ${year} 年，共 ${total} 项`}
-              className={`group flex flex-col gap-1.5 rounded-xl px-2 py-1.5 transition-colors duration-200 ${
-                active ? 'bg-[var(--bg-glass)]' : 'hover:bg-[var(--bg-glass-hover)]'
-              }`}
-            >
-              <span className="flex items-baseline justify-between gap-1">
-                <span
-                  className={`font-numeric text-[13px] font-semibold tabular-nums transition-colors ${
-                    active
-                      ? 'text-[var(--accent-blue)]'
-                      : 'text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)]'
-                  }`}
-                >
-                  {year}
-                </span>
-                <span className="hidden font-numeric text-[10px] tabular-nums text-[var(--text-quaternary)] md:inline">
-                  {total}
-                </span>
-              </span>
-              {/* 体量条：这一年的记忆密度 */}
-              <span aria-hidden className="h-[3px] w-full overflow-hidden rounded-full bg-[var(--border-subtle)]">
-                <span
-                  className={`block h-full rounded-full transition-all duration-300 ${
-                    active ? 'bg-[var(--accent-blue)]' : 'bg-[var(--border-hover)]'
-                  }`}
-                  style={{ width: `${barPct * 100}%` }}
-                />
-              </span>
-            </button>
+}) => {
+  const itemsRef = useRef(new Map<number, HTMLElement>());
 
-            {/* 月份密度网格：只在当前年份展开，12 格对应 12 个月 */}
-            {active && (
-              <div className="hidden grid-cols-6 gap-1 px-2 pb-1 pt-1.5 md:grid">
-                {Array.from({ length: 12 }, (_, m) => {
-                  const count = counts[m] ?? 0;
-                  const hasContent = count > 0;
-                  const isCurrent = activeMonth === m;
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      disabled={!hasContent}
-                      onClick={() => onJumpMonth(`${year}-${m}`)}
-                      title={hasContent ? `跳转到 ${m + 1} 月 · ${count} 项` : `${m + 1} 月暂无内容`}
-                      aria-label={`跳转到 ${year} 年 ${m + 1} 月${hasContent ? `，共 ${count} 项` : '，暂无内容'}`}
-                      className={`h-3 rounded-[3px] transition-all duration-200 ${
-                        isCurrent
-                          ? 'bg-[var(--accent-blue)] shadow-[0_0_6px_rgba(var(--accent-blue-rgb),0.55)]'
-                          : hasContent
-                            ? 'bg-[var(--border-hover)] hover:bg-[var(--text-quaternary)]'
-                            : 'cursor-default bg-transparent ring-1 ring-inset ring-[var(--border-subtle)]'
-                      }`}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  </nav>
-);
+  // 当前年份必须留在视野里：15 年足以把导航轨撑出屏幕，否则读到 2007 年时，
+  // 高亮的年份早已滚出可视区，也就失去了「我在时间轴的哪里」这唯一的线索。
+  useEffect(() => {
+    if (activeYear == null) return;
+    itemsRef.current.get(activeYear)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [activeYear]);
+
+  return (
+    <nav
+      aria-label="年份导航"
+      className="custom-scrollbar h-full w-[60px] shrink-0 overflow-y-auto border-r border-[var(--border-subtle)] bg-[var(--bg-secondary)] md:w-[104px]"
+    >
+      <div className="flex flex-col gap-1 px-2 py-6">
+        {years.map(({ year, total }) => {
+          const active = activeYear === year;
+          const barPct = maxYearTotal > 0 ? Math.max(0.08, total / maxYearTotal) : 0;
+          const counts = monthCountsByYear.get(year) ?? [];
+          return (
+            <div
+              key={year}
+              ref={(el) => {
+                if (el) itemsRef.current.set(year, el);
+                else itemsRef.current.delete(year);
+              }}
+              className="flex flex-col"
+            >
+              <button
+                type="button"
+                onClick={() => onJumpYear(year)}
+                aria-current={active ? 'true' : undefined}
+                title={`${year} 年 · ${total} 项`}
+                aria-label={`跳转到 ${year} 年，共 ${total} 项`}
+                className={`group flex flex-col gap-1.5 rounded-xl px-2 py-1.5 transition-colors duration-200 ${
+                  active ? 'bg-[var(--bg-glass)]' : 'hover:bg-[var(--bg-glass-hover)]'
+                }`}
+              >
+                <span className="flex items-baseline justify-between gap-1">
+                  <span
+                    className={`font-numeric text-[13px] font-semibold tabular-nums transition-colors ${
+                      active
+                        ? 'text-[var(--accent-blue)]'
+                        : 'text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)]'
+                    }`}
+                  >
+                    {year}
+                  </span>
+                  <span className="hidden font-numeric text-[10px] tabular-nums text-[var(--text-quaternary)] md:inline">
+                    {total}
+                  </span>
+                </span>
+                {/* 体量条：这一年的记忆密度。没有凹槽，只有长度不等的短线——
+                    像胶片边缘的刻度，也像一段被压缩的声波 */}
+                <span aria-hidden className="flex h-[3px] w-full items-center">
+                  <span
+                    className={`block h-[2px] rounded-full transition-all duration-300 ${
+                      active ? 'bg-[var(--accent-blue)]' : 'bg-[var(--text-quaternary)]'
+                    }`}
+                    style={{ width: `${barPct * 100}%` }}
+                  />
+                </span>
+              </button>
+
+              {/* 月份密度网格：只在当前年份展开，12 格对应 12 个月 */}
+              {active && (
+                <div className="hidden grid-cols-6 gap-1 px-2 pb-1 pt-1.5 md:grid">
+                  {Array.from({ length: 12 }, (_, m) => {
+                    const count = counts[m] ?? 0;
+                    const hasContent = count > 0;
+                    const isCurrent = activeMonth === m;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        disabled={!hasContent}
+                        onClick={() => onJumpMonth(`${year}-${m}`)}
+                        title={hasContent ? `跳转到 ${m + 1} 月 · ${count} 项` : `${m + 1} 月暂无内容`}
+                        aria-label={`跳转到 ${year} 年 ${m + 1} 月${hasContent ? `，共 ${count} 项` : '，暂无内容'}`}
+                        className={`h-3 rounded-[3px] transition-all duration-200 ${
+                          isCurrent
+                            ? 'bg-[var(--accent-blue)] shadow-[0_0_6px_rgba(var(--accent-blue-rgb),0.55)]'
+                            : hasContent
+                              ? 'bg-[var(--border-hover)] hover:bg-[var(--text-quaternary)]'
+                              : 'cursor-default bg-transparent ring-1 ring-inset ring-[var(--border-subtle)]'
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </nav>
+  );
+};
 
 const YearRail = memo(YearRailBase);
 
@@ -817,32 +829,29 @@ const TimelineHeaderBase: React.FC<TimelineHeaderProps> = ({
         <ChevronLeftIcon />
       </button>
 
-      <div className="flex min-w-0 items-center gap-2.5">
+      <div className="flex min-w-0 items-baseline gap-3">
         <h1 className="truncate text-[17px] font-semibold text-[var(--text-primary)]">时光画廊</h1>
         {total > 0 && (
-          <div className="hidden items-center gap-2 text-[11px] text-[var(--text-tertiary)] lg:flex">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-glass)] px-2 py-0.5">
-              <ImagesIcon />
-              <span className="font-numeric tabular-nums text-[var(--text-secondary)]">{total}</span>
-              <span>项</span>
-            </span>
+          /* 一行散文式的统计，不加胶囊边框：标题区安静下来，年份与照片才立得住 */
+          <div className="hidden min-w-0 items-baseline gap-2 text-[11px] text-[var(--text-tertiary)] lg:flex">
             {yearsCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-glass)] px-2 py-0.5">
-                <span className="font-numeric tabular-nums text-[var(--text-secondary)]">{yearsCount}</span>
-                <span>年</span>
-              </span>
+              <>
+                <span className="font-numeric tabular-nums">{yearsCount} 年</span>
+                <Dot />
+              </>
             )}
+            <span className="font-numeric tabular-nums">{total} 项</span>
             {videos > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-glass)] px-2 py-0.5">
-                <span className="font-numeric tabular-nums text-[var(--text-secondary)]">{videos}</span>
-                <span>个视频</span>
-              </span>
+              <>
+                <Dot />
+                <span className="font-numeric tabular-nums">视频 {videos}</span>
+              </>
             )}
             {rangeLabel && (
-              <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[var(--text-tertiary)]">
-                <CalendarIcon />
-                <span className="font-numeric tabular-nums">{rangeLabel}</span>
-              </span>
+              <>
+                <Dot />
+                <span className="truncate font-numeric tabular-nums">{rangeLabel}</span>
+              </>
             )}
           </div>
         )}
@@ -985,9 +994,12 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
 
   // ---- 滚动状态：当前月份 / 年份、时间脊进度、回到顶部 ----
   const [activeMonthKey, setActiveMonthKey] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
+  /** 时间脊点亮到「当前月份节点」的比例（0-1）：读的是你走到哪个月，而不是整页滚动进度 */
+  const [spineAt, setSpineAt] = useState(0);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** 时间脊与年 / 月节点共同依附的内容列，用来把锚点位置换算成脊线比例 */
+  const contentRef = useRef<HTMLDivElement>(null);
   const yearAnchorsRef = useRef<Map<number, HTMLElement>>(new Map());
   const monthAnchorsRef = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -1049,10 +1061,19 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
       if (!current && orderedMonthKeys.length > 0) current = orderedMonthKeys[0];
       setActiveMonthKey((prev) => (prev === current ? prev : current));
 
-      // 进度量化到 0.1%：滚动一帧就重渲染整页代价不小，这点误差肉眼不可见
-      const denom = el.scrollHeight - el.clientHeight;
-      const next = denom > 0 ? Math.min(1, Math.max(0, scrollTop / denom)) : 1;
-      setProgress((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
+      // 时间脊点亮到「当前月份节点」所在的位置，而不是整页滚动比例：
+      // 脊线与月份圆点因此说的是同一件事——你走到哪个月，光就停在哪个月。
+      // 量化到 0.1%：滚动一帧就重渲染整页代价不小，这点误差肉眼不可见。
+      const content = contentRef.current;
+      const anchor = current ? monthAnchorsRef.current.get(current) : null;
+      let next = 0;
+      if (content && anchor) {
+        const contentRect = content.getBoundingClientRect();
+        const anchorTop = anchor.getBoundingClientRect().top - contentRect.top;
+        const centerY = anchorTop + MONTH_NODE_CENTER;
+        next = contentRect.height > 0 ? Math.min(1, Math.max(0, centerY / contentRect.height)) : 0;
+      }
+      setSpineAt((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
     };
     const onScroll = () => {
       if (raf) return;
@@ -1201,23 +1222,19 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
         <div className="relative flex-1 overflow-hidden">
           <div ref={scrollRef} className="custom-scrollbar h-full overflow-y-auto">
             <div className="mx-auto max-w-[1440px] px-5 py-8 sm:px-7 md:px-10">
-              <div className="relative" style={{ paddingLeft: CONTENT_PAD }}>
-                {/* 时间脊：一条贯穿上下的细线，已浏览段落点亮为安全灯琥珀 */}
+              <div ref={contentRef} className="relative" style={{ paddingLeft: CONTENT_PAD }}>
+                {/* 时间脊：一条贯穿上下的细线。未读的一段向时间深处渐隐，
+                    已读的一段点亮为安全灯琥珀，并停在当前月份的节点上——
+                    整页只有这一种时间语言，「你在这里」就是那个发光的月份圆点。 */}
                 <div
                   aria-hidden
-                  className="pointer-events-none absolute bottom-0 top-0 rounded-full bg-[var(--border-default)]"
+                  className="pointer-events-none absolute bottom-0 top-0 rounded-full bg-gradient-to-b from-[var(--border-default)] via-[var(--border-subtle)] to-transparent"
                   style={{ left: SPINE_LEFT, width: SPINE_WIDTH }}
                 />
                 <div
                   aria-hidden
-                  className="pointer-events-none absolute top-0 rounded-full bg-gradient-to-b from-[var(--accent-blue)] to-[rgba(var(--accent-blue-rgb),0.35)] transition-[height] duration-150 ease-out"
-                  style={{ left: SPINE_LEFT, width: SPINE_WIDTH, height: `${progress * 100}%` }}
-                />
-                {/* 「你在这里」光标：落在已点亮段落的末端 */}
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute h-2 w-2 -translate-y-1/2 rounded-full bg-[var(--accent-blue)] shadow-[0_0_10px_rgba(var(--accent-blue-rgb),0.9)] transition-[top] duration-150 ease-out"
-                  style={{ left: SPINE_LEFT - 3, top: `${progress * 100}%` }}
+                  className="pointer-events-none absolute top-0 rounded-full bg-gradient-to-b from-[var(--accent-blue)] to-[rgba(var(--accent-blue-rgb),0.35)] transition-[height] duration-300 ease-out"
+                  style={{ left: SPINE_LEFT, width: SPINE_WIDTH, height: `${spineAt * 100}%` }}
                 />
 
                 {years.map((yearGroup) => (

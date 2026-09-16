@@ -73,10 +73,10 @@ const exportOne = async (
   }
 
   if (format === 'original') {
-    const { data, error } = await window.electronAPI.readFile(photo.path);
-    if (error || !data) throw new Error(error || '读取失败');
-    const result = await window.electronAPI.writeFileUnique(targetDir, fileName, data);
-    if (result.error) throw new Error(result.error);
+    const readRes = await window.electronAPI.readFile(photo.path);
+    if (!readRes.ok) throw new Error(readRes.error);
+    const result = await window.electronAPI.writeFileUnique(targetDir, fileName, readRes.data);
+    if (!result.ok) throw new Error(result.error);
     return;
   }
 
@@ -115,7 +115,7 @@ const exportOne = async (
   });
 
   const result = await window.electronAPI.writeFileUnique(targetDir, fileName, base64);
-  if (result.error) throw new Error(result.error);
+  if (!result.ok) throw new Error(result.error);
 };
 
 const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFinish }) => {
@@ -157,8 +157,9 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
 
   const pickDirectory = useCallback(async () => {
     if (!window.electronAPI) return;
-    const dir = await window.electronAPI.chooseDirectory();
-    if (dir) setTargetDir(dir);
+    const res = await window.electronAPI.chooseDirectory();
+    // 用户取消选择时 data 为 null，属正常结果，不提示
+    if (res.ok && res.data) setTargetDir(res.data);
   }, []);
 
   const startExport = useCallback(async () => {

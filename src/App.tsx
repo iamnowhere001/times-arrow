@@ -19,6 +19,8 @@ import {
   startHeapWatch,
 } from '@/lib/cache/cacheManager';
 import { groupPhotos, sortPhotosByTimeline } from '@/lib/media/photoGrouping';
+// 时间语义统一入口：本文件原先内联了 4 处 `dateTaken || lastModified`
+import { photoTakenTime } from '@/lib/media/photoTime';
 import { createThumbnail, clearDragThumbnailCache } from '@/lib/cache/dragThumbnail';
 import { joinPath, sanitizeFilename } from '@/lib/fs/pathUtils';
 import { deriveLibraryViewState } from '@/lib/filter/libraryViewState';
@@ -392,7 +394,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     if (!api) return;
     try {
       const result = await api.watchDirectory(dirPath);
-      if (result?.success) watchedDirRef.current = dirPath;
+      if (result.ok) watchedDirRef.current = dirPath;
     } catch (error) {
       // 监听失败不影响正常使用，只是失去外部变动感知
       logger.warn('目录监听失败:', error);
@@ -442,8 +444,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     }
     try {
       const result = await api.checkPaths(list.map(source => source.path));
+      if (!result.ok) {
+        logger.warn('来源可用性检查失败:', result.error);
+        return;
+      }
+      const availability = result.data;
       setUnavailableSourcePaths(
-        new Set(list.filter(source => result[source.path] === false).map(source => source.path))
+        new Set(list.filter(source => availability[source.path] === false).map(source => source.path))
       );
     } catch (error) {
       logger.warn('来源可用性检查失败:', error);
@@ -528,6 +535,20 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     (async () => {
       const config = await loadPersistedConfig();
       if (cancelled) return;
+
+      // 配置损坏时主进程已把原文件备份并改为空配置继续启动。
+      // 必须让用户知道 —— 否则他只会发现「相册/收藏凭空消失」，既不知道原因，
+      // 也不知道磁盘上有一份备份可以捞回来。
+      void (async () => {
+        const notices = await window.electronAPI?.storageNotices?.();
+        if (cancelled || !notices?.ok || notices.data.length === 0) return;
+        const first = notices.data[0];
+        const more = notices.data.length > 1 ? ` 等 ${notices.data.length} 个文件` : '';
+        showToast(
+          `配置文件「${first.file}」${more}已损坏，已重置为默认设置；原文件备份在 ${first.backupPath}`,
+          'warning'
+        );
+      })();
 
       (config.favorites ?? []).forEach(path => favoritesRef.current.add(path));
       (config.hidden ?? []).forEach(path => hiddenRef.current.add(path));
@@ -1101,7 +1122,10 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     await mapWithConcurrency(targets, 8, async photo => {
       if (!photo.path) return;
       try {
-        const meta = await window.electronAPI.getMetadata(photo.path);
+        const metaRes = await window.electronAPI.getMetadata(photo.path);
+        // 拿不到元数据（未授权 / 已删除 / 解码失败）只是少了几项信息，不打断整批导入
+        if (!metaRes.ok) return;
+        const meta = metaRes.data;
         if (!meta.dimensions && !meta.dateTaken && !meta.exif) return;
 
         const updates: Partial<Photo> = {};
@@ -1249,11 +1273,11 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     const addedPaths = e.added.filter(p => !isLoop(p) && !importedPathsRef.current.has(p));
     if (addedPaths.length > 0 && window.electronAPI) {
       try {
-        const stat = await window.electronAPI.statFiles(addedPaths);
-        if (stat.infos.length > 0) {
-          addedCount = await ingestFiles(stat.infos);
+        const statRes = await window.electronAPI.statFiles(addedPaths);
+        if (statRes.ok && statRes.data.infos.length > 0) {
+          addedCount = await ingestFiles(statRes.data.infos);
         }
-        // stat.failedPaths：分类后到 stat 之间又消失的文件（TOCTOU），忽略即可
+        // failedPaths：分类后到 stat 之间又消失的文件（TOCTOU），忽略即可
       } catch (error) {
         logger.warn('处理外部新增文件失败:', error);
       }
@@ -1267,8 +1291,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         try {
           const result = await window.electronAPI.scanDirectory(dir, `watch-${Date.now()}`);
           // 部分子目录读不了（K1 字段）：监听场景静默跳过，不追加重试提示
-          if (result.files.length > 0) {
-            addedFromDirs += await ingestFiles(result.files);
+          if (result.ok && result.data.files.length > 0) {
+            addedFromDirs += await ingestFiles(result.data.files);
           }
         } catch (error) {
           logger.warn('处理外部新增目录失败:', error);
@@ -1388,20 +1412,23 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
     try {
       // K1：返回结果区分「为空 / 根目录不可访问 / 部分内容失败」，不再一律冒充空数组
-      const scan = await window.electronAPI.scanDirectory(dirPath, scanId);
+      const scanRes = await window.electronAPI.scanDirectory(dirPath, scanId);
 
       // 被取消：丢弃扫描结果，不写入列表
-      if (activeScanIdRef.current !== scanId || cancelRequestedRef.current || scan.cancelled) return;
+      if (activeScanIdRef.current !== scanId || cancelRequestedRef.current) return;
 
       // 根目录级错误（不存在 / 无权限 / 不是文件夹）：与「空目录」明确区分
-      if (scan.error) {
-        logger.error('Scan directory failed:', scan.error);
-        showToast(`无法读取目录「${dirName}」：${humanizeFsError(scan.error)}`, 'error', {
+      if (!scanRes.ok) {
+        logger.error('Scan directory failed:', scanRes.error);
+        showToast(`无法读取目录「${dirName}」：${humanizeFsError(scanRes.error)}`, 'error', {
           label: '重试',
           onClick: () => { void loadDirectory(dirPath); },
         });
         return;
       }
+
+      const scan = scanRes.data;
+      if (scan.cancelled) return;
 
       const infos = scan.files;
       if (infos.length === 0) {
@@ -1489,14 +1516,16 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         const scanId = `restore-${Date.now()}-${step}`;
         activeScanIdRef.current = scanId;
         try {
-          const scan = await api.scanDirectory(source.path, scanId);
-          if (activeScanIdRef.current !== scanId || cancelRequestedRef.current || scan.cancelled) break;
-          if (scan.error) {
+          const scanRes = await api.scanDirectory(source.path, scanId);
+          if (activeScanIdRef.current !== scanId || cancelRequestedRef.current) break;
+          if (!scanRes.ok) {
             // 目录不存在 / 卷未挂载：标注不可用，但来源本身保留
-            logger.warn(`恢复来源失败「${source.path}」:`, scan.error);
+            logger.warn(`恢复来源失败「${source.path}」:`, scanRes.error);
             failedPaths.add(source.path);
             continue;
           }
+          const scan = scanRes.data;
+          if (scan.cancelled) break;
           if (scan.files.length > 0) {
             setLoadingTotal(scan.files.length);
             setLoadingCurrentFile(`正在恢复「${name}」（${step}/${totalSteps}）…`);
@@ -1520,13 +1549,19 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         setLoadingCurrentFile(`正在恢复 ${files.length} 个单独添加的文件（${step}/${totalSteps}）…`);
         const paths = files.map(source => source.path);
         try {
-          const stat = await api.statFiles(paths);
-          stat.failedPaths.forEach(path => failedPaths.add(path));
-          if (!cancelRequestedRef.current && stat.infos.length > 0) {
-            setLoadingTotal(stat.infos.length);
-            addedTotal += await ingestFiles(stat.infos, (done, total) => {
-              if (total > 0) setLoadingProgress(Math.min(done, total));
-            });
+          const statRes = await api.statFiles(paths);
+          if (!statRes.ok) {
+            logger.warn('恢复单独添加的文件失败:', statRes.error);
+            paths.forEach(path => failedPaths.add(path));
+          } else {
+            const stat = statRes.data;
+            stat.failedPaths.forEach(path => failedPaths.add(path));
+            if (!cancelRequestedRef.current && stat.infos.length > 0) {
+              setLoadingTotal(stat.infos.length);
+              addedTotal += await ingestFiles(stat.infos, (done, total) => {
+                if (total > 0) setLoadingProgress(Math.min(done, total));
+              });
+            }
           }
         } catch (error) {
           logger.warn('恢复单独添加的文件失败:', error);
@@ -1572,7 +1607,16 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     if (!window.electronAPI || files.length === 0) return;
     beginDropWork();
     try {
-      const stat = await window.electronAPI.statFiles(files);
+      const statRes = await window.electronAPI.statFiles(files);
+      // 整体性失败（IPC 层就没成功）：带原因与重试，与「部分失败」区分开
+      if (!statRes.ok) {
+        showToast(`无法读取所选文件：${humanizeFsError(statRes.error)}`, 'error', {
+          label: '重试',
+          onClick: () => { void importFilePaths(files, ignored); },
+        });
+        return;
+      }
+      const stat = statRes.data;
       const infos = stat.infos;
       setLoadingTotal(infos.length);
       const added = await ingestFiles(infos, (done, total) => {
@@ -1581,7 +1625,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
       // 一个都没读到：整体性错误（K1 不再冒充「空」），带原因与重试
       if (infos.length === 0) {
-        showToast(`无法读取所选文件：${humanizeFsError(stat.error)}`, 'error', {
+        showToast('无法读取所选文件，可能已被移动或删除', 'error', {
           label: '重试',
           onClick: () => { void importFilePaths(files, ignored); },
         });
@@ -1640,7 +1684,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const handleImport = useCallback(async () => {
     if (!window.electronAPI) return;
     try {
-      const picked = await window.electronAPI.selectPaths();
+      const pickedRes = await window.electronAPI.selectPaths();
+      // 用户在对话框里点了取消：ok(true) + data=null，不是错误，静默返回
+      if (!pickedRes.ok) {
+        showToast(`导入失败：${pickedRes.error}`, 'error');
+        return;
+      }
+      const picked = pickedRes.data;
       if (!picked) return;
       if (picked.files.length > 0 || picked.directories.length > 0) {
         await importPickedPaths(picked);
@@ -1892,7 +1942,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       return;
     }
     const result = await window.electronAPI.copyImage(photo.path);
-    if (result.error) {
+    if (!result.ok) {
       showToast(`复制失败：${result.error}`, 'error');
     } else {
       showToast(`已复制 "${photo.name}" 到剪贴板`, 'success');
@@ -1906,7 +1956,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       return;
     }
     const result = await window.electronAPI.showInFolder(photo.path);
-    if (result.error) {
+    if (!result.ok) {
       showToast(`无法打开所在文件夹：${result.error}`, 'error');
     }
   }, [showToast]);
@@ -1921,7 +1971,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     try {
       if (window.electronAPI?.copyText) {
         const result = await window.electronAPI.copyText(target);
-        if (result.error) throw new Error(result.error);
+        if (!result.ok) throw new Error(result.error);
       } else {
         await navigator.clipboard.writeText(target);
       }
@@ -1939,7 +1989,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       return;
     }
     const result = await window.electronAPI.openPath(photo.path);
-    if (result.error) {
+    if (!result.ok) {
       showToast(`打开失败：${result.error}`, 'error');
     }
   }, [showToast]);
@@ -2022,7 +2072,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         const result = await window.electronAPI.renameFile(oldPath, newPath);
         logger.debug(`Single rename result:`, result);
 
-        if (result.error) {
+        if (!result.ok) {
           logger.error('Failed to rename file:', result.error);
           // 文件已被外部删除 / 移动：自动从列表剔除，不再弹常规失败提示
           if (!fsGuard.handleGone([photo], result.error)) {
@@ -2031,9 +2081,9 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           return;
         }
         // 主进程在重名时可能自动追加了序号，一律以返回的最终路径为准
-        finalPath = result.path || newPath;
+        finalPath = result.data.path || newPath;
         markPathsTouched([finalPath]);
-        conflicted = Boolean(result.conflicted);
+        conflicted = Boolean(result.data.conflicted);
       } catch (electronError) {
         logger.error('Electron rename error:', electronError);
         const message = (electronError as Error).message;
@@ -2100,9 +2150,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
       // Sort photos by date to maintain consistent numbering
       const sortedPhotos = [...selectedPhotos].sort((a, b) => {
-        const dateA = a!.dateTaken || a!.lastModified || 0;
-        const dateB = b!.dateTaken || b!.lastModified || 0;
-        return dateA - dateB;
+        // 与 RenameModal 的预览排序共用同一个时间语义，保证「预览即所得」
+        return photoTakenTime(a!) - photoTakenTime(b!);
       });
 
       const updates: Array<{ id: string; oldPath: string; newName: string; newPath: string }> = [];
@@ -2166,7 +2215,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           newName = `${baseName}.${fileExt}`;
         } else if (options.mode === 'date') {
           // Get the photo's creation date
-          const photoDate = new Date(photo.dateTaken || photo.lastModified || Date.now());
+          const photoDate = new Date(photoTakenTime(photo) || Date.now());
           
           // Format the date according to the specified format
           const dateStr = formatDateForNaming(photoDate, options.dateFormat || 'yyyy-MM-dd_HHmmss');
@@ -2186,7 +2235,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           newName = repairFileName(
             photo.name,
             repairOptions,
-            photo.dateTaken || photo.lastModified
+            photoTakenTime(photo)
           ).name;
         }
 
@@ -2231,7 +2280,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           const result = await window.electronAPI.renameFile(oldPath, newPath);
           logger.debug(`Rename result:`, result);
 
-          if (result.error) {
+          if (!result.ok) {
             logger.error('Failed to rename file:', result.error);
             if (isFileGoneError(result.error)) {
               gonePhotos.push(photo);
@@ -2244,10 +2293,10 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           }
 
           // 重名时主进程会自动追加序号，以返回的最终路径为准
-          const finalPath = result.path || newPath;
+          const finalPath = result.data.path || newPath;
           markPathsTouched([finalPath]);
           const actualName = finalPath.split(/[\\/]/).pop() || newName;
-          if (result.conflicted) conflictCount++;
+          if (result.data.conflicted) conflictCount++;
 
           updates.push({ id: photo.id, oldPath, newName: actualName, newPath: finalPath });
           renamedCount++;
@@ -2456,16 +2505,17 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     // 回环防护：源路径的移出会被 watcher 看到，先登记（目标路径在拿到结果后登记）
     markPathsTouched(movable.map(p => p.path));
 
-    const result = await window.electronAPI.moveFiles(
+    const response = await window.electronAPI.moveFiles(
       movable.map(p => p.path as string),
       targetDir,
       priorTargets
     );
-    if (result?.error) {
-      showToast(`移动失败：${result.error}`, 'error');
+    if (!response.ok) {
+      showToast(`移动失败：${response.error}`, 'error');
       return;
     }
 
+    const result = response.data;
     const moved = result.results.filter(r => r.success && r.to);
     const skipped = result.results.filter(r => r.skipped);
     // K2 中间态：副本已落盘但源文件删除失败 —— 源仍在原位，列表条目保持不动，
@@ -2611,9 +2661,14 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       return;
     }
     void (async () => {
-      const targetDir = await window.electronAPI.chooseDirectory({ allowCreate: true });
-      if (!targetDir) return; // 用户取消了文件夹面板
-      await runMove(chosen, targetDir);
+      const dirRes = await window.electronAPI.chooseDirectory({ allowCreate: true });
+      // 用户在文件夹面板里点了取消：ok(true) + data=null，属正常结果
+      if (!dirRes.ok) {
+        showToast(`无法打开文件夹面板：${dirRes.error}`, 'error');
+        return;
+      }
+      if (!dirRes.data) return;
+      await runMove(chosen, dirRes.data);
     })();
   };
 
@@ -3082,18 +3137,32 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
         // K1：stat 失败的文件不阻塞导入 —— 拖放自带的 size/mtime 兜底，仅缺 birthtime
         let statFailedCount = 0;
         try {
-          // 拖放的 File 对象没有创建时间，补一次 stat 才能拿到 birthtime
+          // 拖放不经过系统对话框，主进程无从判断这些路径来自用户主动操作，
+          // 因此先显式登记为「本次会话可访问」，否则后续 stat / 缩略图 / pm:// 都会被拒绝。
           if (window.electronAPI) {
-            const stat = await window.electronAPI.statFiles(resolved.map(r => r.path));
-            const byPath = new Map(stat.infos.map(info => [info.path, info]));
-            resolved.forEach(item => {
-              const info = byPath.get(item.path);
-              if (!info) return;
-              item.size = info.size;
-              item.mtime = info.mtime;
-              item.created = info.created;
-            });
-            statFailedCount = stat.failedPaths.length;
+            try {
+              await window.electronAPI.authorizePaths(resolved.map(item => item.path));
+            } catch (authError) {
+              logger.error('Failed to authorize dropped paths:', authError);
+            }
+            // 拖放的 File 对象没有创建时间，补一次 stat 才能拿到 birthtime
+            const statRes = await window.electronAPI.statFiles(resolved.map(r => r.path));
+            if (statRes.ok) {
+              const stat = statRes.data;
+              const byPath = new Map(stat.infos.map(info => [info.path, info]));
+              resolved.forEach(item => {
+                const info = byPath.get(item.path);
+                if (!info) return;
+                item.size = info.size;
+                item.mtime = info.mtime;
+                item.created = info.created;
+              });
+              statFailedCount = stat.failedPaths.length;
+            } else {
+              // stat 整体失败：拖放自带的 size/mtime 仍可用，仅缺创建时间，不阻塞导入
+              logger.warn('拖放文件 stat 失败:', statRes.error);
+              statFailedCount = resolved.length;
+            }
           }
           setLoadingTotal(resolved.length);
           const added = await ingestFiles(resolved, (done, total) => {
@@ -3139,13 +3208,13 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
             activeScanIdRef.current = scanId;
             try {
               // K1：新返回形状区分「为空 / 根目录不可访问 / 部分内容失败」
-              const scan = await window.electronAPI.scanDirectory(dirPath, scanId);
+              const scanRes = await window.electronAPI.scanDirectory(dirPath, scanId);
               if (activeScanIdRef.current !== scanId) return; // 已被取消
-              if (scan.error) {
-                showToast(`无法读取文件夹「${dir.name}」：${humanizeFsError(scan.error)}`, 'error');
+              if (!scanRes.ok) {
+                showToast(`无法读取文件夹「${dir.name}」：${humanizeFsError(scanRes.error)}`, 'error');
                 continue;
               }
-              const infos = scan.files;
+              const infos = scanRes.data.files;
               if (infos.length === 0) {
                 showToast(`文件夹「${dir.name}」中没有可导入的图片或视频`, 'warning');
                 continue;
@@ -3159,7 +3228,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
               rememberSources([{ path: dirPath, kind: 'directory' }]);
               void watchCurrentDir(dirPath);
               // 部分子目录 / 文件读取失败时一并说明，避免「悄悄少了几个」
-              const failedCount = (scan.failedDirs ?? 0) + (scan.failedFiles ?? 0);
+              const failedCount = (scanRes.data.failedDirs ?? 0) + (scanRes.data.failedFiles ?? 0);
               const failNote = failedCount > 0 ? `（${failedCount} 项无法读取已跳过）` : '';
               showToast(
                 added === 0

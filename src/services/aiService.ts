@@ -21,11 +21,12 @@ export const analyzeImageFromBase64 = async (
     throw new Error('AI 分析依赖 Electron 主进程，当前环境不可用');
   }
 
-  const { result, error } = await api.analyzeImage({ base64: base64Data, mimeType });
-  if (error) {
-    logger.error('DeepSeek 分析失败:', error);
-    throw new Error(error);
+  const response = await api.analyzeImage({ base64: base64Data, mimeType });
+  if (!response.ok) {
+    logger.error('DeepSeek 分析失败:', response.error);
+    throw new Error(response.error);
   }
+  const result = response.data;
   if (!result) return null;
 
   return {

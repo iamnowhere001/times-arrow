@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Photo } from '@/types';
+// 时间语义统一从 @/lib/media/photoTime 取（本文件原先内联了同一份回退链）
+import { photoOriginalTime } from '@/lib/media/photoTime';
 /**
  * 预览专用的时间格式：精确到秒。
  * 基准时间控件是秒级（`step={1}`），若预览只到分钟，改「秒」时两列看起来完全一样，
@@ -33,13 +35,6 @@ interface AdjustDateModalProps {
   onClose: () => void;
   onApply: (adjustments: DateAdjustment[]) => void;
 }
-
-/**
- * 照片的「原始时间」基准：EXIF 拍摄时间 > 文件创建时间 > 文件修改时间。
- * 平移与「保持相对间隔」都以它为准，避免缺少 EXIF 的照片无法调整。
- */
-const baseTimeOf = (photo: Photo): number =>
-  photo.dateTaken || photo.dateCreated || photo.lastModified || 0;
 
 const pad2 = (value: number) => String(value).padStart(2, '0');
 
@@ -87,7 +82,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
   const earliest = useMemo(() => {
     if (photos.length === 0) return 0;
     return photos.reduce((min, photo) => {
-      const time = baseTimeOf(photo);
+      const time = photoOriginalTime(photo);
       if (!time) return min;
       return min === 0 ? time : Math.min(min, time);
     }, 0);
@@ -125,7 +120,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
 
     if (mode === 'shift') {
       if (offsetMs === 0) return [];
-      return photos.map(photo => ({ photo, timestamp: baseTimeOf(photo) + offsetMs }));
+      return photos.map(photo => ({ photo, timestamp: photoOriginalTime(photo) + offsetMs }));
     }
 
     const target = fromLocalInputValue(targetValue);
@@ -138,7 +133,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
     const delta = target - anchor;
     // 位移为 0 说明用户没改动基准时间，此时不应产生任何「已修正」记录
     if (delta === 0) return [];
-    return photos.map(photo => ({ photo, timestamp: baseTimeOf(photo) + delta }));
+    return photos.map(photo => ({ photo, timestamp: photoOriginalTime(photo) + delta }));
   }, [photos, mode, offsetMs, targetValue, keepRelative, earliest]);
 
   if (!isOpen) return null;
@@ -263,7 +258,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
                         {photo.name}
                       </span>
                       <span className="text-[var(--text-quaternary)] shrink-0">
-                        {formatPreviewTime(baseTimeOf(photo))}
+                        {formatPreviewTime(photoOriginalTime(photo))}
                       </span>
                       <span className="text-[var(--text-quaternary)] shrink-0">→</span>
                       <span className="text-[var(--text-primary)] shrink-0">{formatPreviewTime(timestamp)}</span>

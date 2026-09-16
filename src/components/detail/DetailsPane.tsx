@@ -283,8 +283,8 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
     // 未配置密钥时直接引导到「AI 设置」，而不是等请求失败再报错
     if (window.electronAPI?.getAiConfig) {
       try {
-        const config = await window.electronAPI.getAiConfig();
-        if (!config.apiKey) {
+        const configRes = await window.electronAPI.getAiConfig();
+        if (configRes.ok && !configRes.data.apiKey) {
           onNotify?.('尚未配置 DeepSeek API Key，请在「AI 设置」中填写。', 'warning');
           onOpenAiSettings?.();
           return;
@@ -300,13 +300,13 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
       // 主进程读出 base64 后代理请求 DeepSeek，避免渲染进程持有 File 对象
       let result;
       if (photo.path && window.electronAPI) {
-        const { data, error } = await window.electronAPI.readFile(photo.path);
-        if (error || !data) {
-          onNotify?.(`读取图片失败：${error || '未知错误'}`, 'error');
+        const readRes = await window.electronAPI.readFile(photo.path);
+        if (!readRes.ok) {
+          onNotify?.(`读取图片失败：${readRes.error}`, 'error');
           return;
         }
         const mimeType = photo.type || 'image/jpeg';
-        result = await analyzeImageFromBase64(data, mimeType);
+        result = await analyzeImageFromBase64(readRes.data, mimeType);
       } else if (photo.file) {
         result = await analyzeImage(photo.file);
       } else {

@@ -19,7 +19,7 @@ import {
   worldToScreen,
   zoomCameraAt,
 } from '@/lib/geo/mapMath';
-import { PLACES } from '@/lib/geo/places';
+import { arePlacesLoaded, getPlaces, loadPlaces } from '@/lib/geo/places';
 import { findNearestPlace, formatPlaceHint } from '@/lib/geo/placeIndex';
 
 interface LocationMapProps {
@@ -285,6 +285,9 @@ const LABEL_FONT =
  * 地名标注：先画光点的地名（主角），再补城市地名（底图参照）。
  * 两者共用一份占位表，谁先放谁优先 —— 放不下的自动省略，
  * 因此缩放时标签数量会自然增减，而不是糊成一片。
+ *
+ * 城市表是按需加载的（`getPlaces()`）：数据未到位时这里只画光点地名，
+ * 到位后由绘制 effect 的 `placesReady` 依赖补一次重绘。
  */
 function drawPlaceLabels(
   ctx: CanvasRenderingContext2D,
@@ -332,7 +335,7 @@ function drawPlaceLabels(
 
   // 2) 城市地名：重要度高、离视野中心近的先放；放不下的自动省略
   const candidates: { name: string; x: number; y: number; rank: number; dist: number }[] = [];
-  for (const place of PLACES) {
+  for (const place of getPlaces()) {
     const screen = worldToScreen(projectLngLat(place.longitude, place.latitude), camera, viewport);
     if (screen.x < 0 || screen.x > viewport.width || screen.y < 0 || screen.y > viewport.height) continue;
     candidates.push({
@@ -406,6 +409,26 @@ const LocationMap: React.FC<LocationMapProps> = ({
   const [activeSite, setActiveSite] = useState<ActiveSite | null>(null);
   const [dragging, setDragging] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
+  /** 地名表是否已就绪（按需加载的独立 chunk，见 lib/geo/places.ts） */
+  const [placesReady, setPlacesReady] = useState(arePlacesLoaded);
+
+  /**
+   * 进入地图视图时才拉取地名表。
+   *
+   * 到位后必须把 `placesReady` 推到绘制 effect 的依赖里 —— 否则首帧画完就再也不会
+   * 重绘，城市标注要等到用户碰一下地图才出现。加载失败时 `arePlacesLoaded()`
+   * 仍为 false，这里不会死循环（`loadPlaces` 内部已消化错误并允许下次重试）。
+   */
+  useEffect(() => {
+    if (placesReady) return;
+    let alive = true;
+    void loadPlaces().then(() => {
+      if (alive) setPlacesReady(arePlacesLoaded());
+    });
+    return () => {
+      alive = false;
+    };
+  }, [placesReady]);
 
   const points = useMemo(() => buildGeoPoints(photos), [photos]);
   const locationCount = useMemo(() => countGeoLocations(points), [points]);
@@ -719,7 +742,8 @@ const LocationMap: React.FC<LocationMapProps> = ({
       return { x: cluster.x - radius, y: cluster.y - radius, width: radius * 2, height: radius * 2 };
     });
     drawPlaceLabels(ctx, camera, viewport, clusters, isLight, occupied);
-  }, [camera, viewport, clusters, hover?.key, activeScreen, isLight, dragging]);
+    // placesReady 参与依赖：地名表是按需加载的，到位后要补一次重绘把城市标注画上
+  }, [camera, viewport, clusters, hover?.key, activeScreen, isLight, dragging, placesReady]);
 
   /** 视野内的照片数：缩放到某个区域时，一个安静的「这里有多少」读数 */
   const inViewCount = useMemo(() => {

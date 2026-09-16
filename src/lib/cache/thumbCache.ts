@@ -117,11 +117,12 @@ export async function resolveThumbnail(filePath: string, size: number): Promise<
     await acquireSlot();
     try {
       const res = await window.electronAPI.getThumbnail(filePath, target);
-      if (!res?.url) return null;
+      const url = res.ok ? res.data.url : null;
+      if (!url) return null;
       // 缓存已被清空：丢弃这次结果，否则刚释放的内存立刻被写回
-      if (born !== generation) return res.url;
-      cacheThumbUrl(key, res.url);
-      return res.url;
+      if (born !== generation) return url;
+      cacheThumbUrl(key, url);
+      return url;
     } catch {
       return null;
     } finally {
