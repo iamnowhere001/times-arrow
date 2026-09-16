@@ -1,5 +1,13 @@
 # PhotoMinder 项目长期记忆
 
+## 文档约定（2026-09-16 定，改文档前先看这里）
+三份文档的**分工**：`README.md` 面向「怎么用 + 怎么改」（功能、快捷键、目录结构、安全边界、代码组织约定）；
+`TODO.md` 面向「接下来做什么」（N 当前任务 / F 功能改进 / K 已知问题 / X 延后，带优先级与验收）；
+`CODE_REVIEW.md` 面向「审查结论与修复记录」（正文保留审查当时判断不回改，状态查 §0.1 总览表，
+做法与验证按 P0/P1/P2 分在附录 A/B/C/D）。
+状态图例统一：`✅ 已完成` / `🔶 部分完成` / `⏳ 待做` / `⚠️ 已记录但未改行为（需产品决定）`。
+**新增文档条目时同步另外两份**：改行为 → README + TODO；新增遗留问题 → TODO（K 编号）+ CODE_REVIEW。
+
 ## 技术栈
 Electron 44（主进程 CJS）+ React 19 + Vite 8 + Tailwind 4 + TypeScript 7（原生移植版）。
 `package.json` 为 `"type": "commonjs"`，主进程 `electron/main.js` 用 CommonJS，
