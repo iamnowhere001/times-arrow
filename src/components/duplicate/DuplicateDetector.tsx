@@ -559,9 +559,9 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 
   return (
     <div className="flex-1 flex flex-col w-full min-h-0">
-      {/* 顶栏：与图库工具栏同位同高，形成同一套外壳 */}
-      <div className={`app-drag bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 shrink-0 py-2.5 shadow-[var(--shadow-toolbar)] ${isLeftPaneOpen ? 'px-4' : 'pl-[78px] pr-4'}`}>
-        <div className="app-no-drag flex items-center justify-between h-10 gap-3">
+      {/* 顶栏：与时光画廊 / 按地点两个整页视图同高（52px），形成同一套外壳 */}
+      <div className={`app-drag bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 shrink-0 shadow-[var(--shadow-toolbar)] ${isLeftPaneOpen ? 'px-4' : 'pl-[78px] pr-4'}`}>
+        <div className="app-no-drag flex items-center justify-between h-[52px] gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={onBack}
@@ -574,7 +574,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 
             <div className="w-px h-6 bg-[var(--border-default)] shrink-0" />
 
-            <div className="w-9 h-9 rounded-xl bg-[rgba(var(--accent-purple-rgb),0.14)] border border-[rgba(var(--accent-purple-rgb),0.3)] text-[var(--accent-purple)] flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-[rgba(var(--accent-blue-rgb),0.14)] border border-[rgba(var(--accent-blue-rgb),0.3)] text-[var(--accent-blue)] flex items-center justify-center shrink-0">
               <DuplicateGlyph />
             </div>
 
@@ -659,7 +659,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                     </span>
                   ) : duplicateGroups.length === 0 ? (
                     <span className="text-sm font-semibold text-[var(--text-primary)] whitespace-nowrap">
-                      没有相似项
+                      {progress === null ? '尚未检测' : '没有相似项'}
                     </span>
                   ) : (
                     <>
@@ -720,7 +720,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
           {isRepartitioning && (
             <div className="mx-4 mb-1 h-0.5 shrink-0 rounded-full bg-[var(--bg-glass-hover)] overflow-hidden">
               <div
-                className="h-full rounded-full bg-[var(--accent-purple)] transition-[width] duration-200 ease-out"
+                className="h-full rounded-full bg-[var(--accent-blue)] transition-[width] duration-200 ease-out"
                 style={{ width: `${Math.max(8, percent)}%` }}
               />
             </div>
@@ -733,7 +733,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
               <div className="h-full flex items-center justify-center p-8">
                 <div className="w-full max-w-md">
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="w-5 h-5 rounded-full border-2 border-[var(--border-subtle)] border-t-[var(--accent-purple)] animate-spin shrink-0" />
+                    <div className="w-5 h-5 rounded-full border-2 border-[var(--border-subtle)] border-t-[var(--accent-blue)] animate-spin shrink-0" />
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-[var(--text-primary)] truncate">
                         {progress?.phase === 'comparing' ? '正在比对分组…' : '正在计算图片指纹（dHash）…'}
@@ -748,14 +748,14 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                     <span className="text-xs text-[var(--text-secondary)] tabular-nums">
                       已处理 {progress?.processed ?? 0} / {progress?.total ?? 0} 张
                     </span>
-                    <span className="text-xl font-semibold text-[var(--accent-purple)] tabular-nums leading-none">
+                    <span className="text-xl font-semibold text-[var(--accent-blue)] tabular-nums leading-none">
                       {percent}%
                     </span>
                   </div>
 
                   <div className="h-2 rounded-full bg-[var(--bg-glass-hover)] overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-[var(--accent-purple)] transition-[width] duration-200 ease-out"
+                      className="h-full rounded-full bg-[linear-gradient(90deg,var(--accent-blue),var(--accent-blue-hover))] transition-[width] duration-200 ease-out"
                       style={{ width: `${percent}%` }}
                     />
                   </div>
@@ -796,10 +796,31 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
               </div>
             )}
 
-            {/* 无重复 */}
-            {!isProcessing && duplicateGroups.length === 0 && (
+            {/* 从未检测：引导首扫 —— 与「扫完很干净」是两种心境，不能共用一张绿色对勾脸 */}
+            {!isProcessing && duplicateGroups.length === 0 && progress === null && (
               <div className="h-full flex items-center justify-center p-8 text-center">
-                <div className="max-w-sm">
+                <div className="max-w-sm animate-fadeInUp">
+                  <div className="w-20 h-20 mx-auto mb-5 rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.1)] border border-[rgba(var(--accent-blue-rgb),0.22)] text-[var(--accent-blue)] flex items-center justify-center">
+                    <DuplicateGlyph />
+                  </div>
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">找出图库里的相似图片</h3>
+                  <p className="text-sm leading-relaxed text-[var(--text-secondary)] mb-6">
+                    以感知哈希逐张比对，找出重复与近似的照片。全部在本机完成，照片不会离开这台电脑。
+                  </p>
+                  <button
+                    onClick={onRecheck}
+                    className="px-5 py-2 text-sm font-semibold rounded-xl text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.25)] transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
+                  >
+                    开始检测
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 已检测过、无重复：绿色结论 + 放宽阈值的建议 */}
+            {!isProcessing && duplicateGroups.length === 0 && progress !== null && (
+              <div className="h-full flex items-center justify-center p-8 text-center">
+                <div className="max-w-sm animate-fadeInUp">
                   <div className="w-20 h-20 mx-auto mb-5 rounded-full bg-[rgba(var(--accent-green-rgb),0.1)] flex items-center justify-center">
                     <svg className="w-10 h-10 text-[var(--accent-green)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -811,7 +832,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                   </p>
                   <button
                     onClick={onRecheck}
-                    className="px-5 py-2 text-sm font-medium text-[var(--accent-contrast)] bg-[var(--accent-blue)] rounded-xl hover:opacity-90 transition-opacity"
+                    className="px-5 py-2 text-sm font-medium text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--bg-glass)] rounded-xl hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200 active:scale-[0.98]"
                   >
                     重新检测
                   </button>
@@ -835,10 +856,12 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                   const groupAvgSim = meta?.avgSim ?? null;
 
                   return (
-                    // content-visibility：上百组常驻 DOM 时，跳过屏外组的布局与绘制，滚动更跟手
+                    // content-visibility：上百组常驻 DOM 时，跳过屏外组的布局与绘制，滚动更跟手。
+                    // 入场动画按组序错峰（封顶前 12 组），时间线自挂载起算，滚到屏外组时动画早已落位。
                     <div
                       key={groupKey || groupIndex}
-                      className="group/row rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-glass)] overflow-hidden [content-visibility:auto] [contain-intrinsic-size:auto_46px]"
+                      style={{ animationDelay: `${Math.min(groupIndex, 11) * 28}ms` }}
+                      className="group/row rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-glass)] overflow-hidden animate-fadeInUp [content-visibility:auto] [contain-intrinsic-size:auto_46px]"
                     >
                       {/* Group header：整行可点，悬停整体染色提示可折叠 */}
                       <div className="w-full flex items-center justify-between px-3 py-2.5 gap-2 transition-colors duration-150 hover:bg-[var(--bg-glass-hover)]">

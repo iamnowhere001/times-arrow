@@ -22,7 +22,7 @@ import {
   hasAdvancedFilters,
   matchesFilters,
 } from '@/lib/filter/filters';
-import { deriveLibraryViewState } from '@/lib/filter/libraryViewState';
+import { deriveLibraryViewState, type EmptyKind } from '@/lib/filter/libraryViewState';
 
 export interface UseLibraryDerivedParams {
   photos: Photo[];
@@ -86,6 +86,10 @@ export interface LibraryDerivedResult {
   isMediaFilterEmpty: boolean;
   /** 网格视图标题（已隐藏 / 收藏夹 / 所有媒体 / 具体媒体类型） */
   gridViewTitle: string;
+  /** 当前空状态的种类（仅当可见列表为 0 时有意义，判定与取值见 libraryViewState） */
+  emptyKind: EmptyKind;
+  /** 当前是否处于「已隐藏」视图 */
+  isHiddenView: boolean;
 }
 
 export function useLibraryDerived({

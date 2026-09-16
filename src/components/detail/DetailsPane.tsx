@@ -483,7 +483,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                                 {isExportMode ? '已启用' : '启用'}
                             </span>
                             <span className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
-                              isExportMode ? 'bg-[var(--accent-blue)]' : 'bg-[rgba(255,255,255,0.14)]'
+                              isExportMode ? 'bg-[var(--accent-blue)]' : 'bg-[var(--bg-glass-active)]'
                             }`}>
                                 <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ease-entrance ${
                                   isExportMode ? 'translate-x-4' : 'translate-x-0'
@@ -526,7 +526,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                                          step="0.05"
                                          value={exportSettings.quality}
                                          onChange={(e) => setExportSettings(s => ({ ...s, quality: parseFloat(e.target.value) }))}
-                                         className="w-full h-1.5 bg-[rgba(255,255,255,0.1)] rounded-full appearance-none cursor-pointer accent-[var(--accent-blue)]"
+                                         className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[var(--accent-blue)]"
                                      />
                                  </div>
                              )}
@@ -695,14 +695,14 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                         {(photo.tags ?? []).map(tag => (
                             <span
                                 key={tag}
-                                className="group flex items-center gap-0.5 pl-2.5 pr-1 py-0.5 rounded-full text-xs font-medium bg-[rgba(var(--accent-blue-rgb),0.14)] text-[var(--accent-blue)] border border-[rgba(var(--accent-blue-rgb),0.3)]"
+                                className="group flex items-center gap-0.5 pl-2.5 pr-1 py-0.5 rounded-full text-xs font-medium bg-[rgba(var(--accent-cyan-rgb),0.15)] text-[var(--accent-cyan)] border border-[rgba(var(--accent-cyan-rgb),0.25)]"
                             >
                                 #{tag}
                                 <button
                                     type="button"
                                     onClick={() => handleRemoveTag(tag)}
                                     title={`移除标签「${tag}」`}
-                                    className="flex items-center justify-center w-4 h-4 rounded-full text-[var(--accent-blue)] hover:bg-[rgba(var(--accent-blue-rgb),0.25)] transition-colors"
+                                    className="flex items-center justify-center w-4 h-4 rounded-full text-[var(--accent-cyan)] hover:bg-[rgba(var(--accent-cyan-rgb),0.25)] transition-colors"
                                 >
                                     <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3" strokeLinecap="round">
                                         <path d="M6 18L18 6M6 6l12 12" />
@@ -745,7 +745,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
 
                 {/* AI 分析需要把整段内容读成 base64，视频体积过大，暂不提供 */}
                 {!isVideo && (
-                <div className="pt-4 border-t border-[var(--border-subtle)]">
+                <div className="rounded-xl p-4 border border-[var(--border-subtle)] bg-[var(--bg-glass)]">
                     <div className="flex items-center justify-between mb-3">
                          <label className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1">
                             ✨ DeepSeek AI 分析
@@ -768,11 +768,11 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                          <button 
                             onClick={handleAnalyze}
                             disabled={isAnalyzing}
-                            className="w-full py-2.5 bg-[linear-gradient(135deg,var(--accent-purple),var(--accent-purple-deep))] hover:from-[var(--accent-purple-hover)] hover:to-[var(--accent-purple)] text-[var(--accent-contrast)] text-sm font-medium rounded-xl shadow-lg shadow-[rgba(var(--accent-purple-rgb),0.3)] transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+                            className="w-full py-2.5 bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] hover:brightness-110 text-[var(--accent-contrast)] text-sm font-medium rounded-xl shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.25)] transition-all duration-200 active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2"
                          >
                             {isAnalyzing ? (
                                 <>
-                                    <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></div>
+                                    <div className="w-4 h-4 rounded-full border-2 border-[color-mix(in_srgb,var(--accent-contrast)_30%,transparent)] border-t-[var(--accent-contrast)] animate-spin"></div>
                                     分析中...
                                 </>
                             ) : (
@@ -782,14 +782,14 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
                     )}
 
                     {(photo.aiDescription || photo.aiTags) && (
-                        <div className="bg-[rgba(var(--accent-purple-rgb),0.1)] rounded-xl p-4 border border-[rgba(var(--accent-purple-rgb),0.2)] animate-fadeInUp">
+                        <div className="bg-[var(--bg-input)] rounded-xl p-4 border border-[var(--border-subtle)] animate-fadeInUp">
                              {photo.aiDescription && (
-                                 <p className="text-sm text-[var(--text-primary)] italic mb-3 leading-relaxed">"{photo.aiDescription}"</p>
+                                 <p className="text-sm text-[var(--text-primary)] italic mb-3 leading-relaxed">“{photo.aiDescription}”</p>
                              )}
                              {photo.aiTags && (
                                  <div className="flex flex-wrap gap-1.5">
                                      {photo.aiTags.map(tag => (
-                                         <span key={tag} className="px-2.5 py-0.5 bg-[rgba(var(--accent-purple-rgb),0.15)] text-[var(--accent-purple)] border border-[rgba(var(--accent-purple-rgb),0.25)] rounded-full text-xs font-medium">
+                                         <span key={tag} className="px-2.5 py-0.5 bg-[rgba(var(--accent-cyan-rgb),0.15)] text-[var(--accent-cyan)] border border-[rgba(var(--accent-cyan-rgb),0.25)] rounded-full text-xs font-medium">
                                              #{tag}
                                          </span>
                                      ))}

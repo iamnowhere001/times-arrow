@@ -896,8 +896,8 @@ const TimelineHeader = memo(TimelineHeaderBase);
 
 const EmptyState: React.FC<{ onBack: () => void }> = ({ onBack }) => (
   <div className="flex flex-1 items-center justify-center px-8">
-    <div className="max-w-sm text-center">
-      <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.1)] text-[var(--accent-blue)]">
+    <div className="max-w-sm text-center animate-fadeInUp">
+      <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.1)] border border-[rgba(var(--accent-blue-rgb),0.22)] text-[var(--accent-blue)]">
         <ClockIcon size={30} />
       </div>
       <h2 className="mb-2 text-xl font-semibold text-[var(--text-primary)]">还没有可回顾的时光</h2>
@@ -907,7 +907,7 @@ const EmptyState: React.FC<{ onBack: () => void }> = ({ onBack }) => (
       <button
         type="button"
         onClick={onBack}
-        className="rounded-xl border border-[var(--border-default)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]"
+        className="rounded-xl border border-[var(--border-default)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-all duration-200 hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:scale-[0.98]"
       >
         返回图库去导入
       </button>
@@ -1265,7 +1265,7 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
                         }}
                       />
                       <span className="inline-flex h-7 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-secondary)] pl-3 pr-2 shadow-[var(--shadow-sm)]">
-                        <span className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--text-secondary)]">
+                        <span className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--text-primary)]">
                           <ClockIcon size={14} />
                           未知时间
                         </span>
@@ -1298,7 +1298,7 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
             onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
             aria-hidden={!showBackToTop}
             tabIndex={showBackToTop ? 0 : -1}
-            className={`app-no-drag absolute bottom-6 left-1/2 z-20 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3.5 text-[12px] font-medium text-[var(--text-secondary)] shadow-lg backdrop-blur-xl transition-all duration-300 hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] ${
+            className={`app-no-drag absolute bottom-6 left-1/2 z-20 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3.5 text-[12px] font-medium text-[var(--text-secondary)] shadow-lg backdrop-blur-xl transition-all duration-300 hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] active:scale-[0.98] ${
               showBackToTop ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0'
             }`}
           >

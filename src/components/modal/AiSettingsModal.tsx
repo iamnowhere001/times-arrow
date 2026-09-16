@@ -167,7 +167,7 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(0,0,0,0.7)] backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-md animate-fadeIn">
       <div
         className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[480px] max-w-[90vw] overflow-hidden border border-[var(--border-default)] animate-scaleIn flex flex-col"
         role="dialog"

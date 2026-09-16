@@ -48,7 +48,7 @@ const ClearListConfirmModal: React.FC<ClearListConfirmModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(0,0,0,0.7)] backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-md animate-fadeIn">
       <div
         className="bg-[var(--bg-modal)] backdrop-blur-xl rounded-xl shadow-2xl w-[400px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] animate-scaleIn p-6"
         role="dialog"
@@ -82,7 +82,7 @@ const ClearListConfirmModal: React.FC<ClearListConfirmModalProps> = ({
           <button
             ref={confirmRef}
             onClick={onConfirm}
-            className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-pink)] hover:opacity-90 rounded-lg transition-opacity"
+            className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-pink)] hover:opacity-90 rounded-lg transition-all duration-200 active:scale-[0.98]"
           >
             清空列表
           </button>

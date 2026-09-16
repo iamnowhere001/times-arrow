@@ -411,6 +411,20 @@ const LocationMap: React.FC<LocationMapProps> = ({
   const [hasInteracted, setHasInteracted] = useState(false);
   /** 地名表是否已就绪（按需加载的独立 chunk，见 lib/geo/places.ts） */
   const [placesReady, setPlacesReady] = useState(arePlacesLoaded);
+  /** 地点照片条两端是否还有内容：决定边缘渐隐是否显示 */
+  const [stripEdge, setStripEdge] = useState({ left: false, right: false });
+  const stripScrollRef = useRef<HTMLDivElement | null>(null);
+  const measureStripEdge = useCallback(() => {
+    const el = stripScrollRef.current;
+    if (!el) return;
+    setStripEdge(prev => {
+      const next = {
+        left: el.scrollLeft > 4,
+        right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+      };
+      return prev.left === next.left && prev.right === next.right ? prev : next;
+    });
+  }, []);
 
   /**
    * 进入地图视图时才拉取地名表。
@@ -480,6 +494,18 @@ const LocationMap: React.FC<LocationMapProps> = ({
       return { ...prev, photos: alive };
     });
   }, [photos]);
+
+  // 照片条出现 / 照片集合变化 / 窗口尺寸变化后，重新测两端可滚动状态
+  useEffect(() => {
+    if (!activeSite) return;
+    const raf = requestAnimationFrame(measureStripEdge);
+    const ro = new ResizeObserver(measureStripEdge);
+    if (stripScrollRef.current) ro.observe(stripScrollRef.current);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [activeSite, photos.length, measureStripEdge]);
 
   /* ------------------------------ 指针交互 ------------------------------ */
 
@@ -769,8 +795,10 @@ const LocationMap: React.FC<LocationMapProps> = ({
 
   const hoverCardStyle = useMemo((): React.CSSProperties | null => {
     if (!hover) return null;
-    const cardWidth = 216;
-    const cardHeight = 158;
+    // 宽度反推：p-1.5（6*2）+ 4 张 50px 缩略图 + 3 个 4px gap = 224；
+    // 高度 = 图区 62 + 底部双行信息 ~56。此前 216/158 配 68px 图，第四张必被裁。
+    const cardWidth = 224;
+    const cardHeight = 122;
     const gap = 16;
     let left = hover.x + gap;
     let top = hover.y - cardHeight / 2;
@@ -815,38 +843,6 @@ const LocationMap: React.FC<LocationMapProps> = ({
               </div>
             )}
           </div>
-
-          {!isEmpty && (
-            <div className="ml-auto flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => handleZoomButton(1 / 1.5)}
-                title="缩小"
-                aria-label="缩小"
-                className="flex h-8 w-8 items-center justify-center rounded-[10px] text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]"
-              >
-                <MinusIcon />
-              </button>
-              <button
-                type="button"
-                onClick={handleResetView}
-                title="回到全部地点"
-                aria-label="回到全部地点"
-                className="flex h-8 w-8 items-center justify-center rounded-[10px] text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]"
-              >
-                <CrosshairIcon />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleZoomButton(1.5)}
-                title="放大"
-                aria-label="放大"
-                className="flex h-8 w-8 items-center justify-center rounded-[10px] text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]"
-              >
-                <PlusIcon />
-              </button>
-            </div>
-          )}
         </div>
       </header>
 
@@ -881,8 +877,8 @@ const LocationMap: React.FC<LocationMapProps> = ({
 
         {isEmpty ? (
           <div className="absolute inset-0 flex items-center justify-center px-8">
-            <div className="max-w-sm text-center">
-              <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.1)] text-[var(--accent-blue)]">
+            <div className="max-w-sm text-center animate-fadeInUp">
+              <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.1)] border border-[rgba(var(--accent-blue-rgb),0.22)] text-[var(--accent-blue)]">
                 <MapPinIcon size={30} />
               </div>
               <h2 className="mb-2 text-xl font-semibold text-[var(--text-primary)]">还没有带地点的照片</h2>
@@ -894,7 +890,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
               <button
                 type="button"
                 onClick={onBack}
-                className="rounded-xl border border-[var(--border-default)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]"
+                className="rounded-xl border border-[var(--border-default)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-all duration-200 hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:scale-[0.98]"
               >
                 返回图库
               </button>
@@ -902,6 +898,40 @@ const LocationMap: React.FC<LocationMapProps> = ({
           </div>
         ) : (
           <>
+            {/* 缩放控件：悬浮在地图右上方的玻璃竖簇。地图类工具的通用位置，
+                标题栏因此只剩陈述，不堆操作 */}
+            <div className="app-no-drag absolute right-4 top-4 z-20 flex flex-col overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-lg)] backdrop-blur-xl">
+              <button
+                type="button"
+                onClick={() => handleZoomButton(1.5)}
+                title="放大"
+                aria-label="放大"
+                className="flex h-8 w-8 items-center justify-center text-[var(--text-secondary)] transition-all duration-150 hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:scale-[0.95]"
+              >
+                <PlusIcon />
+              </button>
+              <div className="h-px bg-[var(--border-subtle)]" aria-hidden />
+              <button
+                type="button"
+                onClick={handleResetView}
+                title="回到全部地点"
+                aria-label="回到全部地点"
+                className="flex h-8 w-8 items-center justify-center text-[var(--text-secondary)] transition-all duration-150 hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:scale-[0.95]"
+              >
+                <CrosshairIcon />
+              </button>
+              <div className="h-px bg-[var(--border-subtle)]" aria-hidden />
+              <button
+                type="button"
+                onClick={() => handleZoomButton(1 / 1.5)}
+                title="缩小"
+                aria-label="缩小"
+                className="flex h-8 w-8 items-center justify-center text-[var(--text-secondary)] transition-all duration-150 hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:scale-[0.95]"
+              >
+                <MinusIcon />
+              </button>
+            </div>
+
             {/* 视野读数：只在「视野内不是全部」时出现（与全部相同就没有信息量） */}
             {!activeSite && inViewCount > 0 && inViewCount < points.length && (
               <div className="pointer-events-none absolute bottom-4 left-4 z-20">
@@ -921,7 +951,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
                     {hoverPreview.map(photo => (
                       <div
                         key={photo.id}
-                        className="relative h-[68px] w-[68px] shrink-0 overflow-hidden rounded-xl bg-[var(--bg-card)]"
+                        className="relative h-[50px] w-[50px] shrink-0 overflow-hidden rounded-lg bg-[var(--bg-card)]"
                       >
                         <ThumbImage
                           photo={photo}
@@ -982,7 +1012,12 @@ const LocationMap: React.FC<LocationMapProps> = ({
                     </button>
                   </div>
 
-                  <div className="custom-scrollbar flex gap-2 overflow-x-auto p-3">
+                  <div className="relative">
+                    <div
+                      ref={stripScrollRef}
+                      onScroll={measureStripEdge}
+                      className="custom-scrollbar flex gap-2 overflow-x-auto p-3"
+                    >
                     {activeSite.photos.slice(0, STRIP_LIMIT).map(photo => (
                       <button
                         key={photo.id}
@@ -1009,6 +1044,17 @@ const LocationMap: React.FC<LocationMapProps> = ({
                         ) : null}
                       </button>
                     ))}
+                    </div>
+
+                    {/* 边缘渐隐：哪一端还有照片，哪一端才亮 */}
+                    <div
+                      aria-hidden
+                      className={`pointer-events-none absolute inset-y-0 left-0 w-7 bg-gradient-to-r from-[var(--bg-elevated)] to-transparent transition-opacity duration-200 ${stripEdge.left ? 'opacity-100' : 'opacity-0'}`}
+                    />
+                    <div
+                      aria-hidden
+                      className={`pointer-events-none absolute inset-y-0 right-0 w-7 bg-gradient-to-l from-[var(--bg-elevated)] to-transparent transition-opacity duration-200 ${stripEdge.right ? 'opacity-100' : 'opacity-0'}`}
+                    />
                   </div>
                 </div>
               </div>

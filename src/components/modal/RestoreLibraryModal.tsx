@@ -62,7 +62,7 @@ const RestoreLibraryModal: React.FC<RestoreLibraryModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(0,0,0,0.7)] backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-md animate-fadeIn"
       onClick={onClose}
     >
       <div
@@ -131,7 +131,7 @@ const RestoreLibraryModal: React.FC<RestoreLibraryModalProps> = ({
           <button
             ref={confirmRef}
             onClick={onConfirm}
-            className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-blue)] hover:opacity-90 rounded-lg transition-opacity"
+            className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-blue)] hover:opacity-90 rounded-lg transition-all duration-200 active:scale-[0.98]"
           >
             恢复图库
           </button>

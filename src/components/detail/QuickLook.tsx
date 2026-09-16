@@ -531,7 +531,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-[rgba(0,0,0,0.95)] backdrop-blur-xl flex flex-col animate-fadeIn overflow-hidden select-none"
+      className="fixed inset-0 z-[100] bg-[rgba(12,11,10,0.96)] backdrop-blur-xl flex flex-col animate-fadeIn overflow-hidden select-none"
       onClick={handleBackdropClick}
     >
       {/* 顶栏：文件名 / 序号 / 缩放或视频信息 */}

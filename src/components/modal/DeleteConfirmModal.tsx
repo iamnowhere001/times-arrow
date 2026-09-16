@@ -46,7 +46,7 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   const photoCount = `${count} 个项目`;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(0,0,0,0.7)] backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-md animate-fadeIn">
       <div 
         className="bg-[var(--bg-modal)] backdrop-blur-xl rounded-xl shadow-2xl w-[380px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] animate-scaleIn p-6"
         role="dialog"
@@ -84,7 +84,7 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
             ref={confirmRef}
             onClick={onConfirm}
             disabled={isBusy}
-            className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-pink)] hover:opacity-90 rounded-lg transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-pink)] hover:opacity-90 rounded-lg transition-all duration-200 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isBusy ? '处理中…' : (isDiskOperation ? '移至回收站' : '移除')}
           </button>

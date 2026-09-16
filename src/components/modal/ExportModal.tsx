@@ -210,7 +210,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
   const percent = photos.length > 0 ? Math.round((progress / photos.length) * 100) : 0;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(0,0,0,0.7)] backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-md animate-fadeIn">
       <div
         className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[440px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] flex flex-col max-h-[90vh]"
         role="dialog"
@@ -328,7 +328,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
               <button
                 onClick={startExport}
                 disabled={!targetDir || photos.length === 0}
-                className="px-5 py-2 text-sm font-semibold rounded-xl text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)] hover:shadow-xl hover:shadow-[rgba(var(--accent-blue-rgb),0.4)] transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+                className="px-5 py-2 text-sm font-semibold rounded-xl text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)] hover:shadow-xl hover:shadow-[rgba(var(--accent-blue-rgb),0.4)] transition-all duration-200 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
               >
                 导出 {photos.length} 张
               </button>

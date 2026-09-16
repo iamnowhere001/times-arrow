@@ -29,6 +29,8 @@
 
   /* 摄影参数与计数统一使用等宽数字，保证纵向对齐 */
   --font-numeric: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* font-mono 与等宽数字同一套字体栈：EXIF、计数、序号在任何组件里都纵向对齐 */
+  --font-mono: var(--font-numeric);
 
   /* 年份大标题：macOS 自带的 New York 衬线。
      等宽数字是「仪表的刻度」，衬线才是「画册的年份」——
@@ -159,6 +161,8 @@
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
   --shadow-xl: 0 20px 56px rgba(0, 0, 0, 0.55);
+  /* 最重的一层落影：弹窗 / QuickLook 镀铬。浅色主题在 .light-theme 另给暖棕值 */
+  --shadow-2xl: 0 28px 64px rgba(0, 0, 0, 0.62);
   --shadow-glow-blue: 0 6px 20px rgba(232, 163, 61, 0.18);
   --shadow-glow-purple: 0 0 24px rgba(180, 131, 60, 0.2);
   --shadow-glow-cyan: 0 0 24px rgba(227, 184, 113, 0.18);
@@ -599,18 +603,8 @@
   color: var(--text-tertiary);
 }
 
-.shadow-sm { box-shadow: var(--shadow-sm); }
-.shadow-md { box-shadow: var(--shadow-md); }
-.shadow-lg { box-shadow: var(--shadow-lg); }
-.shadow-xl { box-shadow: var(--shadow-xl); }
-
-.rounded-xs { border-radius: var(--radius-xs); }
-.rounded-sm { border-radius: var(--radius-sm); }
-.rounded-md { border-radius: var(--radius-md); }
-.rounded-lg { border-radius: var(--radius-lg); }
-.rounded-xl { border-radius: var(--radius-xl); }
-.rounded-2xl { border-radius: var(--radius-2xl); }
-.rounded-full { border-radius: var(--radius-full); }
+/* shadow-* / rounded-* 直接由 Tailwind v4 工具类产出（box-shadow: var(--shadow-*)），
+   :root 覆盖的同名变量会被工具类解析到，无需再手写一层未分层类。 */
 
 .margin-xs { margin: 4px; }
 .margin-sm { margin: 8px; }
