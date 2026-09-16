@@ -9,7 +9,27 @@
 import { MediaFilter } from '@/types';
 import { MEDIA_FILTER_LABELS } from '@/lib/filter/filters';
 
+/**
+ * 空状态的种类。
+ *
+ * 定义在这里而不是组件里：判定优先级是本文件的事，组件只负责按种类挑图形与语气。
+ * `library` 走单独设计的首屏，其余五种共用克制模板。
+ */
+export type EmptyKind =
+  | 'library' // 图库完全为空
+  | 'search' // 有关键词但无匹配
+  | 'filter' // 高级筛选条件下无匹配
+  | 'media' // 当前媒体类型没有内容
+  | 'allHidden' // 全部项目都被隐藏了
+  | 'hiddenEmpty' // 「已隐藏」视图自身为空
+  | 'favorites'; // 收藏夹为空
+
 export interface LibraryViewState {
+  /**
+   * 当前属于哪一种空状态（非空时无意义，仅当可见列表为 0 时参考）。
+   * 优先级与下面各布尔判定一致，集中一处避免调用方再排一次顺序。
+   */
+  emptyKind: EmptyKind;
   /** 图库完全没有内容 */
   isEmptyLibrary: boolean;
   /** 当前处于「已隐藏」视图 */
@@ -107,7 +127,28 @@ export function deriveLibraryViewState(input: LibraryViewStateInput): LibraryVie
           ? '所有媒体'
           : MEDIA_FILTER_LABELS[mediaFilter];
 
+  // 空状态种类：与上面各判定的优先级一致，集中排一次序，
+  // 避免 App 与空状态组件各排一遍、将来改一处忘另一处。
+  const emptyKind: EmptyKind = isEmptyLibrary
+    ? 'library'
+    : isSearchEmpty
+      ? 'search'
+      : isAllHidden
+        ? 'allHidden'
+        : isHiddenEmpty
+          ? 'hiddenEmpty'
+          : isFilterEmpty
+            ? 'filter'
+            : isFavoritesEmpty
+              ? 'favorites'
+              : isMediaFilterEmpty
+                ? 'media'
+                // 兜底：列表为空但不属于以上任何一类（例如只剩隐藏项），
+                // 按「没找到」处理，语气与搜索一致。
+                : 'search';
+
   return {
+    emptyKind,
     isEmptyLibrary,
     isHiddenView,
     isSearchEmpty,

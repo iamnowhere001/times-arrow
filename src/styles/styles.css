@@ -78,7 +78,15 @@
    这样 13 个组件里的引用无需重命名即可整体跟随。
    ------------------------------------------------------------------ */
 
-:root {
+/* 暗房色板同时挂在 :root 与 .immersive-surface 上：
+   - :root —— 暗色主题的取值，全应用默认；
+   - .immersive-surface —— 整页沉浸视图（时光画廊 / 按地点浏览 / QuickLook）在
+     **任何**主题下都取这一组值（见 components/common/ImmersiveView.tsx）。
+   两者共用同一处声明，不复制一份，改色不会只改到一半。
+   由于沉浸式元素是 .light-theme 的后代而又自带声明，
+   继承链上自己的声明优先 —— 浅色主题因此压不住它。 */
+:root,
+.immersive-surface {
   /* 承载面：暖石墨，从底到高逐级抬升 */
   --bg-primary: #0c0b0a;
   --bg-secondary: #131211;

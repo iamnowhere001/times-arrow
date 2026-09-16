@@ -163,6 +163,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     isFavoritesEmpty,
     isMediaFilterEmpty,
     gridViewTitle,
+    emptyKind,
   } = useLibraryDerived({
     photos,
     sortConfig,
@@ -1072,6 +1073,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
           onExportSelected={handleExportSelected}
           onFilterByDate={handleFilterByDate}
           viewTitle={gridViewTitle}
+          emptyKind={emptyKind}
+          emptyHint={
+            emptyKind === 'library' || emptyKind === 'allHidden'
+              ? undefined
+              : `库中 ${counts.all} 项，当前条件下没有匹配`
+          }
           emptyTitle={
             isSearchEmpty ? '没有匹配的结果'
               : isEmptyLibrary ? '打开你的图库'

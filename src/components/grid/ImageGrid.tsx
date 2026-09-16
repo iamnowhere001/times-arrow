@@ -5,6 +5,8 @@ import { formatBytes, formatDate, formatVideoDuration, isVideoPhoto } from '@/ut
 // 时间语义统一入口：本文件原先内联了 `dateTaken || lastModified`
 import { photoTakenTime } from '@/lib/media/photoTime';
 import { useThumbnailSrc, useVideoPoster, ThumbImage } from '@/components/grid/ThumbnailImage';
+// 空状态：首屏单独设计，其余五种共用模板但区分语气（K27）
+import { EmptyKind, QuietEmptyState, WelcomeEmptyState } from '@/components/grid/EmptyStates';
 
 /**
  * 把时间戳格式化为「今天 / 昨天 / 具体日期」，用于滚动日期胶囊。
@@ -761,6 +763,11 @@ interface ImageGridProps {
   /** 空状态引导 */
   emptyTitle?: string;
   emptyDescription?: string;
+  /**
+   * 空状态种类：决定图形与语气（见 EmptyStates）。
+   * `library`（图库完全为空）走单独设计的首屏，其余五种共用克制的模板但区分语气。
+   */
+  emptyKind?: EmptyKind;
   /** 空库欢迎页的统一导入入口（图片 / 视频 / 文件夹均可批量选择） */
   onImport?: () => void;
   /** 收藏夹为空时，引导跳回所有照片 */
@@ -769,6 +776,11 @@ interface ImageGridProps {
   onClearSearch?: () => void;
   /** onShowAll 按钮文案（默认「前往「所有照片」」，筛选无结果时改为「清除筛选」） */
   showAllLabel?: string;
+  /**
+   * 非首屏空态的旁注读数（如「库中 1,204 张」）。
+   * 给「是没找到还是本来就没有」一个参照，避免用户怀疑应用坏了。
+   */
+  emptyHint?: React.ReactNode;
   /** 已删除、正在播塌陷动画的条目：卡片仍渲染，但淡出且不可交互 */
   exitingIds?: Set<string>;
 }
@@ -1130,10 +1142,12 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
   viewTitle,
   emptyTitle = '没有照片',
   emptyDescription = '拖放图片、视频或文件夹到此处，或点击上方「导入」按钮批量添加',
+  emptyKind = 'library',
   onImport,
   onShowAll,
   onClearSearch,
   showAllLabel = '前往「所有照片」',
+  emptyHint,
   exitingIds = NO_EXITING_IDS,
 }, ref) => {
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -1389,105 +1403,31 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(({
 
   /* ============ 空状态：把“下一步能做什么”直接放在眼前 ============ */
   if (photos.length === 0) {
-    const isWelcome = Boolean(onImport);
-    // 空库欢迎页的能力要点：纯本地 / 拖放导入 / 图片视频，帮助新用户建立预期。
-    const welcomePoints = [
-      {
-        icon: (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="11" width="18" height="11" rx="2"></rect>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-          </svg>
-        ),
-        label: '纯本地处理',
-      },
-      {
-        icon: (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-          </svg>
-        ),
-        label: '拖入文件夹',
-      },
-      {
-        icon: (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="2" y="3" width="20" height="18" rx="2"></rect>
-            <path d="M9 17L4 12l5-5m6 10l5-5-5-5"></path>
-          </svg>
-        ),
-        label: '图片 & 视频',
-      },
-    ];
-
+    // 首屏（图库完全为空）单独设计；其余五种共用克制模板，按 emptyKind 区分语气。
+    // 判定用 emptyKind 而不是 `Boolean(onImport)`：导入入口只在该出现时出现，
+    // 与「这是哪一种空」是两件事，混在一起会让首屏判定被入口的有无牵着走。
+    const isWelcome = emptyKind === 'library';
     return (
       <div
         className="flex-1 flex flex-col items-center justify-center text-[var(--text-tertiary)] p-12 min-h-0 overflow-y-auto text-center"
         onContextMenu={(e) => onContextMenu && onContextMenu(e)}
       >
         {isWelcome ? (
-          /* 空库欢迎页：光晕 + 图标 + 能力要点 + 交错入场，第一印象更专业 */
-          <>
-            <div className="relative mb-8 animate-fadeInUp">
-              <div className="absolute inset-0 -m-10 rounded-full bg-[radial-gradient(circle,rgba(var(--accent-blue-rgb),0.16)_0%,rgba(var(--accent-blue-rgb),0.05)_45%,transparent_72%)] blur-2xl" aria-hidden="true"></div>
-              <div className="relative w-24 h-24 rounded-3xl bg-[linear-gradient(135deg,rgba(var(--accent-blue-rgb),0.2),rgba(var(--accent-blue-rgb),0.05))] border border-[rgba(var(--accent-blue-rgb),0.3)] flex items-center justify-center shadow-xl shadow-[rgba(var(--accent-blue-rgb),0.18)] backdrop-blur-sm">
-                <svg className="w-12 h-12 text-[var(--accent-blue)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                </svg>
-              </div>
-            </div>
-            <p className="text-xl font-semibold text-[var(--text-primary)] mb-2 animate-fadeInUp" style={{ animationDelay: '60ms' }}>{emptyTitle}</p>
-            <p className="text-sm text-[var(--text-tertiary)] max-w-sm leading-relaxed mb-8 animate-fadeInUp" style={{ animationDelay: '120ms' }}>{emptyDescription}</p>
-            <div className="flex flex-wrap items-center justify-center gap-3 mb-10 animate-fadeInUp" style={{ animationDelay: '180ms' }}>
-              {welcomePoints.map((p) => (
-                <div key={p.label} className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-glass)] text-[var(--text-secondary)] backdrop-blur-sm">
-                  <span className="text-[var(--accent-cyan)]">{p.icon}</span>
-                  <span className="text-xs font-medium">{p.label}</span>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center gap-3 animate-fadeInUp" style={{ animationDelay: '240ms' }}>
-              {onImport && (
-                <button
-                  onClick={onImport}
-                  className="px-6 py-2.5 rounded-xl text-sm font-semibold text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.25)] transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
-                >
-                  导入图片 / 视频 / 文件夹
-                </button>
-              )}
-            </div>
-          </>
+          <WelcomeEmptyState
+            title={emptyTitle}
+            description={emptyDescription}
+            onImport={onImport}
+          />
         ) : (
-          /* 其它空态（搜索 / 筛选 / 隐藏）：保持轻量，仅图标 + 文案 + 单入口 */
-          <>
-            <div className="w-32 h-32 mb-8 rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.08)] border border-[rgba(var(--accent-blue-rgb),0.15)] flex items-center justify-center shadow-xl shadow-[rgba(var(--accent-blue-rgb),0.08)] animate-fadeInUp">
-              <svg className="w-14 h-14 text-[var(--accent-blue)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-              </svg>
-            </div>
-            <p className="text-xl font-semibold text-[var(--text-secondary)] mb-3 animate-fadeInUp" style={{ animationDelay: '60ms' }}>{emptyTitle}</p>
-            <p className="text-sm text-[var(--text-tertiary)] text-center max-w-sm leading-relaxed animate-fadeInUp" style={{ animationDelay: '120ms' }}>{emptyDescription}</p>
-            {(onShowAll || onClearSearch) && (
-              <div className="mt-8 flex items-center gap-3 animate-fadeInUp" style={{ animationDelay: '180ms' }}>
-                {onShowAll && (
-                  <button
-                    onClick={onShowAll}
-                    className="px-5 py-2.5 rounded-xl text-sm font-medium bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] border border-[var(--border-default)] text-[var(--text-primary)] transition-all duration-200 active:scale-[0.98]"
-                  >
-                    {showAllLabel}
-                  </button>
-                )}
-                {onClearSearch && (
-                  <button
-                    onClick={onClearSearch}
-                    className="px-5 py-2.5 rounded-xl text-sm font-medium bg-[var(--bg-glass)] hover:bg-[var(--bg-glass-hover)] border border-[var(--border-default)] text-[var(--text-primary)] transition-all duration-200 active:scale-[0.98]"
-                  >
-                    清除搜索
-                  </button>
-                )}
-              </div>
-            )}
-          </>
+          <QuietEmptyState
+            kind={emptyKind}
+            title={emptyTitle}
+            description={emptyDescription}
+            onShowAll={onShowAll}
+            showAllLabel={showAllLabel}
+            onClearSearch={onClearSearch}
+            hint={emptyHint}
+          />
         )}
       </div>
     );
