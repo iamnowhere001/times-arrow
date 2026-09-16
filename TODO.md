@@ -1,6 +1,7 @@
 # PhotoMinder TODO
 
-> **最后更新**：2026-09-13（N8 已完成；v0.6.1 余 N9 / N10；批次 C 余 K16 / K20 / K26）
+> **最后更新**：2026-09-16（架构重构与工程化批次：P0 5/5、P1 10/10、P2 9/20 已完成；v0.6.1 余 N9 / N10；K 批次余 K3–K6（K4 部分完成）、K7–K13、K16 / K20 / K26、K27–K32）
+> **相关文档**：功能现状见 [`README.md`](./README.md)；审查结论与修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)
 
 | 约定 | 说明 |
 | --- | --- |
@@ -9,6 +10,7 @@
 | 完成时间 | 以版本号为目标节点，不排具体日期，随开发节奏滚动 |
 | 优先原则 | 用起来舒服、稳定、不丢数据 ＞ 功能数量；够用即止，非必要不引入复杂度 |
 | 负责人 | 个人项目，全部条目默认维护者本人（now&here） |
+| 状态图例 | `[x]` / ✅ 已完成 · `[~]` / 🔶 部分完成 · `[ ]` / ⏳ 待做 · ⚠️ 已记录但未改行为（需产品决定） |
 
 ---
 
@@ -16,20 +18,39 @@
 
 | 里程碑 | 范围 | 状态 |
 | --- | --- | --- |
-| v0.5.1 | N5 稳定性加固 + K 批次 A | 进行中（N5 / K1 / K2 已完成，余 K3–K6） |
-| v0.5.2 | K 批次 B（数据与结果正确性） | 待开始 |
-| v0.5.x | K 批次 C（交互与体验） | 进行中（10 / 13 完成，余 K16 / K20 / K26） |
+| v0.5.1 | N5 稳定性加固 + K 批次 A | 进行中（N5 / K1 / K2 已完成；K4 部分完成；余 **K3 / K5 / K6**） |
+| v0.5.2 | K 批次 B（数据与结果正确性） | 待开始（7 项均未动，另新增 K31 / K32） |
+| v0.5.x | K 批次 C（交互与体验） | 进行中（10 / 13 完成，余 **K16 / K20 / K26**） |
 | v0.6.0 | F3 浏览形态补充 | ✅ 已完成 |
-| **v0.6.1 敢用版** | **N8 来源持久化 ✅、N9 操作日志与撤销、N10 配置备份与路径重连** | **进行中** |
+| **v0.6.1 敢用版** | **N8 来源持久化 ✅、N9 操作日志与撤销、N10 配置备份与路径重连** | **进行中（N9 / N10 待开始）** |
+| — | **架构重构与工程化（CODE_REVIEW P0 / P1 / P2）** | **P0 ✅ 5/5 · P1 ✅ 10/10 · P2 进行中 9/20** |
 | v0.6.2 闭环版 | F7–F10 | 规划中 |
-| v0.6.x | K 批次 D（视觉与身份）、F1 / F2 / F4–F6 / F11–F16 按需 | 规划中 |
+| v0.6.x | K 批次 D（视觉与身份）、F1 / F2 / F4–F6 / F11–F17 按需 | 规划中 |
 
 **推进顺序**：批次 A → 批次 B → **N9 / N10（敢用 + 记住）** → 批次 C → **F7–F10（补闭环）** → 批次 D 与其余 F 项按需。
+
+**并行线（2026-09-15 起新增）**：架构重构与工程化不占产品排期，按 CODE_REVIEW 的 P0 → P1 → P2 顺序推进，与上面的产品主线并行。截至 2026-09-16：
+
+| 批次 | 内容 | 状态 |
+| --- | --- | --- |
+| P0 | 沙箱 / 路径白名单 / 体积闸门 / 构建残留（5 项） | ✅ 全部完成（附录 A） |
+| P1 | CSP / 原子占位 / IPC 统一协议 / 文件名与路径 / ESLint / 单测（10 项） | ✅ 全部完成（附录 B）；其中 13 已完成（附录 D.1），14 / 15 转入 P2 遗留 |
+| P2 | 收敛类（dHash / 时间语义 / 缓存 / 存储通知 / places 外置 / 拆 utils） | ✅ 已完成 7 项 |
+| P2 | 拆分类（App.tsx hooks ✅ / 分层 ErrorBoundary ✅） | ✅ 已完成 2 项 |
+| P2 | 剩余：ActionDescriptor、Modal 基座、虚拟化 hook、图标库、布局常量、受控并发、播放器状态机、导出分块、`useBatchOperation`、地图离屏缓存、注释清理 | ⏳ 11 项待做 |
+
 每完成一项验证「重启后是否仍顺手 / 是否会丢数据 / 视频是否别扭」，并回填本清单。
 
 ---
 
 ## 二、当前任务（N）
+
+> 2026-09-16 复核：两项**均尚未开始**。本轮做的是架构与工程化（`App.tsx` 拆分为 15 个 hook、
+> 三层测试落地），为这两项铺路但未触及功能本身。优先级维持**高** —— 它们解决的是
+> 「敢不敢用」与「记不记得住」，仍是当前最大的产品缺口。
+>
+> 落地位置可参考现有分层：`useFileOperations`（批量操作链路）/ `usePersistedLibraryData`（按路径数据）
+> / `useAppConfig`（启动与落盘）已是三个现成的挂载点，不必再往 `App.tsx` 里堆。
 
 ### N9 · 操作日志与单次撤销（F2 降级版）
 
@@ -86,12 +107,19 @@
 | F14 | 网格状态可读性 | 低 | 收藏 / 标签 / 时间已修正 / AI 已分析在卡片角标轻量指示 |
 | F15 | 缩略图空闲预热 | 低 | 空闲时为前 N 屏预热，需与并发闸门和内存看门狗联动 |
 | F16 | 存储占用分析 | 低 | 按年 / 目录 / 格式的占用分布、最大单文件 Top N、视频占比 |
+| F17 | 全量 Prettier 格式化 | 低 | 仓库从未格式化过，一次 `--write` 会产生数千行 diff，须独立提交、不与功能改动混在一起 |
+
+> **优先级说明（2026-09-16 复核）**：近期四项 **F7–F10 维持「中」** —— 它们是「AI / 重复检测 /
+> 未整理 / 备份」四条链路的收口，功能已可用但出口缺失，仍是最值得投入的一批。
+> 按需项整体维持「低」，其中 **F2 已被 N9 取代**（本表保留仅为历史引用），
+> **F17 为新增**（工程化收尾，零功能风险但 diff 很大）。
 
 ---
 
 ## 四、已知问题（K）
 
-> 来源：2026-09-12 两轮全量审查遗留的 P2 级问题（批次 A–C）与 2026-09-13 产品视角评审（批次 D）。**均不会丢数据**，但结果不准或体验受损。
+> 来源：2026-09-12 两轮全量审查遗留的 P2 级问题（批次 A–C）与 2026-09-13 产品视角评审（批次 D），
+> 另含 2026-09-16 架构重构中新发现的 K31 / K32。**均不会丢数据**，但结果不准或体验受损。
 
 ### 批次 A · 稳定性与容错（目标 v0.5.1）
 
@@ -100,8 +128,12 @@
 - [ ] **K3** 主进程存在同步阻塞事件循环的调用 · 中 · `electron/main.js`
   - `nativeImage.createFromPath / toJPEG`（缩略图、哈希与元数据兜底、`copy-image`）、`fs.existsSync / statSync`、大 config 的 `JSON.stringify`
   - 方案：解码移入 `utilityProcess`；至少把大配置序列化与写盘节流
-- [ ] **K4** ErrorBoundary 覆盖不全，主进程无未捕获异常自恢复 · 低 · `src/main.tsx`、`electron/main.js`
+  - **2026-09-16**：仍未处理。本轮只在 `main.js` 增加了安全收口（授权表、CSP、体积闸门、IPC 统一协议），未触及同步解码路径
+- [~] **K4** ErrorBoundary 覆盖不全，主进程无未捕获异常自恢复 · **中低**（2026-09-16 由「低」上调） · `src/main.tsx`、`electron/main.js`
   - Toolbar / 弹层抛错会整屏降级到顶层兜底，而顶层「重试」以相同入参重挂载多半再次抛错
+  - **2026-09-16 部分完成**：四个整页视图（图库 / 时光画廊 / 按地点浏览 / 重复检测）各挂一层 `ErrorBoundary` 并共用 `ViewErrorFallback`，详情面板另有内联降级，单区域崩溃不再整页白屏（CODE_REVIEW P2-30）
+  - **仍未做**：主进程无 `uncaughtException` / `unhandledRejection` 兜底；Toolbar / 各弹层仍只有顶层兜底
+  - **优先级由「低」上调为「中低」**：主进程缺兜底意味着一旦触发就是整个应用静默退出，比原来「只是白屏」更值得先做
 - [ ] **K5** `version` 字段只写不读 · 低 · `src/lib/persistence/persistence.ts`、`electron/main.js`
   - `config.json` / `ai-cache.json` 缺版本校验与迁移入口
 - [ ] **K6** `before-quit` 中窗口尺寸落盘未 `await` · 低 · `electron/main.js`
@@ -109,24 +141,39 @@
 
 ### 批次 B · 数据与结果正确性（目标 v0.5.2）
 
-- [ ] **K7** AI 缓存 key 只绑定路径 · 中 · `src/App.tsx`
+> **2026-09-16 复核**：7 项均未开始，判断全部仍然成立。
+> 文件位置已按拆分后的结构刷新（`utils/index.ts` → `lib/duplicate/`、`App.tsx` → 对应 hook）。
+
+- [ ] **K7** AI 缓存 key 只绑定路径 · 中 · `src/lib/persistence/aiCache.ts`、`src/hooks/usePersistedLibraryData.ts`
+  - 写入点 `aiCacheRef.current.set(target.path, …)`，key 就是路径本身
   - 换模型或外部覆盖编辑图片（路径不变）后命中旧结果且不失效 → key 改为 `${path}|${size}|${mtime 取整}|${model}`
 - [ ] **K8** ai-cache 淘汰是插入序 FIFO 而非 LRU · 中 · `src/lib/persistence/aiCache.ts`
-  - 命中不刷新顺序，最常看的条目反而最先被淘汰 → 命中时 `delete + set` 重新入队
-- [ ] **K9** 重复检测并查集取传递闭包 · 中 · `src/utils/index.ts`、`DuplicateDetector.tsx`
+  - `saveAiCache` 按 `cache.keys().next()` 从最早条目开始删，命中不刷新顺序，最常看的条目反而最先被淘汰 → 命中时 `delete + set` 重新入队
+- [ ] **K9** 重复检测并查集取传递闭包 · 中 · `src/lib/duplicate/duplicateDetection.ts`、`src/components/duplicate/DuplicateDetector.tsx`
   - A–B、B–C 达标但 A–C 不达标时同组，出现「相似 69%」与顶栏「≥ 80%」自相矛盾
-- [ ] **K10** 体积预筛 ±10% 漏掉体积差大的重复 · 中 · `src/utils/index.ts`
+- [ ] **K10** 体积预筛 ±10% 漏掉体积差大的重复 · 中 · `src/lib/duplicate/duplicateDetection.ts`
   - 同图存成 PNG 与 JPEG 检测不到，而文案仍声称「已跳过不可能相似的图片」
-- [ ] **K11** 重命名预览不预演已存在的同名文件 · 低 · `RenameModal.tsx`、`src/App.tsx`
+- [ ] **K11** 重命名预览不预演已存在的同名文件 · 低 · `src/components/modal/RenameModal.tsx`、`src/hooks/useFileOperations.ts`
   - 预览 `照片_001.jpg`，实际落盘 `照片_001-1.jpg`，只在事后 Toast 说明
 - [ ] **K12** 点「取消导出」仍多写完当前这张 · 低 · `ExportModal.tsx`
   - `cancelRef` 只在循环头判断，无法中断 in-flight 写盘
 - [ ] **K13** 右键菜单对「视频 / 混合选择」的可用性与计数不对 · 中 · `src/lib/contextMenuActions.ts`
   - 「2 图 + 1 视频」右键图片显示「导出 3 张」实际只导 2 张；右键视频则完全没有「导出」；「收藏 / 复制图片」只作用于右键那一张且不带数量提示，与「隐藏 / 移动 / 重命名 N 项」作用域不一致
+- [ ] **K31** 「哪张是原图」两套判断不一致 · 中 · `src/components/map/LocationMap.tsx`、`src/lib/duplicate/duplicateDetection.ts`
+  - 重复检测用**逐字段比较**的 `compareByOriginalTime`；`LocationMap` 用 `photoOriginalTime(a) - photoOriginalTime(b)` 排序
+  - 同组共享 EXIF 拍摄时间时（拷贝件正是典型场景）后者全是并列、排不出先后，两处结论可能不一致
+  - 方案：`LocationMap` 改用 `compareByOriginalTime`。**属行为变更**（地图里「原图」标注会变），需先确认预期再改
+- [ ] **K32** 四处「注释与实现不符」已钉在测试里，待产品决定 · 低
+  - `sortPhotosByTimeline`：注释说缺失时间戳排到末尾，实现排到**最前**
+  - `clusterBySize`：注释说「±10%」，实际以簇内最小体积为锚点，区间 `[anchor, anchor×1.1]` 不对称
+  - `repairFileName`：会把扩展名转成小写（`photo.JPG` → `photo.jpg`）
+  - `extOfName('.gitignore')` 返回 `'gitignore'` 而非 `''`（照片库扫描已跳过点开头条目，无实际影响）
+  - 处置原则：**先补测试钉住现状，不擅自改行为**；改哪个由产品拍板，改完同步更新注释
 
 ### 批次 C · 交互与体验（v0.5.x 随批消化）
 
 > **进度 10 / 13**，余 **K16 / K20 / K26**，均涉及交互取舍（选中态是否保留浏览控件 / 分类跳转是否清筛选 / 相簿是否支持改名），待定策略后再动手。
+> **2026-09-16 复核**：三项仍未开始，判断成立；K20 / K26 的文件位置已按拆分后的结构刷新。
 
 - [x] **K14** 上下键按固定列数跳步，混排宽高比时跳错列 → `VirtualGrid.getVerticalNeighbor` 按 `rowOfItem` 取相邻行水平最接近的 cell
 - [x] **K15** 从时光画廊 / 重复检测返回后滚动位置丢失 → 网格 / 列表各加模块级 `savedScrollTop`，布局就绪后再恢复
@@ -140,13 +187,15 @@
 - [x] **K25** 时光画廊新增月份区块后「当前月份」判定错乱 → 改为按渲染顺序 `orderedMonthKeys` 判定
 - [ ] **K16** 一旦有选中项，排序与缩放入口整条消失 · 低 · `src/components/grid/ImageGrid.tsx`
   - 浏览条与选择条二选一渲染，选中后必须先 `Esc` 才能调排序 / 缩放 → 把控件抽成共用 JSX，两处都渲染
-- [ ] **K20** 侧栏分类跳转与相簿跳转行为不一致 · 低 · `src/App.tsx`
+- [ ] **K20** 侧栏分类跳转与相簿跳转行为不一致 · 低 · `src/App.tsx`、`src/components/layout/Sidebar.tsx`
   - 点「收藏夹」保留搜索词与高级筛选（看不出还叠了条件），点智能相簿却清空搜索词；「收藏夹 + 媒体类型 = 视频」时侧栏无高亮
-- [ ] **K26** 智能相簿缺重名校验与重命名入口 · 低 · `SaveAlbumModal.tsx`、`src/App.tsx`
+- [ ] **K26** 智能相簿缺重名校验与重命名入口 · 低 · `src/components/modal/SaveAlbumModal.tsx`、`src/hooks/useSmartAlbums.ts`
 
 ### 批次 D · 视觉与身份（v0.6.x 随批消化）
 
 > 当前 UI 是标准 macOS 风，与系统「照片」高度同质，还没有自己的身份。这批不追求「好看」，追求「一眼认得出」。
+> **2026-09-16 复核**：四项均未开始，优先级维持**低**。本轮只动了工程与架构（分层错误边界、
+> Toast 抽出），没有任何视觉改动，这批的前提与判断全部仍然成立。
 
 - [ ] **K27** 首屏空状态与设计语言同质化 · 低 · `src/components/grid/`
   - 六种空状态共用同一模板；完全为空的首屏既是第一印象也是最大一块未被设计的画布 → 首屏单独设计，其余态保持克制但区分语气
@@ -163,20 +212,22 @@
 
 个人本地应用，以下项收益低或成本高，除非日后确有需要，否则不做；完成时间均为**暂不排期**。
 
-| 编号 | 事项 | 暂缓理由 |
+| 编号 | 事项 | 状态 / 暂缓理由 |
 | --- | --- | --- |
-| X1 | API Key 用 `safeStorage` 加密 + 主进程代理 | 个人自用、本地单机，泄露风险可接受 |
-| X2 | 移除 `no-sandbox`、开启 sandbox、CSP、IPC 路径校验 | 安全加固对个人使用收益低，改动面大 |
-| X3 | 基础图片编辑（裁剪 / 翻转 / 调色） | 系统「预览 / 照片」已够用，重复造轮子 |
+| X1 | API Key 用 `safeStorage` 加密 + 主进程代理 | 暂缓。个人自用、本地单机，泄露风险可接受（「主进程代理」半边已落地） |
+| X2 | 移除 `no-sandbox`、开启 sandbox、CSP、IPC 路径校验 | ✅ **已全部完成**（2026-09-15 起，CODE_REVIEW 附录 A / B）。原暂缓理由「收益低、改动面大」经实测不成立：改动集中在 1 个文件、以数十行计。保留编号以免破坏历史引用 |
+| X3 | 基础图片编辑（裁剪 / 翻转 / 调色） | 暂缓。系统「预览 / 照片」已够用，重复造轮子 |
 | X4 | 地图视图（EXIF GPS 展示） | ✅ 已随 F3 落地轻量版：离线点阵底图 + 点位聚合，未引入地图 SDK；需街道级细节再议 |
-| X5 | 跨平台打包（Win/Linux）+ 自动更新 | 只在 macOS 自用 |
-| X7 | `App.tsx` 大拆分 + 开启 `strict` + 引入 `@types/react` | 纯工程收益，风险高于当前收益 |
-| X8 | 测试 / ESLint / CI | 个人项目，手动验证 + `tsc` + `build` 已足够 |
-| X9 | 十万级库 Worker 化压测与调优 | 除非库规模真的到十万级 |
-| X10 | 云同步 / Google Photos 等外部集成 | 与「纯本地」定位冲突 |
-| X11 | 视频重编码导出 / 转码预览 | 依赖 ffmpeg，体积与复杂度陡增；原文件可直接复制 |
+| X5 | 跨平台打包（Win/Linux）+ 自动更新 | 暂缓。只在 macOS 自用 |
+| X7 | `App.tsx` 大拆分 + 开启 `strict` + 引入 `@types/react` | 🔶 **部分完成**（2026-09-16）：`App.tsx` 3707 → 1279 行，拆出 15 个功能域 hook；`@types/react` 已在依赖里。**仍未做**：`strict: true` —— 打开会暴露大量隐式 `any`，需专项处理，暂缓 |
+| X8 | 测试 / ESLint / CI | 🔶 **部分完成**（2026-09-16）：三层测试（单测 266 项 / 主进程集成 88 项 / Electron 冒烟）与 ESLint + Prettier 均已落地且纳入 `npm run test` / `lint`。**仍未做**：CI —— 本机 `npm install` 与 Electron 沙箱都有环境限制，先不接 |
+| X9 | 十万级库 Worker 化压测与调优 | 暂缓。除非库规模真的到十万级 |
+| X10 | 云同步 / Google Photos 等外部集成 | 暂缓。与「纯本地」定位冲突 |
+| X11 | 视频重编码导出 / 转码预览 | 暂缓。依赖 ffmpeg，体积与复杂度陡增；原文件可直接复制 |
 
 > X6 已并入 X7，编号保留空缺以免破坏历史引用。
+>
+> **图例**：✅ 已完成 · 🔶 部分完成（见「状态」列的具体说明）· 无标记 = 仍暂缓。
 
 ---
 
@@ -192,8 +243,15 @@
 - **2026-09-12 · K 批次 C（10 / 13）**：K14 上下键按真实行几何取落点、K15 返回图库保留滚动位置、K17 缩放滑块放宽断点、K21 删除改 `⌘⌫`、K23 入场标记到点即清、K25 时光画廊按渲染序判定月份；K18 元数据回填锚点回正、K19 批量操作补齐进度与按钮置灰、K22 调参改为轻量重分组、K24 虚拟列表窗口起点夹取。
 - **2026-09-12 · F3 浏览形态补充（v0.6.0）**：新增「按地点浏览」（内嵌 0.5° 陆地掩码底图、城市标注、GPS 光点屏幕聚合、离线地名索引、悬停预览与地点照片条、QuickLook 地点内翻页）；QuickLook 幻灯片支持 2–12 秒间隔（跨会话记忆）与交叉淡入。产物增加约 44KB（gzip 约 20KB），运行时零网络请求。
 - **2026-09-13 · N8 库来源持久化与恢复**：新增常驻来源（`config.json` 的 `sources`，上限 200 条，旧「最近打开」自动升级）；启动时弹「恢复上次的图库」确认框并按来源重扫（复用导入进度浮层与取消链路）；侧栏「文件夹」支持重扫 / 补回与移除，新增 `check-paths` 探测可用性并橙色标注不可用来源；移除来源只摘记录，收藏 / 标签 / 时间修正 / AI 结果按路径保留。
+- **2026-09-15 · 安全边界收口（CODE_REVIEW P0，5/5）**：沙箱改为默认开启（仅未打包且显式 `PHOTOMINDER_DISABLE_SANDBOX=1` 才关，打包产物永远强制开启）；`pm://` 协议与 14 个文件类 IPC 全部接入会话级路径白名单 `isPathAuthorized()`；`read-file` 64MB / `ai-analyze` 20MB 体积闸门前置到读取之前；顺带修掉 `write-file-unique` 用 `../` 越权写盘的真实漏洞；`default.profraw` 退出 git 跟踪并加 `.gitignore`。
+- **2026-09-16 · 工程化与契约收口（CODE_REVIEW P1，10/10）**：CSP 唯一定义在 `electron/lib/csp.cjs`（响应头与构建期 meta 共用同一份），`vite` host 改 `127.0.0.1`；`buildUniquePath` → `reserveUniquePath`（`open(...,'wx')` 原子占位，消除 TOCTOU）；30 个 IPC handler 统一为 `IpcResult<T>` 并强制走 `handle()` 注册；`sanitizeFilename` / `validateFilename` 成为文件名唯一入口（不变式由测试守住）；`joinPath` 对齐 `node:path.join`；ESLint + Prettier 落地（TS 侧降级，0 problems）；建立三层测试（单测 / 主进程集成 / Electron 冒烟）。
+- **2026-09-16 · 架构重构（CODE_REVIEW P2，9/20）**：`App.tsx` 3707 → 1279 行，拆出 `useAppConfig`、`usePersistedLibraryData`、`useLibraryDerived`、`useLibraryImport`、`useLibrarySources`、`useIngestPipeline`、`useWatcherSync`、`useSelection`、`useFileOperations`、`useFileOpFeedback`、`useDragAndDrop`、`useKeyboardShortcuts`、`useQuickLook`、`useSmartAlbums`、`useCollapseAnimation` 共 15 个 hook；`utils/index.ts` 1024 → 86 行 barrel，实现拆到 `lib/` 下 9 个模块；dHash 收敛为 `electron/lib/dhash.cjs` 单一实现；照片时间语义收敛到 `src/lib/media/photoTime.ts`（12 处内联回退链清空，附静态断言）；搜索索引改 `WeakMap` 预小写缓存；`placeIndex` / `dateKeyCache` 改用真 LRU；存储损坏由静默备份改为 Toast 告知；地名表外置 `places.data.json` + 动态 `import()`（独立 chunk 58.8KB，主 bundle 不再承担）；四个整页视图各挂 `ErrorBoundary` + 共用 `ViewErrorFallback`。详见 `CODE_REVIEW.md` 附录 C / D。
 
 ### 已核对无需复查的范围（两轮审查结论）
+
+> 2026-09-16 复核：以下结论**仍然成立**。其中「IPC 契约」一条已由本次 P1 的
+> `IpcResult<T>` 重构进一步加固 —— 30 个 handler 的返回形态现在由类型系统与
+> 主进程集成测试共同守着，不再是靠人工比对。
 
 - **IPC 契约**：27 个 `invoke` + 3 个事件的 channel 名、参数顺序、返回结构与 `global.d.ts` 完全一致（N8 新增 `check-paths`）
 - **主进程文件操作**：重命名同名序号回退、删除走 `shell.trashItem`（确为回收站）、导出 `buildUniquePath` 永不覆盖、导入 / 导出取消能真正中断且无残留

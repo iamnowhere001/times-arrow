@@ -1,8 +1,14 @@
 # PhotoMinder 代码审查报告
 
-> 审查范围：`electron/`（主进程 + preload）、`src/`（28 个 tsx / 27 个 ts，约 22,850 行）、`build/`、`index.html`、`vite.config.mts`、`tsconfig*.json`、`package.json`
+> **审查时快照**：`electron/`（主进程 2,350 行 + preload 108 行）、`src/`（28 个 tsx / 27 个 ts，约 22,850 行）、`build/`、`index.html`、`vite.config.mts`、`tsconfig*.json`、`package.json`
+> **当前快照（2026-09-16）**：`electron/main.js` 2,746 行、`preload.js` 129 行，`electron/lib/` 4 个共享模块；`src/` 30 个 tsx（13,784 行）+ 49 个 ts（9,465 行）≈ 23,249 行，另新增 `src/hooks/` 18 个 hook（4,287 行）与 `tests/` 三层验证（11 个测试文件）
 > 审查方式：逐模块通读源码 + 交叉验证（git 跟踪状态、配置项、IPC 契约）
 > 严重程度定义：**高** = 安全风险 / 数据损坏 / 架构级债务；**中** = 明确的性能或正确性缺陷，或显著抬高维护成本；**低** = 一致性、可读性、局部优化
+>
+> **阅读顺序**：正文保留审查当时的原始判断（不回改，以便追溯为什么这么做）；
+> 每条发现的修复进度见 **§0.1 状态总览** 与 **§14 行动清单**；
+> 具体做法与验证记录在 **附录 A（P0）/ B（P1）/ C（P2 前半）/ D（P2 后半，2026-09-16）**。
+> 图例：✅ 已完成 · 🔶 部分完成 · ⏳ 待做 · ⚠️ 已记录但未改行为（需产品决定）
 
 ---
 
@@ -20,17 +26,98 @@
 
 其次是**架构级可维护性债务**：`App.tsx` 3707 行、`utils/index.ts` 1019 行，且没有 ESLint、没有一行测试。功能在快速增长，但缺乏任何自动化护栏。
 
+> **更新（2026-09-16）**：上面两个短板都已补上。
+>
+> - **安全**：P0（沙箱 / 路径白名单 / 体积闸门 / 构建残留）5 项与 P1（CSP / 原子占位 / IPC 统一协议 /
+>   文件名与路径收口）全部完成，攻击面从「任意文件读写删」收敛到「仅授权目录内」。
+>   实测改动量远小于预估 —— P0 全部落在同一个文件、以数十行计，当初「改动面大」的顾虑不成立。
+> - **架构与工程化**：`App.tsx` 3707 → 1279 行（拆出 15 个功能域 hook）、`utils/index.ts` 1019 → 86 行 barrel、
+>   dHash 与照片时间语义各自收敛为唯一实现、地名表外置为独立 chunk；
+>   同时建成三层验证（单测 266 项 / 主进程集成 88 项 / Electron 冒烟）与 ESLint + Prettier 护栏。
+>
+> 详见 §14 与附录 A–D。§1–§13 正文按**审查当时**的表述保留，未逐条改写。
+
 **综合评分（10 分制）**
 
-| 维度 | 评分 | 说明 |
-|---|---|---|
-| 架构设计 | 7.0 | 分层清晰、领域划分合理，但 `App.tsx` 过度集中 |
-| 代码质量与可读性 | 7.5 | 命名与注释优秀，但巨型文件与重复图标/常量拖后腿 |
-| 性能 | 8.0 | 虚拟化、缓存、限流做得很扎实；搜索与部分 O(n) 有优化空间 |
-| 安全 | 4.5 | **最薄弱环节**：沙箱、CSP、路径白名单全线缺失 |
-| 错误处理与边界 | 7.0 | 主进程边界考虑周到，但错误协议不统一、静默吞错偏多 |
-| 工程化 | 5.0 | 无 lint / 无测试 / 有构建残留入库 |
-| **加权总分** | **6.8** | 功能实现优秀，安全与工程化是两块明显短板 |
+| 维度 | 审查时 | 当前 | 说明 |
+|---|---|---|---|
+| 架构设计 | 7.0 | **8.5** | `App.tsx` 已拆为 hooks + 视图路由，`utils` 已按领域拆分；剩余债务在组件层（`ImageGrid` 两套虚拟化） |
+| 代码质量与可读性 | 7.5 | **8.0** | 命名与注释仍属优秀；重复图标与重复 Modal 基座未清 |
+| 性能 | 8.0 | **8.5** | 搜索索引缓存、地名 LRU、地名表拆包已落地，未见回退 |
+| 安全 | 4.5 | **8.5** | 沙箱 / CSP / 路径白名单 / 体积闸门 / 原子写盘全部到位；未做 `safeStorage` 加密密钥（X1，风险可接受） |
+| 错误处理与边界 | 7.0 | **8.0** | IPC 返回协议统一、分层 ErrorBoundary 已加；主进程仍无未捕获异常兜底（K4 半边未做） |
+| 工程化 | 5.0 | **7.5** | 三层测试 + ESLint + Prettier 已纳入脚本；缺 CI，且 TS 侧 lint 因 TS 7 降级 |
+| **加权总分** | **6.8** | **8.2** | 两块短板已补齐，剩余为组件层收敛与 CI |
+
+---
+
+## 0.1 发现项修复状态总览（截至 2026-09-16）
+
+按正文章节列出全部编号。**「状态」列的 ✅ 均以测试或构建产物为凭，不是口头结论。**
+
+> 注：§6 的 `K1` / `K2`（缓存层）与 `TODO.md` 里「已知问题」批次的 `K` 编号是**两套命名空间**，
+> 互不相关。引用时请带上章节号。
+
+| 章节 | 编号 | 一句话 | 状态 |
+|---|---|---|---|
+| §1.2 架构 | A1 | `App.tsx` 3707 行巨型组件 | ✅ 拆为 1279 行 + 15 个 hook（附录 D.1） |
+| | A2 | `utils/index.ts` 1019 行混装 6 个领域 | ✅ 拆为 86 行 barrel + 9 个模块（附录 C.7） |
+| | A3 | 虚拟化与滚动位置记忆复制到 3 处 | ⏳ 未动 |
+| | A4 | 无分层错误隔离 | ✅ 四个整页视图共用 `ViewErrorFallback` + 详情面板内联降级（附录 D.4） |
+| §2.1 安全 | S1 | 沙箱被完全关闭 | ✅ 默认开启 + 开发逃生口（附录 A.1） |
+| | S2 | `pm://file` 无路径白名单 | ✅ 会话级授权 + 403（附录 A.2） |
+| | S3 | 全部 IPC 不校验路径 | ✅ `isPathAuthorized()` 收口 14 处（附录 A.2） |
+| | S4 | 无 CSP | ✅ `electron/lib/csp.cjs` 唯一定义（附录 B.2） |
+| | S5 | 读取 / 上传无体积上限 | ✅ 64MB / 20MB，闸门前置（附录 A.3） |
+| | S6 | dev server 监听 `0.0.0.0` | ✅ 改 `127.0.0.1`（附录 B.2） |
+| §2.2 并发 | C1 | `buildUniquePath` TOCTOU | ✅ `reserveUniquePath`（`open(...,'wx')`，附录 B.3） |
+| | C2 | `move-files` 全串行 | ⏳ 未动 |
+| | C3 | `movePhotosToTrash` 全串行 | ⏳ 未动 |
+| §3 Preload | I1 | 暴露 ~35 个方法，接口面偏大 | ⏳ 未动（低优先） |
+| | I2 | 错误返回协议不统一 | ✅ 统一为 `IpcResult<T>`（附录 B.4） |
+| | I3 | `analyzeImage` 无大小校验 | ✅ 同 S5 |
+| §4 渲染层 | R1 | 巨型组件（同 A1） | ✅ 同 A1 |
+| | R2 | 四条写盘管线各自实现 | 🔶 已收敛进 `useFileOperations` + `useFileOpFeedback`，但未抽成泛型 `useBatchOperation` |
+| | R3 | 快捷键与右键菜单两套分发 | 🔶 各自收口（`useKeyboardShortcuts` / `contextMenuActions`），未合并为 `ActionDescriptor[]` |
+| §5 工具层 | U1 | dHash 双实现 | ✅ 收敛为 `electron/lib/dhash.cjs`（附录 C.2） |
+| | U2 | `matchesSearch` 每次 5 次 `toLowerCase()` | ✅ `WeakMap` 预小写索引（附录 C.4） |
+| | U3 | 重复注释 `// 2) 精确相同分组` | ⏳ 未动（随 `utils` 拆分位置已变，待清理） |
+| | U4 | 阈值与上限是硬编码魔数 | ⏳ 未动 |
+| | U5 | `placeIndex` 超限 `cache.clear()` | ✅ 改 `createLruCache`（附录 C.4） |
+| §6 缓存层 | K1 | `dragThumbnail` 与注册表隐式耦合 | ⏳ 未动 |
+| | K2 | 缓存占用 / 清理入口未暴露 | ⏳ 未动 |
+| §7 持久化 | P1 | 配置损坏未备份原文件 | ⚠️ **原判断有误**：备份逻辑当时已存在；真正缺的「告知用户」已补（附录 C.5 / C.6） |
+| | P2 | `sources` 上限 200 静默截断 | ⏳ 未动 |
+| §8 文件操作 | F1 | `sanitizeFilename` 与 `RenameModal` 两套规则 | ✅ 唯一入口 + 不变式测试（附录 B.5） |
+| | F2 | `joinPath` 手写拼接 | ✅ 对齐 `node:path.join`（附录 B.5） |
+| | F3 | 错误翻译未被所有路径复用 | 🔶 `humanizeFsError` 已在主链路复用；`ExportModal` 仍有自己的 `describeExportError` |
+| | F4 | `movePhotosToTrash` 串行（同 C3） | ⏳ 未动 |
+| §9 媒体 / 筛选 | M1 | 纯函数零测试 | ✅ 单测 266 项（附录 B.6） |
+| | M2 | 智能分类规则硬编码 | ⏳ 未动 |
+| | M3 | 两个相近用途缓存各自实现 | ✅ 均改用 `createLruCache`（附录 C.4） |
+| §10 地理 | G1 | 1767 行城市数据内嵌在 `.ts` | ✅ 外置 `places.data.json` + 动态 `import()`（附录 D.3） |
+| | G2 | `placeIndex` 超限 `clear()`（同 U5） | ✅ 同 U5 |
+| | G3 | 标签避让线性扫描 | ⏳ 未动（48×48 可接受） |
+| §11 组件层 | N1 | 网格与列表两套虚拟化 | ⏳ 未动 |
+| | N2 | 模块级 `savedScrollTop` 污染 | ⏳ 未动 |
+| | N3 | 布局常量分散、跨文件靠人工纪律 | ⏳ 未动 |
+| | N4 | 情境条 / 选择条 JSX 重复 | ⏳ 未动 |
+| | N5 | `getFolderPath` 只取末两级 | ⏳ 未动（刻意取舍，缺注释） |
+| | N6 | 相似度语义对用户不透明 | ⏳ 未动 |
+| | N7 | `VideoPlayer` 25+ `useState` | ⏳ 未动 |
+| | N8 | `ExportModal` 大图三份内存 | ⏳ 未动 |
+| | N9 | 静默吞错 | ⏳ 未动 |
+| | N10 | canvas 重编码导出重复 | ⏳ 未动 |
+| | N11 | 月份分组与日期分组两套实现 | ⚠️ **原判断不准确**：粒度本就不同（按年月 vs 按日）；真正的问题「时间回退链散落 12 处」已收敛（附录 C.3） |
+| | N12 | `drawLandMask` 每帧重建 `Path2D` | ⏳ 未动 |
+| | N13 | 图标组件重复定义 | ⏳ 未动（5 个文件） |
+| | N14 | 失效的 `eslint-disable` 注释 | 🔶 ESLint 已装，6 条失效指令已处理；`RenameModal` 仍有 1 条残留 |
+| | N15 | Modal 基座重复 | ⏳ 未动（8 个 modal） |
+| §12 构建 | B1 | `default.profraw` 入库 | ✅ 退出跟踪 + `.gitignore`（附录 A.4） |
+| | B2 | 无 ESLint / Prettier | ✅ 已落地（TS 侧降级，附录 B.7） |
+| | B3 | 零测试 | ✅ 三层验证（附录 B.6） |
+| | B4 | `react` 放 `devDependencies` | ⏳ 未动（运行时无影响） |
+| §13 重复代码 | D1–D10 | 十类重复 | ✅ D1 / D2（部分）/ D10 随收敛解决；D3 / D4 / D5 / D6 / D7 / D8 / D9 未动 |
 
 ---
 
@@ -306,42 +393,47 @@ src/utils/index.ts     通用工具 + 算法
 | 4 | `read-file` / `ai-analyze` 增加体积上限与明确错误 | S5 / I3 | 2 个 handler | ✅ |
 | 5 | 从 git 移除 `default.profraw` 并加入 `.gitignore` | B1 | 1 行 + `git rm --cached` | ✅ |
 
-### P1 — 近期处理（1~2 周）
+### P1 — 近期处理 ✅ 全部完成（2026-09-16）
 
-| # | 动作 | 对应问题 |
-|---|---|---|
-| 6 | 注入 CSP（meta + `onHeadersReceived`），`vite` host 改 `127.0.0.1` | S4 / S6 |
-| 7 | `buildUniquePath` 改用 `fs.open(path, 'wx')` 原子创建 | C1 |
-| 8 | 统一 IPC 返回协议为 `Result<T>`，主进程 `wrapHandler` 包裹 | I2 / F3 |
-| 9 | 统一 `sanitizeFilename` 为唯一文件名规范化入口，`RenameModal` 复用 | F1 |
-| 10 | `joinPath` 替换为 `path` 实现 | F2 |
-| 11 | 引入 ESLint + Prettier，加 `lint` script 与 CI 校验 | B2 |
-| 12 | 为纯函数层补单元测试（filters / mapMath / placeIndex / photoGrouping / clusterBySize / repairFileName） | B3 / M1 |
-| 13 | 拆 `App.tsx`：先抽 `useGlobalShortcuts` / `useDragDrop` / `useContextMenu` | A1 / R1 |
-| 14 | 抽 `ActionDescriptor[]` 统一快捷键与右键菜单 | R3 |
-| 15 | 抽 Modal 基座 | N15 / D8 |
+| # | 动作 | 对应问题 | 状态 |
+|---|---|---|---|
+| 6 | 注入 CSP（meta + `onHeadersReceived`），`vite` host 改 `127.0.0.1` | S4 / S6 | ✅ 附录 B.2 |
+| 7 | `buildUniquePath` 改用 `fs.open(path, 'wx')` 原子创建 | C1 | ✅ 附录 B.3 |
+| 8 | 统一 IPC 返回协议为 `Result<T>`，主进程 `wrapHandler` 包裹 | I2 / F3 | ✅ 附录 B.4（30 个 handler，实为 `IpcResult<T>`） |
+| 9 | 统一 `sanitizeFilename` 为唯一文件名规范化入口，`RenameModal` 复用 | F1 | ✅ 附录 B.5 |
+| 10 | `joinPath` 替换为 `path` 实现 | F2 | ✅ 附录 B.5 |
+| 11 | 引入 ESLint + Prettier，加 `lint` script 与 CI 校验 | B2 | ✅ 附录 B.7（**CI 未做**，见遗留） |
+| 12 | 为纯函数层补单元测试 | B3 / M1 | ✅ 附录 B.6（266 项） |
+| 13 | 拆 `App.tsx` | A1 / R1 | ✅ 附录 D.1（3707 → 1279 行 + 15 hook） |
+| 14 | 抽 `ActionDescriptor[]` 统一快捷键与右键菜单 | R3 | ⏳ 并入 P2（附录 D.5 遗留） |
+| 15 | 抽 Modal 基座 | N15 / D8 | ⏳ 并入 P2（附录 D.5 遗留） |
 
-### P2 — 规划处理（1~2 月）
+### P2 — 规划处理（进行中，9 / 20 完成）
 
-| # | 动作 | 对应问题 |
-|---|---|---|
-| 16 | 拆 `utils/index.ts` 为 6 个模块 | A2 |
-| 17 | dHash 收敛为单一实现 + 一致性断言 | U1 / D1 |
-| 18 | 日期分组收敛为一套 | N11 / D2 |
-| 19 | 搜索索引缓存（`WeakMap` + 预小写） | U2 |
-| 20 | 抽 `useVirtualization()` / `useScrollRestore()` | N1 / N2 / D3 / D6 |
-| 21 | 抽公共图标库 | N13 / D4 |
-| 22 | `placeIndex` / `dateKeyCache` 的 `clear()` 改 LRU 淘汰 | U5 / G2 |
-| 23 | 批量删除与跨目录移动引入受控并发 | C2 / C3 / F4 |
-| 24 | 配置损坏时备份原文件 | P1 |
-| 25 | `VideoPlayer` 状态机改 `useReducer` | N7 |
-| 26 | `ExportModal` 大图分块 / 尺寸上限保护 | N8 |
-| 27 | `places.ts` 数据外置为 JSON 按需加载 | G1 |
-| 28 | 布局常量集中到 `gridLayout.ts`，消除跨文件人工不变量 | N3 |
-| 29 | 抽 `useBatchOperation()` 统一写盘管线 | R2 |
-| 30 | 分层 `ErrorBoundary` | A4 |
-| 31 | LocationMap 底图离屏缓存 | N12 |
-| 32 | 清理 `utils/index.ts` 重复注释、`RenameModal` 的 eslint 注释 | U3 / N14 |
+> 共 20 项 = 原 P2 的 17 项（16–32）+ 并入的 P1-13/14/15。
+
+| # | 动作 | 对应问题 | 状态 |
+|---|---|---|---|
+| 13 | 拆 `App.tsx` 为功能域 hook | A1 / R1 | ✅ 附录 D.1 |
+| 16 | 拆 `utils/index.ts` 为 9 个模块 | A2 | ✅ 附录 C.7 |
+| 17 | dHash 收敛为单一实现 + 一致性断言 | U1 / D1 | ✅ 附录 C.2 |
+| 18 | 照片时间语义收敛（原「日期分组收敛」判断已修正） | N11 / D2 | ✅ 附录 C.3 |
+| 19 | 搜索索引缓存（`WeakMap` + 预小写） | U2 | ✅ 附录 C.4 |
+| 22 | `placeIndex` / `dateKeyCache` 的 `clear()` 改 LRU 淘汰 | U5 / G2 / M3 | ✅ 附录 C.4 |
+| 24 | 配置损坏时告知用户（原「备份原文件」判断已修正） | P1 | ✅ 附录 C.5 / C.6 |
+| 27 | `places.ts` 数据外置为 JSON 按需加载 | G1 | ✅ 附录 D.3 |
+| 30 | 分层 `ErrorBoundary` | A4 | ✅ 附录 D.4 |
+| 14 | 抽 `ActionDescriptor[]` 统一快捷键与右键菜单 | R3 | ⏳ 待做 |
+| 15 | 抽 Modal 基座 | N15 / D8 | ⏳ 待做 |
+| 20 | 抽 `useVirtualization()` / `useScrollRestore()` | N1 / N2 / D3 / D6 | ⏳ 待做 |
+| 21 | 抽公共图标库 | N13 / D4 | ⏳ 待做 |
+| 23 | 批量删除与跨目录移动引入受控并发 | C2 / C3 / F4 | ⏳ 待做 |
+| 25 | `VideoPlayer` 状态机改 `useReducer` | N7 | ⏳ 待做 |
+| 26 | `ExportModal` 大图分块 / 尺寸上限保护 | N8 | ⏳ 待做 |
+| 28 | 布局常量集中到 `gridLayout.ts` | N3 | ⏳ 待做 |
+| 29 | 抽 `useBatchOperation()` 统一写盘管线 | R2 | 🔶 部分（已收进 `useFileOperations` + `useFileOpFeedback`，未抽成泛型） |
+| 31 | LocationMap 底图离屏缓存 | N12 | ⏳ 待做 |
+| 32 | 清理 `utils/index.ts` 重复注释、`RenameModal` 的 eslint 注释 | U3 / N14 | 🔶 部分（6 条失效指令已处理，`RenameModal` 仍有 1 条） |
 
 ---
 
@@ -352,6 +444,17 @@ PhotoMinder 的**功能实现质量**值得肯定：内存、并发、原子性�
 真正需要正视的是**安全边界的整体缺失**——它不是某个函数的疏漏，而是一组默认值的集体放松（沙箱关闭 + CSP 关闭 + 无路径白名单 + IPC 不校验）。好消息是这条链的修复**成本很低**：P0 的 5 项动作都在同一个文件里，改动量以「数十行」计，却能一次性把攻击面从「任意文件读写删」收敛到「仅授权目录内」。
 
 其次是**工程化护栏**：lint 与测试的缺失，让上面所有这些重构（尤其是 `App.tsx` 拆分）都变成「无安全网的高空作业」。建议**先补 lint 与纯函数测试，再动架构拆分**——顺序反了，重构的风险会显著高于收益。
+
+> **后记（2026-09-16）**：上面两条建议都已被执行，且顺序是对的。
+>
+> - 安全链 P0 + P1 共 15 项全部完成，实测改动量确实以「数十行 / 单文件」为主 —— 当初
+>   「改动面大、收益低」的预估偏保守，这也是为什么 TODO 里的 X2 从「延后」改成了「已完成」。
+> - 工程化护栏先落地（ESLint + 三层测试），`App.tsx` 拆分紧随其后。拆分过程中
+>   typecheck 一次通过、既有主进程测试未回归，说明护栏确实起了作用。
+> - **一条值得记住的经验**：审查结论本身也要被核对。本报告中至少三处判断在动手时被证伪
+>   或修正 —— P1（配置损坏未备份，实际已备份）、N11/D2（两套日期分组，实际粒度不同不该合并）、
+>   P0 引入的路径授权 bug（正向用例漏测）。把它们记在 C.6 / C.3 / B.9 里，
+>   是为了让下一次审查知道「这里是踩过的」。
 
 ---
 
@@ -496,13 +599,15 @@ if (SANDBOX_DISABLED) { /* no-sandbox / disable-setuid-sandbox / disable-gpu-san
 
 本次建立了三层验证，全部纳入 `npm run test`：
 
-| 层 | 位置 | 规模 |
-|---|---|---|
-| 纯函数单测（vitest） | `tests/unit/` | **174 项**，覆盖 filters / mapMath / placeIndex / photoGrouping / pathUtils / repairFileName+clusterBySize |
-| 主进程集成测试（打桩 electron） | `tests/main-process/` | **69 项**，覆盖 IPC 协议形态、路径白名单、`pm://` 403、体积闸门、文件名穿越、沙箱与 CSP 静态断言 |
-| 端到端冒烟（真启动 Electron） | `tests/smoke/` | 校验 CSP 未误伤应用、渲染层无错误、`#root` 有产出、preload 暴露 API |
+| 层 | 位置 | 建立时规模 | **当前规模（2026-09-16）** |
+|---|---|---|---|
+| 纯函数单测（vitest） | `tests/unit/` | 174 项 | **266 项** / 10 文件，覆盖 filters / mapMath / placeIndex / photoGrouping / pathUtils / photoTime / dhash / placesData / repairFileName+clusterBySize / utilsBarrel |
+| 主进程集成测试（打桩 electron） | `tests/main-process/` | 69 项 | **88 项**（22 + 18 + 48），覆盖 IPC 协议形态、路径白名单、`pm://` 403、体积闸门、文件名穿越、原子占位、存储恢复通知、沙箱与 CSP 静态断言 |
+| 端到端冒烟（真启动 Electron） | `tests/smoke/` | 1 项 | 校验 CSP 未误伤应用、渲染层无错误、`#root` 有产出、preload 暴露 API |
 
-脚本：`npm run test` / `test:main` / `test:unit` / `test:smoke`。
+脚本：`npm run test`（= `test:main` + `test:unit`）/ `test:main` / `test:unit` / `test:smoke`。
+冒烟**不并入** `test`：它要真启动 Electron，在本机受沙箱限制必须走 `test:smoke:no-sandbox`
+（见 C.8），并入会让默认测试在本环境恒失败。
 
 ### B.7 ESLint + Prettier（对应 B2）
 
@@ -526,8 +631,9 @@ if (SANDBOX_DISABLED) { /* no-sandbox / disable-setuid-sandbox / disable-gpu-san
 
 ### B.8 未完成项
 
-- **P1-13/14/15 并入 P2**：与 P2-20/21/29/30/32 动的是同一批文件，分两批等于翻两遍。
-- **全量 Prettier 格式化**：见 B.7，建议独立执行。
+- ~~**P1-13/14/15 并入 P2**~~：13 已于 2026-09-16 完成（附录 D.1）；14 / 15 仍在 P2 遗留（附录 D.5）。
+- **CI 未接**：lint / test / build 都能本地跑通，但没有自动化流水线（见 TODO X8）。
+- **全量 Prettier 格式化**：见 B.7，建议独立执行（已回填 TODO F17）。
 
 ### B.9 P1 过程中新发现的真实缺陷（均已修或记录）
 
@@ -544,20 +650,27 @@ if (SANDBOX_DISABLED) { /* no-sandbox / disable-setuid-sandbox / disable-gpu-san
 
 ## 附录 C：P2 修复记录（进行中）
 
-实施日期：2026-09-16 起　｜　P2 共 17 项（编号 16–32）+ 并入的 P1-13/14/15。
+实施日期：2026-09-16 起　｜　P2 共 20 项 = 原 17 项（编号 16–32）+ 并入的 P1-13/14/15。
+**本附录记录前半批（收敛类）；后半批（拆分类 / 分层 ErrorBoundary / places 外置）见附录 D。**
 
 ### C.1 状态总览
+
+> **本节状态已于 2026-09-16 刷新**：27 / 30 已完成，13 完成、14 / 15 并入遗留；
+> 后续完成的第 13 / 27 / 30 项记录在**附录 D**。
 
 | 批次 | 覆盖项 | 状态 |
 |---|---|---|
 | 收敛类 | 17 dHash 单一实现 | ✅ |
 | 收敛类 | 18 照片时间语义收敛 | ✅ |
 | 收敛类 | 19 搜索索引缓存 / 22 缓存 LRU / 24 存储损坏通知 | ✅（24 原判断有误，见 C.6） |
-| 收敛类 | 27 places 外置 | ⏳ |
+| 收敛类 | 27 places 外置 | ✅ → 附录 D.3 |
 | 拆分类 | 16 拆 `utils/index.ts` | ✅ |
-| 拆分类 | 13–15（App.tsx hooks / ActionDescriptor / Modal 基座）+ 20 图标库·虚拟化·布局常量 | ⏳ |
-| 性能与交互 | 23 受控并发 / 29 `useBatchOperation` / 25 播放器状态机 / 26 导出分块 / 31 地图缓存 | ⏳ |
-| 收尾 | 30 分层 ErrorBoundary / 32 注释清理 | ⏳ |
+| 拆分类 | 13 `App.tsx` hooks | ✅ → 附录 D.1 |
+| 拆分类 | 14 ActionDescriptor / 15 Modal 基座 | ⏳ 待做（附录 D.5） |
+| 拆分类 | 20 图标库·虚拟化·布局常量 | ⏳ 待做（附录 D.5） |
+| 性能与交互 | 23 受控并发 / 29 `useBatchOperation` / 25 播放器状态机 / 26 导出分块 / 31 地图缓存 | ⏳ 待做（29 部分完成） |
+| 收尾 | 30 分层 ErrorBoundary | ✅ → 附录 D.4 |
+| 收尾 | 32 注释清理 | 🔶 部分完成（`RenameModal` 尚有 1 条） |
 
 ### C.2 dHash 收敛为单一实现（对应 U1 / D1）—— 已完成
 
@@ -748,4 +861,137 @@ undefined (reading 'on')`，看不出该做什么。现在：
 本机无法初始化 Chromium 沙箱，不带逃生口时 Electron 会直接 `FATAL: GPU process isn't usable`
 崩溃（退出码 133），因此**本环境只能用这个脚本跑冒烟**。默认的 `test:smoke` 保持不带逃生口，
 以免在正常机器上白白跳过沙箱路径。
+
+---
+
+## 附录 D：P2 后半批（实施日期 2026-09-16）
+
+覆盖：**P2-13**（`App.tsx` 拆分）、**P2-27**（places 外置）、**P2-30**（分层 ErrorBoundary），
+以及配套的 `ToastStack` 抽出。改动文件：`src/App.tsx`、新增 `src/hooks/*`（15 个）、
+新增 `src/components/layout/ToastStack.tsx` / `src/components/common/ViewErrorFallback.tsx`、
+`src/lib/geo/places.ts` + `places.data.json`、`tsconfig.app.json`。
+
+### D.0 本轮验证结果
+
+全部为实际执行结果，非推断：
+
+| 项 | 结果 |
+|---|---|
+| `npm run typecheck` | 通过，零错误 |
+| `npm run build` | 通过。主 bundle `663.05 kB`（gzip 184.41）+ 地名 chunk `58.80 kB`（gzip 24.42）+ CSS `101.26 kB` |
+| `npm run lint` | **0 problems**（TS 侧降级，见 B.7） |
+| `npm run test:unit` | **266 项通过** / 10 个文件 |
+| `npm run test:main` | **88 项通过** / 3 个文件（22 + 18 + 48） |
+| `npm run test:smoke` | 本环境需用 `test:smoke:no-sandbox`（见 C.8） |
+
+### D.1 拆 `App.tsx`（P2-13，对应 A1 / R1）—— 已完成
+
+**改造前**：3707 行单组件，承载导入管线、单张 / 批量重命名、删除、移动、拖放、全局快捷键、
+右键菜单装配、约 40 个 state 与数十个 `useMemo`。任何一处 state 变化都触发整棵子树 reconcile，
+且**无法对任何单一功能写测试**。
+
+**改造后**：`App.tsx` **1279 行**，只做两件事 —— 组合 hooks、视图路由。逻辑按功能域拆到
+`src/hooks/`，新增 15 个 hook 共 **3856 行**（目录内另含既有的 `useToasts` / `useThemeMode` /
+`useDuplicateDetection`，合计 18 个 / 4287 行）：
+
+| 分组 | hook | 行数 | 职责 |
+|---|---|---|---|
+| 编排 | `useAppConfig` | 312 | 启动加载配置、视频元数据回写、视图偏好落盘 |
+| | `useLibraryImport` | 452 | 高层导入编排（对话框 / 拖放 / 菜单 / 点来源 → 一条链路）+ 恢复图库 |
+| | `useIngestPipeline` | 316 | 入库管线（去重、分批、进度、取消）+ 元数据批量补齐 |
+| 数据 | `usePersistedLibraryData` | 248 | 收藏 / 隐藏 / 标签 / 时间修正 / AI 结果等「按路径存储」的数据与路径迁移 |
+| | `useLibraryDerived` | 209 | 全部派生数据：分组、时间线、实况配对、可见列表、侧栏统计、空状态判定 |
+| | `useLibrarySources` | 196 | 常驻来源（N8）的记录与移除 |
+| 交互 | `useSelection` | 145 | 选择集与区间连选锚点、筛选变化后自动收敛 |
+| | `useFileOperations` | 742 | 重命名 / 删除 / 移动三条链路（提交锁、回环防护、失败分流） |
+| | `useFileOpFeedback` | 76 | 统一进度反馈（K19：超 320ms 才升遮罩） |
+| | `useDragAndDrop` | 343 | 拖放分流（媒体文件 / 文件夹 / 无路径降级）与遮罩进出场 |
+| | `useKeyboardShortcuts` | 284 | 全局键盘闭环 + 方向键导航 + 焦点让行 |
+| | `useQuickLook` | 116 | 预览开关、翻页范围与相邻预加载 |
+| 其它 | `useSmartAlbums` | 76 | 智能相簿（只存筛选条件） |
+| | `useWatcherSync` | 254 | 目录监听与外部变动同步（含回环双保险） |
+| | `useCollapseAnimation` | 87 | 删除后的塌陷动画与 blob URL 回收 |
+
+**拆分原则（三条，后续继续拆时照此办理）**
+
+1. **按「状态 + 副作用」的归属分，不按 JSX 分。** 一个 hook 自持它的 state、refs 与副作用，
+   对外只暴露回调与派生值。这样 `App.tsx` 里的每一段都是在「读什么、调什么」，读起来是目录而不是实现。
+2. **保留显式参数传递，不引入 Context。** 15 个 hook 之间存在依赖（如 `useFileOperations`
+   需要 `usePersistedLibraryData` 的路径迁移函数）。全部走参数传入而非全局 Context ——
+   Context 会让「谁改了什么」重新变得不可见，恰好是拆 3707 行想解决的问题。
+3. **不改行为。** 本次是纯结构迁移：hook 内部的判断分支、边界条件、文案逐条照搬，
+   没有顺手「优化」。因此回归面等于「有没有漏搬」，而这一点由 typecheck + 既有手工验证覆盖。
+
+**尚未解决的部分（不假装完成）**
+
+- `App.tsx` 仍是**组合层最长的一块**（1279 行），其中相当部分是 JSX 与 modal 装配。
+  真正的下一步是拆 `ActionDescriptor[]`（P2-14）与 Modal 基座（P2-15），但两者都属行为收敛，
+  不在本批范围内。
+- **没有给这些 hook 补测试。** 它们依赖 `window.electronAPI` 与真实 React 渲染时序，
+  需要一套 preload 打桩 + `@testing-library/react` 才测得动；本批只做到「可测性不再为零」。
+- `R2`（四条写盘管线同构）只做到「收进一个 hook」，未抽成泛型 `useBatchOperation`。
+
+### D.2 `ToastStack` 抽出（配套）
+
+Toast 的渲染与队列原先内联在 `App.tsx`。抽出为 `src/components/layout/ToastStack.tsx` 后，
+`useToasts` 只管状态、`ToastStack` 只管渲染 —— 与上面的拆分原则一致。行为未变。
+
+### D.3 地名数据外置（P2-27，对应 G1）—— 已完成
+
+**改造前**：1767 行城市数据以字符串常量内嵌在 `src/lib/geo/places.ts`。两个问题：
+数据与逻辑同目录同格式；**静态导入会被打包器内联进主 chunk** —— 从不打开地图的用户，
+也要在启动时解析这 50KB。
+
+**改造后**：数据迁到 `src/lib/geo/places.data.json`（1731 条，67KB），
+`places.ts` 缩到 **96 行**，只留类型与加载入口，用动态 `import()` 拉取。
+构建产物中它是独立 chunk（`places.data-*.js` 58.80 kB / gzip 24.42 kB），
+**只有真正进入地图视图时才加载**。
+
+几个实现细节：
+
+- JSON 行编码为 `[经度, 纬度, 名称, 上级, 层级]`，比逐条对象省掉 1731 份键名；
+  编码说明写在 JSON 头部的 `encoding` 字段里，避免后人不看代码猜格式。
+- `tsconfig.app.json` 需显式开 `resolveJsonModule`，否则 `typecheck` 不给 JSON 推类型。
+- **动态 import 只允许一个入口**（`lib/geo/places.ts`）。多处各自 `import()` 虽然打包器会去重，
+  但会让「到底加载了几次、缓存了没有」变成需要推理的问题。
+
+**验证**：新增 `tests/unit/placesData.test.ts` 13 项，其中 4 项是静态断言，守住三条不退化：
+① 没有任何文件**静态导入** `places.data.json`（静态导入会被内联回主 chunk，本项工作直接白做）；
+② 动态 import 只有一个入口；③ 没有任何文件把城市数据行抄回源码。
+
+### D.4 分层 `ErrorBoundary`（P2-30，对应 A4）—— 已完成
+
+**改造前**：只有一处顶层 `ErrorBoundary`。单个面板（如 `LocationMap` 的 canvas 绘制）抛错
+会让整页白屏，而顶层「重试」以相同入参重挂载，**多半会再次抛错**。
+
+**改造后**：四个整页视图（图库 / 时光画廊 / 按地点浏览 / 重复检测）各挂一层 `ErrorBoundary`，
+共用新增的 `ViewErrorFallback`（`src/components/common/ViewErrorFallback.tsx`）：
+降级为「该视图不可用 + 一键返回图库」，其余部分继续可用。
+此外详情面板也挂了一层，但用的是**内联降级**（保留 320px 侧栏宽度的一句提示）而非整页接管 ——
+面板是附属区域，让它把主内容区顶掉反而不合理。
+
+**仍未做**：主进程没有 `uncaughtException` / `unhandledRejection` 兜底；
+`Toolbar` 与各 modal 仍只有顶层那一层。已回填 TODO 的 K4，并将其优先级由「低」上调为「中低」——
+主进程缺兜底意味着触发后是整个应用静默退出，比原来的「只是白屏」后果更重。
+
+### D.5 本轮遗留（P2 剩余 11 项 + 工程化收尾）
+
+按「动的是哪批文件」重排，避免同一批文件翻两遍：
+
+| 批次 | 项目 | 说明 |
+|---|---|---|
+| **组件层收敛** | 15 Modal 基座、20 虚拟化 hook、21 图标库、28 布局常量、31 地图离屏缓存 | 都在 `components/`，可一次做完 |
+| **交互与状态** | 14 `ActionDescriptor[]`、25 播放器 `useReducer`、29 `useBatchOperation` | 属行为收敛，需逐项验证 |
+| **性能** | 23 受控并发（`movePhotosToTrash` 仍串行）、26 导出大图分块 | 需要真实大库才能验证收益 |
+| **收尾** | 32 注释清理（`RenameModal` 尚有 1 条失效 `eslint-disable`）、U3 重复注释 | 零风险 |
+| **工程化** | CI 未接；全量 Prettier 格式化未做（会产生数千行 diff，须独立提交）；`strict: true` 未开 | 见 TODO 的 X7 / X8 / F17 |
+
+### D.6 本轮新发现（已记录，未改行为）
+
+| 严重度 | 问题 | 处置 |
+|---|---|---|
+| 中 | 「哪张是原图」两套判断：`LocationMap` 用 `photoOriginalTime(a)-photoOriginalTime(b)` 排序，重复检测用逐字段的 `compareByOriginalTime`。同组共享 EXIF 拍摄时间时前者全是并列，两处结论可能不一致 | 回填 TODO **K31**。建议 `LocationMap` 改用 `compareByOriginalTime`，但**属行为变更**（地图里的「原图」标注会变），未擅自改 |
+| 低 | 四处注释与实现不符（`sortPhotosByTimeline` 排序方向、`clusterBySize` 的 ±10%、`repairFileName` 扩展名转小写、`extOfName('.gitignore')`）。已全部在测试中钉住现状 | 回填 TODO **K32**。原则是**先钉住、再决定**，避免「改注释还是改实现」变成无人负责 |
+| 低 | `App.tsx` 组合层仍长（1279 行），主要是 JSX 与 modal 装配 | 见 D.1「尚未解决的部分」，依赖 P2-14 / 15 |
+| — | 本轮**没有**产生新的安全面：新增代码未引入任何新的 IPC 通道、未放宽 CSP、未绕过路径白名单 | — |
 

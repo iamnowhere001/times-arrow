@@ -8,6 +8,8 @@
 | 隐私 | 全部本地处理；AI 分析是唯一可选的联网功能，密钥仅由主进程持有 |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
 | 当前版本 | v0.6.0（开发中）· 待办与路线图见 [`TODO.md`](./TODO.md) |
+| 质量护栏 | ESLint 0 problems · 单测 266 项 · 主进程集成测试 88 项 · Electron 冒烟 1 项 |
+| 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md) |
 
 ---
 
@@ -34,6 +36,22 @@ npm run electron:dev  # Electron 桌面应用
 | `npm run dist:mac` | 同上，显式指定 macOS arm64 |
 
 DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB。已做的瘦身：`build/afterPack.js` 剔除 200+ 套无用语言包与 SwiftShader；`build.files` 只保留实际加载的 libheif wasm 并去掉 `exifreader` 的源码与 bin；`build/recompressDmg.js` 把 UDZO 重压为 ULMO（同一样本压缩率 zlib 49.8% / **lzma 31.8%**，再降约 24%）。
+
+**开发与校验**
+
+| 命令 | 说明 |
+| --- | --- |
+| `npm run typecheck` | `tsc --noEmit`（渲染进程 + 构建配置两个 project） |
+| `npm run lint` / `lint:fix` | ESLint（当前 0 problems，TS 侧降级见下） |
+| `npm run format` / `format:check` | Prettier（仓库尚未全量格式化，见下） |
+| `npm run test` | `test:main` + `test:unit` |
+| `npm run test:unit` | Vitest 纯函数单测（266 项） |
+| `npm run test:main` | 打桩 electron 的主进程集成测试（88 项） |
+| `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
+
+> **两个环境注意事项**
+> 1. **ESLint 的 TS 侧是降级状态**：本项目的 TypeScript 是 7.x，超出 `typescript-eslint` 的 peer 范围，其解析器加载不了。`eslint.config.mjs` 做能力探测后自动退化为只检查 JS/CJS —— 主进程与构建脚本都在这一侧，仍有实际价值。
+> 2. **本机无法初始化 Chromium 沙箱**，直接跑 `test:smoke` 会 `FATAL: GPU process isn't usable` 崩溃（退出码 133）。本环境请用 `npm run test:smoke:no-sandbox`。默认脚本保持不带逃生口，以免在正常机器上白白跳过沙箱路径。
 
 ---
 
@@ -98,7 +116,8 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - 深色 / 浅色主题（色值统一走 CSS 变量）；侧栏与详情面板可折叠
 - 磁盘缩略图缓存 + 统一 LRU 缓存治理 + 内存压力自适应裁剪
 - 右键菜单按图片 / 视频动态裁剪条目；Toast 队列可带操作按钮（重试）
-- 顶层与局部错误边界；空状态区分「完全为空 / 收藏夹为空 / 搜索无结果 / 筛选后为空」
+- 分层错误边界：顶层兜底之外，四个整页视图（图库 / 时光画廊 / 按地点浏览 / 重复检测）共用 `ViewErrorFallback` 降级，详情面板另有内联降级 —— 单个区域崩溃不再整页白屏
+- 空状态区分「完全为空 / 收藏夹为空 / 搜索无结果 / 筛选后为空」
 
 ---
 
@@ -130,6 +149,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `←` `→` `↑` `↓` | 移动选择（上下键按所在行真实几何取落点） |
 | `Home` / `End` | 跳到第一张 / 最后一张 |
 | `⌘⌫` / `Delete` | 删除确认 |
+| `?` | 打开快捷键总览浮层 |
 | `Esc` | 关闭右键菜单，其次清除选择 |
 
 **QuickLook 预览**
@@ -177,7 +197,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 | 文件 / 目录 | 内容 | 说明 |
 | --- | --- | --- |
-| `config.json` | 收藏、隐藏、标签、时间修正、智能相簿、视频元数据、常驻来源与视图偏好 | 临时文件 + rename 原子写入；解析失败自动备份为 `config.json.corrupt-<时间戳>` |
+| `config.json` | 收藏、隐藏、标签、时间修正、智能相簿、视频元数据、常驻来源与视图偏好 | 临时文件 + rename 原子写入；解析失败自动备份为 `config.json.corrupt-<时间戳>`，并在启动时 Toast 告知备份位置 |
 | `ai-cache.json` | AI 分析结果缓存 | 上限 2000 条，超出淘汰最早 |
 | `ai-config.json` | AI 服务配置（Key / 接口 / 模型） | 明文存储，仅主进程读取 |
 | `ai.env` | 可选的环境变量兜底文件 | 优先级低于 `.env.local` 与系统环境变量 |
@@ -208,6 +228,34 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - **统一内存治理**：`src/lib/cache/cacheManager.ts` 提供真 LRU（命中刷新 + 逐项淘汰）与 `volatile` / `sticky` 分级；主进程按 RSS 广播内存压力，渲染进程另有堆占用巡检兜底。
 - **统一日志器**：渲染进程 `src/lib/logger.ts`、主进程 `electron/lib/logger.cjs`，调试日志仅开发构建输出。
 
+### 安全边界
+
+Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.md` 附录 A / B）：
+
+| 面 | 做法 |
+| --- | --- |
+| 沙箱 | **默认开启**。仅当未打包 **且** 显式设置 `PHOTOMINDER_DISABLE_SANDBOX=1` 时才关闭，供受限环境开发用；打包产物永远强制开启 |
+| 路径授权 | 主进程维护**会话级** `authorizedRoots` / `authorizedFiles`。只有 6 个入口能产生授权（导入对话框、选择目录、扫描目录、监听目录、路径探测、拖放授权），其余一律拒绝 |
+| 协议 | `pm://file/<base64url>` 每次请求都做白名单校验，未授权返回 403 |
+| IPC | 所有文件类 handler 入口调用 `isPathAuthorized()`；返回协议统一为 `{ok:true,data}` / `{ok:false,error,code?}` |
+| CSP | 策略**唯一定义**在 `electron/lib/csp.cjs`，主进程 `onHeadersReceived` 与构建期注入的 `<meta>` 共用同一份字符串；生产 `script-src` 不含 `unsafe-inline` |
+| 体积闸门 | 设在读取之前（先 `stat` 再决定是否读）：`read-file` 64MB、`ai-analyze` 20MB base64 |
+| 写盘 | `reserveUniquePath()` 用 `open(path,'wx')` 原子占位，消除「探测存在性 → 再写」的 TOCTOU；`write-file-unique` 的 `fileName` 经 `path.basename()` 归一化 |
+
+> 这层防的是**内容级攻击**（被当作图片加载的 SVG、将来的远程内容等 —— 它们能构造 `pm://` 请求但无法调用 IPC）。渲染进程若被完全攻破，攻击者天然拥有全部 IPC 能力，需要靠 CSP 与沙箱收敛。
+
+### 代码组织约定
+
+| 约束 | 唯一入口 | 说明 |
+| --- | --- | --- |
+| 文件名规则 | `src/lib/fs/pathUtils.ts` | 校验（`validateFilename`）与落盘规范化（`sanitizeFilename`）成对，不变式「校验通过 ⟹ 规范化后原样不变」由测试守住；组件内不另写非法字符正则 |
+| 照片时间语义 | `src/lib/media/photoTime.ts` | `photoTakenTime`（2 级链，面向展示）与 `photoOriginalTime`（3 级链，面向原图判定）分开命名；`calendarDayKey` 用本地日历日，不用 UTC 日界。调用点不得内联回退链（有静态断言扫描全 `src`） |
+| 感知哈希 | `electron/lib/dhash.cjs` | 主进程与渲染层共用唯一实现。渲染层只在主进程解不了时降级使用 |
+| 搜索匹配 | `matchesSearch`（`src/lib/filter/filters.ts`） | 内部用 `WeakMap` 缓存预小写索引；相机标识整体入索引，不可拆成厂商 / 机型两段 |
+| 进程内缓存 | `createLruCache`（`src/lib/cache/cacheManager.ts`） | 不写「普通 Map + 满了 `clear()`」；跨天失效（`dateKeyCache`）与容量淘汰是两回事，前者该 clear |
+| IPC 返回 | `IpcResult<T>`（`src/types/global.d.ts`） | 注册必须走 `handle()` 而非 `ipcMain.handle`，提供异常兜底与重复注册检测。「用户取消」是 `ok:true` + `data:null`，不是失败 |
+| `@/utils` | 纯再导出 barrel（86 行） | 新代码直接 import 具体模块；不要往 barrel 里加实现（`tests/unit/utilsBarrel.test.ts` 会失败） |
+
 ---
 
 ## 目录结构
@@ -217,12 +265,23 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 ├── electron/             # 主进程（Node / CommonJS）
 │   ├── main.js           #   窗口、菜单、文件系统/IPC、pm:// 协议、扫描/哈希/缩略图/EXIF
 │   ├── preload.js        #   contextBridge 暴露 window.electronAPI
-│   └── lib/logger.cjs    #   轻量日志器（开发输出 / 打包静默）
+│   └── lib/
+│       ├── csp.cjs       #     CSP 策略唯一定义（响应头与构建期 meta 共用同一份）
+│       ├── dhash.cjs     #     感知哈希算法本体（主进程与渲染层共用唯一实现）
+│       ├── dhash.d.cts   #     上者的类型声明，供渲染层具名导入
+│       └── logger.cjs    #     轻量日志器（开发输出 / 打包静默）
 ├── src/                  # 渲染进程（React / Vite）
 │   ├── main.tsx          #   挂载入口（createRoot + ErrorBoundary）
-│   ├── App.tsx           #   应用主组件与状态编排
+│   ├── App.tsx           #   应用主组件：组合 hooks + 视图路由
+│   ├── hooks/            #   从 App 抽出的功能域 hook（共 18 个）
+│   │                     #     编排：useAppConfig / useLibraryImport / useIngestPipeline
+│   │                     #     数据：usePersistedLibraryData / useLibraryDerived / useLibrarySources
+│   │                     #     交互：useSelection / useFileOperations / useFileOpFeedback
+│   │                     #           useDragAndDrop / useKeyboardShortcuts / useQuickLook
+│   │                     #     其它：useSmartAlbums / useWatcherSync / useCollapseAnimation
+│   │                     #           useToasts / useThemeMode / useDuplicateDetection
 │   ├── components/       #   UI 组件（按功能域分组）
-│   │   ├── layout/       #     Sidebar / Toolbar / ActiveFiltersBar
+│   │   ├── layout/       #     Sidebar / Toolbar / ActiveFiltersBar / ToastStack
 │   │   ├── grid/         #     ImageGrid / ThumbnailImage
 │   │   ├── timeline/     #     TimelineGallery（时光画廊）
 │   │   ├── map/          #     LocationMap（按地点浏览）
@@ -230,27 +289,36 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 │   │   ├── duplicate/    #     DuplicateDetector
 │   │   ├── filter/       #     FilterPanel
 │   │   ├── modal/        #     Rename / Export / AdjustDate / SaveAlbum / AiSettings 等
-│   │   └── common/       #     Toast / ErrorBoundary / LoadingOverlay / ContextMenu 等
-│   ├── hooks/            #   useThemeMode / useToasts / useDuplicateDetection
+│   │   └── common/       #     Toast / ErrorBoundary / ViewErrorFallback / ContextMenu 等
 │   ├── services/         #   aiService（经 IPC 走主进程代理）
 │   ├── lib/              #   领域与基础设施逻辑
-│   │   ├── cache/        #     cacheManager / thumbCache
+│   │   ├── cache/        #     cacheManager / thumbCache / dragThumbnail
 │   │   ├── media/        #     mediaTypes / videoMeta / photoGrouping
+│   │   │                 #     photoTime（时间语义唯一入口）/ photoHash / filenameRepair
 │   │   ├── filter/       #     filters / libraryViewState
 │   │   ├── persistence/  #     persistence / aiCache / sources
 │   │   ├── geo/          #     mapMath / landMask / places / placeIndex
-│   │   ├── fs/           #     fileOperations / pathUtils / ipcGuard
+│   │   │                 #     places.data.json（1731 条城市，动态 import 成独立 chunk）
+│   │   ├── fs/           #     fileOperations / pathUtils / fileToBase64 / ipcGuard
+│   │   ├── duplicate/    #     duplicateDetection（预筛 / 聚类 / 并查集 / 取消）
+│   │   ├── format/       #     format
+│   │   ├── concurrency.ts
 │   │   ├── contextMenuActions.ts
 │   │   └── logger.ts
-│   ├── types/            #   index.ts（领域类型）+ global.d.ts（window.electronAPI）
-│   ├── utils/index.ts    #   格式化 / dHash / 重复检测 / 乱码修复
+│   ├── types/            #   index.ts（领域类型）+ global.d.ts（IpcResult / window.electronAPI）
+│   ├── utils/index.ts    #   纯再导出 barrel（86 行，实现已按领域拆到 lib/）
 │   └── styles/styles.css #   主题变量与基础样式（Tailwind v4 CSS-first）
+├── tests/                # 三层验证
+│   ├── unit/             #   Vitest 纯函数单测（266 项 / 10 个文件）
+│   ├── main-process/     #   打桩 electron 的集成测试（88 项）+ harness.cjs 脚手架
+│   └── smoke/            #   真启动 Electron 的端到端冒烟
 ├── build/                # electron-builder 资源（图标 / afterPack / DMG 重压钩子）
 ├── index.html            # Vite 入口 HTML
-├── vite.config.mts       # React + Tailwind 插件、@ 别名
+├── vite.config.mts       # React + Tailwind 插件、@ 别名、CSP meta 注入、CJS→ESM 插件
 ├── tsconfig*.json        # 解决方案 / 渲染进程 / 主进程 三套 TS 配置
 ├── .env.example          # 环境变量示例
 ├── TODO.md               # 待办任务 / 功能改进 / 已知问题清单
+├── CODE_REVIEW.md        # 代码审查结论与修复记录
 └── package.json          # 含 electron-builder 打包配置（build 字段）
 ```
 
@@ -266,15 +334,26 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - **重命名遇同名加序号**：不做「交换」类批量改名（如 a↔b 会得到 `a` 与 `b-1`），避免丢文件风险。
 - **相似检测有边界**：近似匹配仅在体积 ±10% 的簇内进行，单簇超 150 张时只保留精确匹配（防 O(n²) 退化）。
 - **图库需确认后恢复**：不自动扫描磁盘。收藏 / 标签 / 时间修正 / AI 结果均按**文件路径**记录，文件重命名或移动后会失联（重新定位见 TODO N10）。
-- **无操作历史与撤销**：重命名 / 删除 / 移动直接作用于磁盘，只能事后手动改回或从回收站取回（改进见 TODO N9）。
 - **配置记录不自动清理**：已不存在文件对应的收藏 / 标签 / AI 结果会保留在配置里，以免误删仍可能重新导入的记录。
 - **时间修正不写回原文件**：只改应用内记录，EXIF 未被改动（真实写回见 TODO F4）。
 - **智能相簿是条件相簿**：只能保存筛选条件，不能手动拖入照片（手动相簿见 TODO F1）。
 - **QuickLook 保持深色底**：与系统「预览 / 照片」一致，不随浅色主题变化。
-- **地图为离线轻量版**：底图与地名来自内嵌的 Natural Earth 数据（低精度陆地轮廓 + 约 1700 条城市），只到城市级、不联网。
+- **地图为离线轻量版**：底图与地名来自内嵌的 Natural Earth 数据（低精度陆地轮廓 + 1731 条城市），只到城市级、不联网。地名表为独立 chunk（58.8KB / gzip 24.4KB），首次进入地图视图才加载。
 - **打包目前仅 macOS**；删除已用 `shell.trashItem` 支持三端。
-- **安全配置偏松**：启动时带 `no-sandbox`、窗口 `sandbox: false`、`pm://` 协议 `bypassCSP`，且无 CSP 与 IPC 路径校验（见 TODO X2）。
-- **尚无**：撤销 / 重做、元数据写入、基础图片编辑、测试与 CI。
+
+**功能缺口**
+
+- **无操作历史与撤销**：重命名 / 删除 / 移动直接作用于磁盘，只能事后手动改回或从回收站取回（改进见 TODO N9）。
+- **无配置备份 / 导出与路径重连**：`config.json` 坏了只能靠 `*.corrupt-<时间戳>` 备份捞回，文件挪走后按路径记录的关联会失联（见 TODO N10）。
+- **尚无**：元数据写入（TODO F4）、基础图片编辑、CI。
+
+**实现约束（不影响使用，但改代码时须知）**
+
+- **ESLint 不检查 TypeScript**：本项目 TS 7.x 超出 `typescript-eslint` 支持范围，`lint` 实际只覆盖 JS/CJS（主进程与构建脚本）。TS 侧依赖 `typecheck` 与单测兜底。
+- **仓库尚未全量 Prettier 格式化**：既有文件格式化一次会产生数千行 diff，需独立提交。
+- **本机无法初始化 Chromium 沙箱**：开发需用 `PHOTOMINDER_DISABLE_SANDBOX=1`（或 `test:smoke:no-sandbox`）；打包产物不受影响。
+- **`movePhotosToTrash` 仍串行**：批量删除数百张时是逐次 IPC 往返（见 CODE_REVIEW P2-23）。
+- **图标组件在 5 个文件里重复定义**，未抽公共库；`ImageGrid` 内仍有两套虚拟化实现（`VirtualGrid` / `VirtualList`）。
 
 ---
 
@@ -282,11 +361,14 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 个人维护为主，欢迎 Issue 与 Pull Request。
 
-1. 从 `main` 拉出 `feat/xxx` 或 `fix/xxx` 分支；提交前确保 `npm run typecheck` 与 `npm run build` 通过。
+1. 从 `main` 拉出 `feat/xxx` 或 `fix/xxx` 分支；提交前确保 `npm run typecheck`、`npm run lint`、`npm run test` 与 `npm run build` 全部通过（改主进程务必跑 `test:main`）。
 2. 提交信息遵循 Conventional Commits（`feat` / `fix` / `refactor` / `docs` / `chore` / `style` / `test`，可带 scope），一次提交只做一件事。
-3. 代码沿用现有结构与命名：渲染进程 `src/`、主进程 `electron/`、领域与基础设施逻辑 `src/lib/`；界面文案用中文，注释与文档同语言。
+3. 代码沿用现有结构与命名：渲染进程 `src/`、主进程 `electron/`、领域与基础设施逻辑 `src/lib/`、状态编排 `src/hooks/`；界面文案用中文，注释与文档同语言。
 4. 涉及文件操作 / 持久化的改动必须处理失败路径（写盘失败、文件被外部移动或删除），不得静默吞错。
-5. 行为或功能变化时同步更新 `README.md` 与 `TODO.md`；不引入与「纯本地」定位冲突的依赖（云同步、遥测等）。
+5. 新增「接收渲染层路径」的 IPC 时，**必须**在入口调用 `isPathAuthorized()` 并拒绝未授权路径；注册走 `handle()` 而非 `ipcMain.handle`。
+6. 复用既有唯一入口（文件名规则、时间语义、dHash、搜索匹配、LRU 缓存），不要在调用点另写一份 —— 详见上文「代码组织约定」。
+7. 行为或功能变化时同步更新 `README.md`、`TODO.md` 与 `CODE_REVIEW.md`；不引入与「纯本地」定位冲突的依赖（云同步、遥测等）。
+8. 全量 Prettier 格式化不与功能改动混在同一提交（会产生数千行 diff）。
 
 ---
 
