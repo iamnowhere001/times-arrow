@@ -114,8 +114,8 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
 
     if (mode === 'replace' && useRegex && findText !== '') {
       try {
-        // eslint-disable-next-line no-new
-        new RegExp(findText);
+        // 只做合法性校验、不保留结果，故显式 void 丢弃
+        void new RegExp(findText);
       } catch {
         return { rows, error: '无效的正则表达式', truncated: 0, changedCount: 0 };
       }

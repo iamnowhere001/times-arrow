@@ -3,6 +3,7 @@ import React, { useCallback, useState } from 'react';
 import { PhotoFilters, ViewMode } from '@/types';
 import { countAdvancedFilters } from '@/lib/filter/filters';
 import FilterPanel from '@/components/filter/FilterPanel';
+import { FunnelIcon } from '@/components/icons';
 
 interface ToolbarProps {
   /** 统一导入：图片 / 视频文件与文件夹都能批量选择 */
@@ -82,12 +83,6 @@ const SearchIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8"></circle>
     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-  </svg>
-);
-
-const FunnelIcon = () => (
-  <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"></path>
   </svg>
 );
 
@@ -330,7 +325,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
               }`}
             >
-              <FunnelIcon />
+              <FunnelIcon size={17} />
               {advancedFilterCount > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-[var(--accent-blue)] text-[var(--accent-contrast)] text-[10px] font-semibold leading-[15px] text-center border border-[var(--bg-elevated)]">
                   {advancedFilterCount}

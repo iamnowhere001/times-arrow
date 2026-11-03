@@ -255,6 +255,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 | 进程内缓存 | `createLruCache`（`src/lib/cache/cacheManager.ts`） | 不写「普通 Map + 满了 `clear()`」；跨天失效（`dateKeyCache`）与容量淘汰是两回事，前者该 clear |
 | IPC 返回 | `IpcResult<T>`（`src/types/global.d.ts`） | 注册必须走 `handle()` 而非 `ipcMain.handle`，提供异常兜底与重复注册检测。「用户取消」是 `ok:true` + `data:null`，不是失败 |
 | `@/utils` | 纯再导出 barrel（86 行） | 新代码直接 import 具体模块；不要往 barrel 里加实现（`tests/unit/utilsBarrel.test.ts` 会失败） |
+| 通用图标 | `src/components/icons/index.tsx` | 只收「图形相同且已被两处以上使用」的图标；尺寸 / 线宽差异由**调用点**传 `size` / `strokeWidth`，不在图标库里写死，也不把语义强绑定的图形塞进来 |
 
 ---
 
@@ -289,7 +290,8 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   │   ├── duplicate/    #     DuplicateDetector
 │   │   ├── filter/       #     FilterPanel
 │   │   ├── modal/        #     Rename / Export / AdjustDate / SaveAlbum / AiSettings 等
-│   │   └── common/       #     Toast / ErrorBoundary / ViewErrorFallback / ContextMenu 等
+│   │   ├── common/       #     Toast / ErrorBoundary / ViewErrorFallback / ContextMenu 等
+│   │   └── icons/        #     跨文件复用的通用图标（唯一入口，N13 / D4）
 │   ├── services/         #   aiService（经 IPC 走主进程代理）
 │   ├── lib/              #   领域与基础设施逻辑
 │   │   ├── cache/        #     cacheManager / thumbCache / dragThumbnail
@@ -353,7 +355,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 - **仓库尚未全量 Prettier 格式化**：既有文件格式化一次会产生数千行 diff，需独立提交。
 - **本机无法初始化 Chromium 沙箱**：开发需用 `PHOTOMINDER_DISABLE_SANDBOX=1`（或 `test:smoke:no-sandbox`）；打包产物不受影响。
 - **`movePhotosToTrash` 仍串行**：批量删除数百张时是逐次 IPC 往返（见 CODE_REVIEW P2-23）。
-- **图标组件在 5 个文件里重复定义**，未抽公共库；`ImageGrid` 内仍有两套虚拟化实现（`VirtualGrid` / `VirtualList`）。
+- **通用图标已收敛到 `src/components/icons/`**（返回箭头 3 份、刷新 / 重置、漏斗、加号各 2 份 → 各 1 份）；仍有若干同形但坐标或线宽不同的图标留在各自组件内，未强行合并（见 CODE_REVIEW 附录 E.2）。`ImageGrid` 内仍有两套虚拟化实现（`VirtualGrid` / `VirtualList`）。
 
 ---
 

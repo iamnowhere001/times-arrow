@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Photo } from '@/types';
 import { ThumbImage } from '@/components/grid/ThumbnailImage';
 import { formatVideoDuration, isVideoPhoto, photoOriginalTime } from '@/utils';
+import { ChevronLeftIcon, PlusIcon } from '@/components/icons';
 import {
   GeoCluster,
   MapCamera,
@@ -89,12 +90,6 @@ const PALETTE = {
 // 图标
 // ---------------------------------------------------------------------------
 
-const ChevronLeftIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15 18 9 12 15 6"></polyline>
-  </svg>
-);
-
 /** 地图钉：与「按地点」的语义直接对应 */
 const MapPinIcon = ({ size = 14 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -112,13 +107,6 @@ const CrosshairIcon = () => (
     <line x1="2" y1="12" x2="5" y2="12"></line>
     <line x1="19" y1="12" x2="22" y2="12"></line>
     <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"></circle>
-  </svg>
-);
-
-const PlusIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <line x1="12" y1="5" x2="12" y2="19"></line>
-    <line x1="5" y1="12" x2="19" y2="12"></line>
   </svg>
 );
 
@@ -908,7 +896,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
                 aria-label="放大"
                 className="flex h-8 w-8 items-center justify-center text-[var(--text-secondary)] transition-all duration-150 hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] active:scale-[0.95]"
               >
-                <PlusIcon />
+                <PlusIcon size={15} strokeWidth={2} />
               </button>
               <div className="h-px bg-[var(--border-subtle)]" aria-hidden />
               <button

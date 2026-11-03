@@ -263,7 +263,11 @@ export function useFileOperations({
           newName = `${options.prefix}${(options.startNumber + i).toString().padStart(padding, '0')}.${fileExt}`;
         } else if (options.mode === 'replace') {
           // Replace text in filename
-          let baseName = photo.name.replace(new RegExp(`\.${fileExt}$`), '');
+          // 用 lastIndexOf 剥离扩展名，而非 `new RegExp('\.' + ext + '$')`：
+          // 后者在模板字符串里 `\.` 会退化成 `.`（匹配任意字符），
+          // 对「无点号」的文件名会把整个名字吃掉。
+          const extDot = photo.name.lastIndexOf('.');
+          let baseName = extDot > 0 ? photo.name.slice(0, extDot) : photo.name;
 
           if (options.useRegex) {
             try {

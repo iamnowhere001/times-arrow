@@ -4,7 +4,16 @@ import { Photo, type DuplicateScope } from '@/types';
 import { formatBytes, hammingDistance, photoOriginalTime, type DuplicateScanProgress } from '@/utils';
 import { useThumbnailSrc } from '@/components/grid/ThumbnailImage';
 import DeleteConfirmModal from '@/components/modal/DeleteConfirmModal';
+import { ChevronLeftIcon, RefreshIcon } from '@/components/icons';
 
+/**
+ * 取末两级目录做展示标签（`…/2024/01`）。
+ *
+ * 与 `@/lib/fs/pathUtils` 的 `folderOfPath`（取完整目录）**用途不同，不要合并**：
+ * 这里要的是「短到能放进一行、又能区分不同来源」的标签；完整路径在窄列里会被截断，
+ * 反而看不出区别。代价是两个来源下的同名目录（如 `/A/2024/01` 与 `/B/2024/01`）
+ * 会显示成相同 —— 这是刻意的取舍。
+ */
 const getFolderPath = (path: string): string => {
   if (!path) return '';
   const fullPath = path.substring(0, path.lastIndexOf('/'));
@@ -69,20 +78,6 @@ const TimeRow: React.FC<{ label: string; value: string; strong?: boolean }> = ({
       {value}
     </span>
   </div>
-);
-
-const BackIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15 18 9 12 15 6" />
-  </svg>
-);
-
-const RefreshIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23 4 23 10 17 10" />
-    <polyline points="1 20 1 14 7 14" />
-    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-  </svg>
 );
 
 const DuplicateGlyph = () => (
@@ -568,7 +563,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
               className="flex items-center gap-1 h-9 pl-2 pr-3 rounded-xl text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)] transition-all duration-200 shrink-0"
               title="返回图库（Esc）"
             >
-              <BackIcon />
+              <ChevronLeftIcon size={16} strokeWidth={2.2} />
               <span className="text-[13px] font-medium">图库</span>
             </button>
 

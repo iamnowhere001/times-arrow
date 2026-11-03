@@ -1,6 +1,6 @@
 # PhotoMinder TODO
 
-> **最后更新**：2026-09-16（架构重构与工程化批次：P0 5/5、P1 10/10、P2 9/20 已完成；v0.6.1 余 N9 / N10；K 批次余 K3–K6（K4 部分完成）、K7–K13、K16 / K20 / K26、K27–K32）
+> **最后更新**：2026-09-16（架构重构与工程化批次：P0 5/5、P1 10/10、P2 10/20 已完成（另 21 部分完成）；冗余清理批次见 CODE_REVIEW 附录 E；v0.6.1 余 N9 / N10；K 批次余 K3–K6（K4 部分完成）、K7–K13、K16 / K20 / K26、K31 / K32，K27–K30 已部分落地）
 > **相关文档**：功能现状见 [`README.md`](./README.md)；审查结论与修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)
 
 | 约定 | 说明 |
@@ -37,7 +37,8 @@
 | P1 | CSP / 原子占位 / IPC 统一协议 / 文件名与路径 / ESLint / 单测（10 项） | ✅ 全部完成（附录 B）；其中 13 已完成（附录 D.1），14 / 15 转入 P2 遗留 |
 | P2 | 收敛类（dHash / 时间语义 / 缓存 / 存储通知 / places 外置 / 拆 utils） | ✅ 已完成 7 项 |
 | P2 | 拆分类（App.tsx hooks ✅ / 分层 ErrorBoundary ✅） | ✅ 已完成 2 项 |
-| P2 | 剩余：ActionDescriptor、Modal 基座、虚拟化 hook、图标库、布局常量、受控并发、播放器状态机、导出分块、`useBatchOperation`、地图离屏缓存、注释清理 | ⏳ 11 项待做 |
+| P2 | 收尾（注释清理 ✅ / 图标库 🔶 部分） | 附录 E（2026-09-16 冗余清理批次） |
+| P2 | 剩余：ActionDescriptor、Modal 基座、虚拟化 hook、布局常量、受控并发、播放器状态机、导出分块、`useBatchOperation`、地图离屏缓存 | ⏳ 9 项待做 |
 
 每完成一项验证「重启后是否仍顺手 / 是否会丢数据 / 视频是否别扭」，并回填本清单。
 
@@ -194,17 +195,21 @@
 ### 批次 D · 视觉与身份（v0.6.x 随批消化）
 
 > 当前 UI 是标准 macOS 风，与系统「照片」高度同质，还没有自己的身份。这批不追求「好看」，追求「一眼认得出」。
-> **2026-09-16 复核**：四项均未开始，优先级维持**低**。本轮只动了工程与架构（分层错误边界、
-> Toast 抽出），没有任何视觉改动，这批的前提与判断全部仍然成立。
+> **2026-09-16 复核（含冗余清理批次）**：这批的**基础设施其实已经写了一部分**
+> （`EmptyStates.tsx` / `Stat.tsx` / `DotField.tsx` / `ImmersiveView.tsx`），只是部分尚未接线 —— 见各条。
+> 这些组件的存在是对的（**不是死代码**），但文档状态一度落后于代码，清理时极易被误删
+> （详见 `CODE_REVIEW.md` 附录 E.3）。
 
-- [ ] **K27** 首屏空状态与设计语言同质化 · 低 · `src/components/grid/`
-  - 六种空状态共用同一模板；完全为空的首屏既是第一印象也是最大一块未被设计的画布 → 首屏单独设计，其余态保持克制但区分语气
-- [ ] **K28** 整页视图未统一沉浸态 · 低 · `timeline/` `map/` `QuickLook.tsx`
-  - 三处都是「照片主导」，但只有 QuickLook 保持深色底 → 抽一套沉浸态（隐藏 chrome、暗底、内容铺满）共用
-- [ ] **K29** 统计数字未被当作设计元素 · 低 · 侧栏计数、重复检测顶栏、地图顶栏
-  - 库规模、可释放体积、地点数这些最有说服力的数字都是小字灰字 → 给出数字排版规范并在关键位置统一套用
-- [ ] **K30** 点阵底图语言未贯穿 · 低 · `LocationMap.tsx`、侧栏图标、加载占位
-  - `landMask.ts` 的点阵语言是本项目唯一「别人没有」的视觉资产，目前只用在地图底图 → 贯穿到首屏空状态、加载态与地图相关图标
+- [~] **K27** 首屏空状态与设计语言同质化 · 低 · `src/components/grid/EmptyStates.tsx`
+  - ✅ 主体已落地：`WelcomeEmptyState`（首屏按封面设计）+ `QuietEmptyState`（其余五种按 `kind` 区分语气），`ImageGrid` 已接线
+  - 余：首屏点阵配色与文案细节打磨
+- [~] **K28** 整页视图未统一沉浸态 · 低 · `src/components/common/ImmersiveView.tsx`
+  - 外壳 `ImmersiveView` 与 `.immersive-surface` 暗房色板已实现，**尚未接线**到时光画廊 / 按地点浏览 / QuickLook
+- [~] **K29** 统计数字未被当作设计元素 · 低 · `src/components/common/Stat.tsx`
+  - 排版规范与 `Stat` / `StatPill` 已实现；`Stat` 目前仅被同样未接线的 `EmptyStateHint` 使用，
+    **侧栏计数 / 重复检测顶栏 / 地图顶栏尚未套用**
+- [~] **K30** 点阵底图语言未贯穿 · 低 · `src/components/common/DotField.tsx`
+  - `LandDotField` 已用于首屏（`WelcomeEmptyState`）；`DotGrid`（底纹）与 `DotPinIcon`（点阵销钉）已实现但**未接线**
 
 ---
 
@@ -246,6 +251,8 @@
 - **2026-09-15 · 安全边界收口（CODE_REVIEW P0，5/5）**：沙箱改为默认开启（仅未打包且显式 `PHOTOMINDER_DISABLE_SANDBOX=1` 才关，打包产物永远强制开启）；`pm://` 协议与 14 个文件类 IPC 全部接入会话级路径白名单 `isPathAuthorized()`；`read-file` 64MB / `ai-analyze` 20MB 体积闸门前置到读取之前；顺带修掉 `write-file-unique` 用 `../` 越权写盘的真实漏洞；`default.profraw` 退出 git 跟踪并加 `.gitignore`。
 - **2026-09-16 · 工程化与契约收口（CODE_REVIEW P1，10/10）**：CSP 唯一定义在 `electron/lib/csp.cjs`（响应头与构建期 meta 共用同一份），`vite` host 改 `127.0.0.1`；`buildUniquePath` → `reserveUniquePath`（`open(...,'wx')` 原子占位，消除 TOCTOU）；30 个 IPC handler 统一为 `IpcResult<T>` 并强制走 `handle()` 注册；`sanitizeFilename` / `validateFilename` 成为文件名唯一入口（不变式由测试守住）；`joinPath` 对齐 `node:path.join`；ESLint + Prettier 落地（TS 侧降级，0 problems）；建立三层测试（单测 / 主进程集成 / Electron 冒烟）。
 - **2026-09-16 · 架构重构（CODE_REVIEW P2，9/20）**：`App.tsx` 3707 → 1279 行，拆出 `useAppConfig`、`usePersistedLibraryData`、`useLibraryDerived`、`useLibraryImport`、`useLibrarySources`、`useIngestPipeline`、`useWatcherSync`、`useSelection`、`useFileOperations`、`useFileOpFeedback`、`useDragAndDrop`、`useKeyboardShortcuts`、`useQuickLook`、`useSmartAlbums`、`useCollapseAnimation` 共 15 个 hook；`utils/index.ts` 1024 → 86 行 barrel，实现拆到 `lib/` 下 9 个模块；dHash 收敛为 `electron/lib/dhash.cjs` 单一实现；照片时间语义收敛到 `src/lib/media/photoTime.ts`（12 处内联回退链清空，附静态断言）；搜索索引改 `WeakMap` 预小写缓存；`placeIndex` / `dateKeyCache` 改用真 LRU；存储损坏由静默备份改为 Toast 告知；地名表外置 `places.data.json` + 动态 `import()`（独立 chunk 58.8KB，主 bundle 不再承担）；四个整页视图各挂 `ErrorBoundary` + 共用 `ViewErrorFallback`。详见 `CODE_REVIEW.md` 附录 C / D。
+
+- **2026-09-16 · 冗余清理批次（CODE_REVIEW P2-21 部分 / P2-32）**：抽公共图标库 `src/components/icons/`，收敛 5 组重复定义（返回箭头 3 份 → 1 份、刷新/重置、漏斗、加号各 2 份 → 1 份），尺寸与线宽差异在调用点参数化还原，**行为零变化**；清理 `RenameModal` 的失效 `eslint-disable`；修掉 `useFileOperations` 重命名 replace 分支里模板字符串吞掉 `\.` 的真实瑕疵（改用 `lastIndexOf + slice`）；全量「未使用 import」扫描为 0。详见 `CODE_REVIEW.md` 附录 E。
 
 ### 已核对无需复查的范围（两轮审查结论）
 

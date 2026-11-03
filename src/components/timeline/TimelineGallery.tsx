@@ -4,6 +4,7 @@ import { ThumbImage } from '@/components/grid/ThumbnailImage';
 import { formatVideoDuration, isVideoPhoto } from '@/utils';
 // 时间语义统一入口：本文件原先内联了 `dateTaken || lastModified || 0`
 import { photoTakenTime } from '@/lib/media/photoTime';
+import { ChevronLeftIcon } from '@/components/icons';
 
 interface TimelineGalleryProps {
   /** 已按拍摄时间升序排列的照片 */
@@ -152,12 +153,6 @@ function monthRangeLabel(photos: Photo[]): string {
 // ---------------------------------------------------------------------------
 // 图标
 // ---------------------------------------------------------------------------
-
-const ChevronLeftIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15 18 9 12 15 6"></polyline>
-  </svg>
-);
 
 const ChevronRightSmallIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

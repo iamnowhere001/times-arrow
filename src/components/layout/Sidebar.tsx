@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { LibrarySource, MediaFilter, SmartAlbum } from '@/types';
+import { PlusIcon, RefreshIcon } from '@/components/icons';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -162,12 +163,6 @@ const ChevronRightIcon = () => (
   </svg>
 );
 
-const PlusIcon = () => (
-  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.2" strokeLinecap="round">
-    <path d="M12 5v14M5 12h14"></path>
-  </svg>
-);
-
 /** 品牌标记：光圈叶片。摄影语汇里最简洁的身份符号，与「暗房」配色同源 */
 const ApertureIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -216,15 +211,6 @@ const TrashIcon = () => (
   <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="3 6 5 6 21 6"></polyline>
     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-  </svg>
-);
-
-/** 清空照片列表：刷新箭头，表达「回到空库重新开始」 */
-const ResetIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23 4 23 10 17 10"></polyline>
-    <polyline points="1 20 1 14 7 14"></polyline>
-    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
   </svg>
 );
 
@@ -756,7 +742,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                 : 'text-[var(--text-quaternary)] opacity-40 cursor-not-allowed'
             }`}
           >
-            <ResetIcon />
+            {/* 清空照片列表：刷新箭头，表达「回到空库重新开始」 */}
+            <RefreshIcon size={14} strokeWidth={1.9} />
           </button>
         </div>
       </div>

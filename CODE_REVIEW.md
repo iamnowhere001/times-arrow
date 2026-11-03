@@ -110,8 +110,8 @@
 | | N10 | canvas 重编码导出重复 | ⏳ 未动 |
 | | N11 | 月份分组与日期分组两套实现 | ⚠️ **原判断不准确**：粒度本就不同（按年月 vs 按日）；真正的问题「时间回退链散落 12 处」已收敛（附录 C.3） |
 | | N12 | `drawLandMask` 每帧重建 `Path2D` | ⏳ 未动 |
-| | N13 | 图标组件重复定义 | ⏳ 未动（5 个文件） |
-| | N14 | 失效的 `eslint-disable` 注释 | 🔶 ESLint 已装，6 条失效指令已处理；`RenameModal` 仍有 1 条残留 |
+| | N13 | 图标组件重复定义 | 🔶 已抽公共图标库 `src/components/icons/`，收敛 5 组重复（附录 E.2）；同形但坐标 / 线宽有差异的未合并 |
+| | N14 | 失效的 `eslint-disable` 注释 | ✅ 全部清理（`RenameModal` 的 `no-new` 改为显式 `void`，附录 E.1） |
 | | N15 | Modal 基座重复 | ⏳ 未动（8 个 modal） |
 | §12 构建 | B1 | `default.profraw` 入库 | ✅ 退出跟踪 + `.gitignore`（附录 A.4） |
 | | B2 | 无 ESLint / Prettier | ✅ 已落地（TS 侧降级，附录 B.7） |
@@ -408,7 +408,7 @@ src/utils/index.ts     通用工具 + 算法
 | 14 | 抽 `ActionDescriptor[]` 统一快捷键与右键菜单 | R3 | ⏳ 并入 P2（附录 D.5 遗留） |
 | 15 | 抽 Modal 基座 | N15 / D8 | ⏳ 并入 P2（附录 D.5 遗留） |
 
-### P2 — 规划处理（进行中，9 / 20 完成）
+### P2 — 规划处理（进行中，10 / 20 完成，另 21 部分完成）
 
 > 共 20 项 = 原 P2 的 17 项（16–32）+ 并入的 P1-13/14/15。
 
@@ -426,14 +426,14 @@ src/utils/index.ts     通用工具 + 算法
 | 14 | 抽 `ActionDescriptor[]` 统一快捷键与右键菜单 | R3 | ⏳ 待做 |
 | 15 | 抽 Modal 基座 | N15 / D8 | ⏳ 待做 |
 | 20 | 抽 `useVirtualization()` / `useScrollRestore()` | N1 / N2 / D3 / D6 | ⏳ 待做 |
-| 21 | 抽公共图标库 | N13 / D4 | ⏳ 待做 |
+| 21 | 抽公共图标库 | N13 / D4 | 🔶 部分（附录 E.2：5 组重复已收敛） |
 | 23 | 批量删除与跨目录移动引入受控并发 | C2 / C3 / F4 | ⏳ 待做 |
 | 25 | `VideoPlayer` 状态机改 `useReducer` | N7 | ⏳ 待做 |
 | 26 | `ExportModal` 大图分块 / 尺寸上限保护 | N8 | ⏳ 待做 |
 | 28 | 布局常量集中到 `gridLayout.ts` | N3 | ⏳ 待做 |
 | 29 | 抽 `useBatchOperation()` 统一写盘管线 | R2 | 🔶 部分（已收进 `useFileOperations` + `useFileOpFeedback`，未抽成泛型） |
 | 31 | LocationMap 底图离屏缓存 | N12 | ⏳ 待做 |
-| 32 | 清理 `utils/index.ts` 重复注释、`RenameModal` 的 eslint 注释 | U3 / N14 | 🔶 部分（6 条失效指令已处理，`RenameModal` 仍有 1 条） |
+| 32 | 清理 `utils/index.ts` 重复注释、`RenameModal` 的 eslint 注释 | U3 / N14 | ✅ 附录 E.1（U3 已随 `utils` 拆分消解） |
 
 ---
 
@@ -994,4 +994,96 @@ Toast 的渲染与队列原先内联在 `App.tsx`。抽出为 `src/components/la
 | 低 | 四处注释与实现不符（`sortPhotosByTimeline` 排序方向、`clusterBySize` 的 ±10%、`repairFileName` 扩展名转小写、`extOfName('.gitignore')`）。已全部在测试中钉住现状 | 回填 TODO **K32**。原则是**先钉住、再决定**，避免「改注释还是改实现」变成无人负责 |
 | 低 | `App.tsx` 组合层仍长（1279 行），主要是 JSX 与 modal 装配 | 见 D.1「尚未解决的部分」，依赖 P2-14 / 15 |
 | — | 本轮**没有**产生新的安全面：新增代码未引入任何新的 IPC 通道、未放宽 CSP、未绕过路径白名单 | — |
+
+---
+
+## 附录 E：冗余清理批次（实施日期 2026-09-16）
+
+覆盖：**P2-21**（公共图标库，部分）、**P2-32**（失效注释清理），以及本轮审查新发现的一处真实瑕疵。
+
+改动文件：新增 `src/components/icons/index.tsx`；`RenameModal.tsx`、`useFileOperations.ts`、
+`DuplicateDetector.tsx`、`TimelineGallery.tsx`、`LocationMap.tsx`、`Sidebar.tsx`、
+`ActiveFiltersBar.tsx`、`Toolbar.tsx`。
+
+### E.0 本轮验证结果
+
+| 项 | 结果 |
+|---|---|
+| `npm run typecheck` | 通过，零错误 |
+| `npm run build` | 通过（主 bundle 668.29 kB / gzip 185.75，地名 chunk 58.80 kB） |
+| `npm run lint` | 0 problems（TS 侧仍降级，见 B.7） |
+| `npm run test:main` | 88 项通过（22 + 18 + 48） |
+| `npm run test:unit` | 266 项通过 |
+
+### E.1 失效注释与一处真实瑕疵
+
+| 位置 | 问题 | 处置 |
+|---|---|---|
+| `RenameModal.tsx` | `// eslint-disable-next-line no-new` 是失效噪音 —— 配置里并未启用 `no-new` | 删除注释，改写为 `void new RegExp(findText)`，用语言本身表达「故意丢弃结果」 |
+| `useFileOperations.ts`（重命名 replace 分支） | 剥离扩展名的正则写在**模板字符串**里，`\.` 的反斜杠被吞掉，实际退化成 `.<ext>$`（`.` 匹配任意字符） | 改为 `lastIndexOf('.') + slice` 剥离扩展名 |
+
+第二处是**真瑕疵而非风格问题**：对正常含点号的文件名结果碰巧一致，但对「不含点号」的名字
+（`split('.').pop()` 返回整个串）会匹配到首字符、把名字整体吃掉。
+改用 `lastIndexOf` 后语义显式，也不再依赖正则转义的书写正确性。
+
+> 这条也解释了一个反复出现的经验：**模板字符串里的反斜杠**是 JS 转义的灰色地带，
+> 正则里需要的是四个反斜杠。这类写法在 code review 时几乎总是被眼睛跳过。
+
+### E.2 公共图标库（P2-21 部分，对应 N13 / D4）
+
+**改造前**：同一段 `<path>` 在多个组件里各抄一份，抄的时候顺手改了尺寸或线宽 ——
+最典型的是「返回箭头」有 3 份（`TimelineGallery`、`LocationMap`、`DuplicateDetector`
+的 `BackIcon`），彼此并不知情。
+
+**改造后**：新增 `src/components/icons/index.tsx`，收敛 5 组重复。**行为零变化** ——
+尺寸 / 线宽差异全部由 `size` / `strokeWidth` 参数在**调用点**还原成原值：
+
+| 图标 | 收敛前 | 收敛后 |
+|---|---|---|
+| `ChevronLeftIcon` | `TimelineGallery` + `LocationMap` + `DuplicateDetector.BackIcon`（3 份） | 1 份（`BackIcon` 处传 `size={16} strokeWidth={2.2}`） |
+| `RefreshIcon` | `DuplicateDetector.RefreshIcon` + `Sidebar.ResetIcon`（2 份） | 1 份（`Sidebar` 传 `size={14} strokeWidth={1.9}`） |
+| `FunnelIcon` | `ActiveFiltersBar` + `Toolbar`（2 份） | 1 份（`Toolbar` 传 `size={17}`） |
+| `PlusIcon` | `Sidebar` + `LocationMap`（2 份） | 1 份（`LocationMap` 传 `size={15} strokeWidth={2}`） |
+
+**收录标准写进了模块头注释**：只收「图形相同、且已被两处以上使用」的图标。
+与业务语义强绑定的图形（地图销钉、点阵语言、品牌光圈）刻意留在各自模块 ——
+它们的差异是有意为之，强行共用会互相牵制；只在单处出现的图标也不搬。
+
+**刻意未合并的**（同形但坐标 / 线宽存在可见差异，合并就得替作者拍板选一个）：
+`CloseIcon`（`ActiveFiltersBar`）↔ `RemoveSourceIcon`（`Sidebar`）、
+`ChevronRightIcon`（`Sidebar`）↔ `ChevronRightSmallIcon`（`TimelineGallery`）↔
+`ChevronIcon`（`DuplicateDetector`）、`DurationBadge`（两处的字号 `10px` / `9.5px` 与定位不同）、
+`HeartIcon`（描边）↔ `FavoriteBadge`（圆底 + 实心）。这些留给后续确认预期后再统一。
+
+### E.3 新发现：`K27–K30` 的预留组件容易被误判为「死代码」
+
+本轮做了全量「导出即引用」扫描，初见有 5 个组件疑似从未被使用：
+`ImmersiveView`（整份文件）、`StatPill`、`DotGrid`、`DotPinIcon`、`EmptyStateHint`。
+
+**核对后确认不是死代码** —— 它们都带着明确的 K 编号注释，是 `TODO.md` 批次 D
+（K27–K30 视觉与身份）的基础设施，只是尚未接线：
+
+| 组件 | 所属 | 现状 |
+|---|---|---|
+| `WelcomeEmptyState` / `QuietEmptyState` | K27 首屏空状态 | ✅ 已在 `ImageGrid` 接线 |
+| `LandDotField` | K30 点阵语言 | ✅ 已被 `WelcomeEmptyState` 使用 |
+| `ImmersiveView` | K28 整页沉浸态 | 已实现，未接线 |
+| `Stat` / `StatPill` | K29 统计数字 | 已实现；`StatPill` 与 `EmptyStateHint` 未接线 |
+| `DotGrid` / `DotPinIcon` | K30 点阵语言 | 已实现，未接线 |
+
+**处置：不删，只回填 `TODO.md` 的状态**。这属于「文档状态落后于代码」，而非冗余 ——
+按死代码处理等于把已写好的设计资产删掉。同时这也提醒：**「零引用」只有在对照功能规划
+之后才能定性**，单看引用计数会误伤预置件。
+
+### E.4 本轮未做（明确边界）
+
+- 两组较大重复**未动**：8 个 Modal 的基座（N15 / D8）与 `ImageGrid` 内两套虚拟化
+  （N1 / D3）。两者都是 P2 剩余项，且需要真实 UI 回归验证，不适合与本次
+  「零行为变化」的清理混在同一批。
+- `pad`（`String(n).padStart(2, '0')`）在 3 处出现（`format.ts` / `VideoPlayer` /
+  `DuplicateDetector`），**刻意不抽** —— 两字符的局部辅助函数抽成跨模块依赖，
+  收益低于阅读成本。
+- `src/utils/index.ts` barrel 中若干再导出暂无消费者。**保留**：该文件定位就是
+  「迁移零破坏」的兼容层，且 `utilsBarrel.test.ts` 已把 34 个符号钉住，删减会破坏既有引用。
+- 全量未使用 import 扫描结果为 **0** —— TS 侧虽无 ESLint 兜底，但源码在这方面是干净的。
 

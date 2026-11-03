@@ -1,6 +1,7 @@
 import React from 'react';
 import { PhotoFilters } from '@/types';
 import { buildFilterChips, isFilterActive } from '@/lib/filter/filters';
+import { FunnelIcon } from '@/components/icons';
 
 interface ActiveFiltersBarProps {
   filters: PhotoFilters;
@@ -19,12 +20,6 @@ interface ActiveFiltersBarProps {
 const CloseIcon = () => (
   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5" strokeLinecap="round">
     <path d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
-
-const FunnelIcon = () => (
-  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
   </svg>
 );
 
