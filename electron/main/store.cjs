@@ -3,11 +3,13 @@
 const fs = require('fs');
 const path = require('path');
 const { promisify } = require('util');
+const { CONFIG_VERSION } = require('./migrations.cjs');
 
 const readFile = promisify(fs.readFile);
 const writeFile = promisify(fs.writeFile);
 const rename = promisify(fs.rename);
 const unlink = promisify(fs.unlink);
+const copyFile = promisify(fs.copyFile);
 
 function createStore({ userDataDir, logger }) {
   // ---------------------------------------------------------------------------
@@ -95,8 +97,31 @@ function createStore({ userDataDir, logger }) {
     return next;
   }
 
+  /**
+   * 写盘前滚动保留上一版 config.json。
+   * 迁移 / 误写把配置改坏时，.bak 与 .bak.1 是最后一道可回退的副本。
+   * 备份失败只告警，绝不阻断主写入：写不进配置比少一份备份严重得多。
+   */
+  async function rotateConfigBackup(target) {
+    try {
+      await fs.promises.access(target);
+    } catch {
+      return; // 首次运行，没有上一版可留
+    }
+    const bak = `${target}.bak`;
+    const older = `${target}.bak.1`;
+    try {
+      // rename 到已存在目标在 POSIX 上是覆盖，无需先 unlink
+      try { await rename(bak, older); } catch { /* 还没有上一版 .bak */ }
+      await copyFile(target, bak);
+    } catch (error) {
+      logger.warn('[store] config 备份轮转失败:', error.message);
+    }
+  }
+
   async function writeStore(fileName) {
     const target = storePath(fileName);
+    if (fileName === STORE_CONFIG) await rotateConfigBackup(target);
     // 临时文件名必须唯一：固定 .tmp 会让两次并发写入互相截断
     //（后一次以 w 模式打开即清空前一次尚未落盘的内容）
     const tmp = `${target}.${process.pid}.${(storeTmpSeq += 1)}.tmp`;
@@ -170,7 +195,7 @@ function createStore({ userDataDir, logger }) {
 
     // AI 结果由渲染进程整体维护（含条数上限），这里直接替换 entries
     handle('save-ai-cache', async (event, entries) => {
-      const saved = await mergeStore(STORE_AI_CACHE, { version: 1, entries });
+      const saved = await mergeStore(STORE_AI_CACHE, { version: CONFIG_VERSION, entries });
       if (!saved) {
         return fail('AI 缓存保存失败');
       }

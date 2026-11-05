@@ -14,7 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "npm run test:main && npm run test:unit",
-    "test:main": "node tests/main-process/unique-path.test.cjs && node tests/main-process/storage-recovery.test.cjs && node tests/main-process/ipc-security.test.cjs && node tests/main-process/ai-config-privacy.test.cjs",
+    "test:main": "node tests/main-process/unique-path.test.cjs && node tests/main-process/storage-recovery.test.cjs && node tests/main-process/ipc-security.test.cjs && node tests/main-process/ai-config-privacy.test.cjs && node tests/main-process/data-assets.test.cjs",
     "test:smoke": "electron tests/smoke/electron-smoke.cjs",
     "test:smoke:no-sandbox": "PHOTOMINDER_DISABLE_SANDBOX=1 electron tests/smoke/electron-smoke.cjs",
     "test:unit": "vitest run",

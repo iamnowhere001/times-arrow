@@ -43,9 +43,8 @@ export interface UseFileOperationsParams {
   removeWithCollapse: (ids: Set<string>) => void;
   pruneDuplicateGroups: (ids: Set<string>) => void;
   // 按路径存储的数据迁移 / 清理
-  rekeyPathData: (from: string, to: string) => { video: boolean; ai: boolean };
-  dropPathData: (paths: Iterable<string>) => { video: boolean; ai: boolean };
-  persistPathData: (changed: { video: boolean; ai: boolean }) => Promise<void>;
+  rekeyImportedPaths: (from: string, to: string) => void;
+  forgetImportedPaths: (paths: Iterable<string>) => void;
 }
 
 export interface FileOperationsResult {
@@ -77,9 +76,8 @@ export function useFileOperations({
   endFileOp,
   removeWithCollapse,
   pruneDuplicateGroups,
-  rekeyPathData,
-  dropPathData,
-  persistPathData,
+  rekeyImportedPaths,
+  forgetImportedPaths,
 }: UseFileOperationsParams): FileOperationsResult {
   // Handle single photo rename
   const handleRenamePhoto = async (id: string, newName: string) => {
@@ -175,8 +173,8 @@ export function useFileOperations({
         return p;
       }));
 
-      // 按路径存储的用户数据一起迁移：不迁移的话，重启后收藏 / 标签会全部丢失
-      await persistPathData(rekeyPathData(oldPath, finalPath));
+      // 标注资产按内容指纹关联，改名后自动跟随；只需同步会话级去重集合
+      rekeyImportedPaths(oldPath, finalPath);
 
       if (conflicted) {
         showToast(`「${finalName}」已存在，已自动重命名为「${actualName}」`, 'warning');
@@ -398,16 +396,10 @@ export function useFileOperations({
           return p;
         }));
 
-        // 批量改名同样要做路径迁移：收藏 / 隐藏 / 标签 / 时间修正 / AI 缓存都按路径存储
-        let changed = { video: false, ai: false };
+        // 标注资产按内容指纹关联，改名后自动跟随；只需同步会话级去重集合
         for (const update of updates) {
-          const one = rekeyPathData(update.oldPath, update.newPath);
-          changed = {
-            video: changed.video || one.video,
-            ai: changed.ai || one.ai,
-          };
+          rekeyImportedPaths(update.oldPath, update.newPath);
         }
-        await persistPathData(changed);
       }
 
       // 文件已不在原位的条目：统一剔除（塌陷动画 + 收敛选中 + 收藏标签保留）
@@ -464,13 +456,10 @@ export function useFileOperations({
 
     // 同步收敛状态：列表、选中项、重复检测结果
     if (deletedIds.size > 0) {
-      // 磁盘上已经没有这个文件了，它残留的收藏 / 隐藏 / 标签 / 时间修正等按路径数据
-      // 也要一并摘掉：否则日后同名的文件回到同一目录，会直接继承上一份标记
-      //（最坏情况是「新导入的照片一进来就是隐藏状态，在库里根本找不到」）
-      const removedPaths = targets
-        .filter(p => deletedIds.has(p.id) && p.path)
-        .map(p => p.path as string);
-      await persistPathData(dropPathData(removedPaths));
+      // 只摘会话级去重集合：标注资产按内容指纹保留，文件重新导入时会自动续上
+      forgetImportedPaths(
+        targets.filter(p => deletedIds.has(p.id) && p.path).map(p => p.path as string)
+      );
 
       // 卡片先淡出再摘除：磁盘上的文件已经没了，但界面上要让人看见它离开
       removeWithCollapse(deletedIds);
@@ -642,16 +631,10 @@ export function useFileOperations({
           : p;
       }));
 
-      // 2) 迁移按路径存储的用户数据（收藏 / 隐藏 / 标签 / 时间修正 / 视频元数据 / AI 缓存）
-      let changed = { video: false, ai: false };
+      // 2) 标注资产按内容指纹关联，移动后自动跟随；只需同步会话级去重集合
       for (const [from, to] of pathMap) {
-        const one = rekeyPathData(from, to);
-        changed = {
-          video: changed.video || one.video,
-          ai: changed.ai || one.ai,
-        };
+        rekeyImportedPaths(from, to);
       }
-      await persistPathData(changed);
     }
 
     // 失败项映射回条目，供 Toast「重试」继续移动到同一目标

@@ -84,6 +84,7 @@ function isResult(r) {
     ['ai-config-get', []],
     ['ai-config-set', []],
     ['ai-config-test', []],
+    ['compute-file-ids', []],
     ['cancel-scan', []],
     ['unwatch-directory', []],
   ];

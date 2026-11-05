@@ -8,8 +8,8 @@
 import { PersistedConfig } from '@/types';
 import { logger } from '@/lib/logger';
 
-/** 当前配置结构版本 */
-export const CONFIG_VERSION = 1;
+/** 当前配置结构版本（v2：标注资产以内容指纹为键，见 electron/main/migrations.cjs） */
+export const CONFIG_VERSION = 2;
 
 /**
  * 落盘失败的通知出口。

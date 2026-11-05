@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { assetKeyOf } from '@/lib/media/photoIdentity';
 import { AiCacheEntry, LibrarySource, Photo, PhotoFilters, SmartAlbum, SortConfig, ViewMode } from '@/types';
 import { normalizeFilters } from '@/lib/filter/filters';
 import {
@@ -137,6 +138,7 @@ export function useAppConfig({
         );
       })();
 
+      // v2 起这些 key 是内容指纹（不再是磁盘路径），变量名沿用只为少改一行
       (config.favorites ?? []).forEach(path => favoritesRef.current.add(path));
       (config.hidden ?? []).forEach(path => hiddenRef.current.add(path));
       Object.entries(config.tags ?? {}).forEach(([path, tags]) => {
@@ -206,15 +208,15 @@ export function useAppConfig({
       setPhotos(prev => {
         if (prev.length === 0) return prev;
         return prev.map(photo => {
-          if (!photo.path) return photo;
-          const override = dateOverridesRef.current.get(photo.path);
-          const video = getVideoMeta(photo.path);
-          const ai = aiCacheRef.current.get(photo.path);
+          const key = assetKeyOf(photo);
+          const override = dateOverridesRef.current.get(key);
+          const video = getVideoMeta(key);
+          const ai = aiCacheRef.current.get(key);
           return {
             ...photo,
-            isFavorite: favoritesRef.current.has(photo.path),
-            isHidden: hiddenRef.current.has(photo.path) || undefined,
-            tags: tagsRef.current.get(photo.path),
+            isFavorite: favoritesRef.current.has(key),
+            isHidden: hiddenRef.current.has(key) || undefined,
+            tags: tagsRef.current.get(key),
             ...(override !== undefined ? { dateTaken: override, dateAdjusted: true } : null),
             ...(video
               ? { duration: video.duration, dimensions: { width: video.width, height: video.height } }

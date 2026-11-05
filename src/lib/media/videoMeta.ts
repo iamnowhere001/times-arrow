@@ -11,6 +11,7 @@
  */
 
 import { Photo, VideoMetaRecord } from '@/types';
+import { assetKeyOf } from '@/lib/media/photoIdentity';
 import { createLruCache } from '@/lib/cache/cacheManager';
 
 export type VideoMeta = VideoMetaRecord;
@@ -25,8 +26,10 @@ const MAX_VIDEO_META = 10000;
 const cache = createLruCache<string, VideoMeta>('videoMeta', MAX_VIDEO_META, 'sticky');
 const listeners = new Set<(key: string, meta: VideoMeta) => void>();
 
-/** 缓存键：优先磁盘路径（跨重启稳定），无路径时退化为条目 id */
-export const videoMetaKeyOf = (photo: Pick<Photo, 'id' | 'path'>): string => photo.path || photo.id;
+/** 缓存键统一走标注资产主键（内容指纹优先，见 photoIdentity.ts） */
+export const videoMetaKeyOf = (
+  photo: Pick<Photo, 'id' | 'path' | 'fileId'>
+): string => assetKeyOf(photo);
 
 const isValid = (meta: VideoMeta): boolean =>
   Number.isFinite(meta.duration) &&

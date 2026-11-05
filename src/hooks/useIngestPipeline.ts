@@ -11,6 +11,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { logger } from '@/lib/logger';
+import { assetKeyOf } from '@/lib/media/photoIdentity';
 import { AiCacheEntry, Photo } from '@/types';
 import { mapWithConcurrency, mediaKindOf, mediaMimeType, pmFileUrl } from '@/utils';
 import { getVideoMeta } from '@/lib/media/videoMeta';
@@ -195,7 +197,7 @@ export function useIngestPipeline({
         if (meta.dimensions) updates.dimensions = meta.dimensions;
         if (meta.exif) updates.exif = meta.exif;
         // 手动修正过的时间优先于 EXIF，避免被读盘结果覆盖
-        const override = dateOverridesRef.current.get(photo.path);
+        const override = dateOverridesRef.current.get(assetKeyOf(photo));
         if (override !== undefined) {
           updates.dateTaken = override;
           updates.dateAdjusted = true;
@@ -230,6 +232,17 @@ export function useIngestPipeline({
     if (fresh.length === 0) return 0;
 
     const total = fresh.length;
+
+    // 内容指纹是标注资产跨重启的身份：一次性批量向主进程索取，避免逐文件 IPC。
+    // 算不出的路径（读取失败 / 未授权）降级成 path: 前缀的稳定键，不让整批入库失败。
+    let fileIds: Record<string, string> = {};
+    try {
+      const res = await window.electronAPI?.computeFileIds?.(fresh.map(info => info.path));
+      if (res?.ok) fileIds = res.data ?? {};
+    } catch (error) {
+      logger.warn('内容指纹计算失败，本次入库退化为按路径关联:', error);
+    }
+
     const session = Date.now();
     const controller = new AbortController();
     importAbortRef.current = controller;
@@ -247,12 +260,10 @@ export function useIngestPipeline({
         const batch: Photo[] = [];
         for (let i = start; i < end; i += 1) {
           const info = fresh[i];
-          // 配置里已有的收藏 / 隐藏 / 标签 / 时间修正 / 视频元数据，在入库时就一并带上
-          const override = dateOverridesRef.current.get(info.path);
-          const video = getVideoMeta(info.path);
-          const ai = aiCacheRef.current.get(info.path);
-          batch.push({
+          const fileId = fileIds[info.path] || `path:${info.path}`;
+          const photo: Omit<Photo, 'isFavorite'> = {
             id: `photo-${session}-${i}`,
+            fileId,
             name: info.name,
             url: pmFileUrl(info.path),
             path: info.path,
@@ -261,9 +272,17 @@ export function useIngestPipeline({
             kind: mediaKindOf(info.name),
             lastModified: info.mtime,
             dateCreated: info.created || undefined,
-            isFavorite: favoritesRef.current.has(info.path),
-            isHidden: hiddenRef.current.has(info.path) || undefined,
-            tags: tagsRef.current.get(info.path),
+          };
+          // 标注资产一律按内容指纹关联；文件挪过位置也能自动找回
+          const key = assetKeyOf(photo);
+          const override = dateOverridesRef.current.get(key);
+          const video = getVideoMeta(key);
+          const ai = aiCacheRef.current.get(key);
+          batch.push({
+            ...photo,
+            isFavorite: favoritesRef.current.has(key),
+            isHidden: hiddenRef.current.has(key) || undefined,
+            tags: tagsRef.current.get(key),
             ...(override !== undefined ? { dateTaken: override, dateAdjusted: true } : null),
             ...(video
               ? { duration: video.duration, dimensions: { width: video.width, height: video.height } }

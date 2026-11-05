@@ -16,7 +16,10 @@ export interface ExifData {
 }
 
 export interface Photo {
+  /** 会话内唯一标识：React key、选中态、重复检测分组都用它，同一文件重复导入互不影响 */
   id: string;
+  /** 内容指纹：跨重启的身份；收藏 / 标签 / 时间修正 / AI 结果全部以它为键 */
+  fileId?: string;
   file?: File;
   fileHandle?: any; // FileSystemFileHandle
   name: string; // Mutable name for renaming
@@ -174,7 +177,10 @@ export interface AiCacheEntry {
 /** 持久化到 `userData/ai-cache.json` 的 AI 分析结果（体量较大，单独成文件并限量） */
 export interface PersistedAiCache {
   version?: number;
+  /** 内容指纹 → AI 结果 */
   entries?: Record<string, AiCacheEntry>;
+  /** 迁移时不可达的旧记录：原路径 → AI 结果 */
+  orphans?: Record<string, AiCacheEntry>;
 }
 
 /** 生效中的 API Key 来源：应用内设置 / 环境变量 / 未配置 */
@@ -211,19 +217,19 @@ export interface AiConfigSnapshot {
 
 /** 持久化到 `userData/config.json` 的数据（全部为可 JSON 序列化的原始类型） */
 export interface PersistedConfig {
-  /** 配置结构版本，便于日后迁移 */
+  /** 配置结构版本（v2 起标注数据以内容指纹为键） */
   version?: number;
-  /** 收藏项路径 */
+  /** 收藏项内容指纹 */
   favorites?: string[];
-  /** 已隐藏项路径 */
+  /** 已隐藏项内容指纹 */
   hidden?: string[];
-  /** 用户标签：路径 → 标签数组 */
+  /** 用户标签：内容指纹 → 标签数组 */
   tags?: Record<string, string[]>;
-  /** 拍摄时间修正：路径 → 毫秒时间戳 */
+  /** 拍摄时间修正：内容指纹 → 毫秒时间戳 */
   dateOverrides?: Record<string, number>;
   /** 智能相簿 */
   albums?: SmartAlbum[];
-  /** 视频元数据：路径 → 时长 / 分辨率 */
+  /** 视频元数据：内容指纹 → 时长 / 分辨率 */
   videoMeta?: Record<string, VideoMetaRecord>;
   /** 视图偏好（主题 / 排序 / 缩放 / 面板开合…） */
   preferences?: ViewPreferences;
@@ -241,6 +247,17 @@ export interface PersistedConfig {
   recentDirectories?: string[];
   /** 重复检测参数 */
   duplicate?: DuplicatePreferences;
+  /**
+   * v1 → v2 迁移时文件已不可达、尚未续接的旧记录（按原路径保存，绝不静默丢弃）。
+   * 「路径重连」会用它们把标注接回新位置。
+   */
+  orphans?: {
+    favorites?: string[];
+    hidden?: string[];
+    tags?: Record<string, string[]>;
+    dateOverrides?: Record<string, number>;
+    videoMeta?: Record<string, VideoMetaRecord>;
+  };
   /** 窗口尺寸与位置（仅由主进程读写） */
   windowBounds?: { x?: number; y?: number; width: number; height: number };
   windowMaximized?: boolean;

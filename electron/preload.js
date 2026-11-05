@@ -85,6 +85,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * 启动加载完配置后调用一次；非空时应当提示用户，否则他会以为数据凭空消失。
    */
   storageNotices: () => ipcRenderer.invoke('storage-notices'),
+  /** 批量计算内容指纹（标注资产的跨重启身份） */
+  computeFileIds: (paths) => ipcRenderer.invoke('compute-file-ids', paths),
 
   /** AI 图片分析：主进程代理 DeepSeek，密钥不出主进程 */
   analyzeImage: (payload) => ipcRenderer.invoke('ai-analyze', payload),

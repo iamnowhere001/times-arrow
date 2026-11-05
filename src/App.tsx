@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { assetKeyOf } from '@/lib/media/photoIdentity';
 import { MediaFilter, Photo, PhotoFilters, SortConfig, ViewMode, SortKey } from '@/types';
 import { isVideoPhoto, clearImageHashCache } from '@/utils';
 import {
@@ -124,9 +125,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     setFavorite,
     toggleFavorite,
     setHidden,
-    rekeyPathData,
-    dropPathData,
-    persistPathData,
+    rekeyImportedPaths,
     handleUpdatePhoto,
   } = usePersistedLibraryData({ setPhotos, photosRef, showToast, setFilters });
 
@@ -407,7 +406,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
 
   // setHidden（批量隐藏 / 取消隐藏）已迁至 hooks/usePersistedLibraryData
 
-  // 路径迁移（rekeyPathData）/ 清理（dropPathData）/ 落盘（persistPathData）已迁至 hooks/usePersistedLibraryData
+  // 标注资产按内容指纹持久化，改名 / 移动无需迁移；会话去重集合的同步见 hooks/usePersistedLibraryData
 
   /** 应用拍摄时间修正：写入 override 并落盘（不改动原文件） */
   const handleApplyDateAdjustment = useCallback(async (adjustments: DateAdjustment[]) => {
@@ -416,11 +415,11 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     let skipped = 0;
 
     for (const { photo, timestamp } of adjustments) {
-      if (!photo.path) {
+      if (!photo.fileId && !photo.path) {
         skipped += 1;
         continue;
       }
-      dateOverridesRef.current.set(photo.path, timestamp);
+      dateOverridesRef.current.set(assetKeyOf(photo), timestamp);
       byId.set(photo.id, timestamp);
       applied += 1;
     }
@@ -700,9 +699,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     endFileOp,
     removeWithCollapse,
     pruneDuplicateGroups,
-    rekeyPathData,
-    dropPathData,
-    persistPathData,
+    rekeyImportedPaths,
+    forgetImportedPaths,
   });
 
   // handleBatchRename（批量重命名）已迁至 hooks/useFileOperations

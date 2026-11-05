@@ -60,6 +60,8 @@ const { createAuthorization } = require('./main/authorization.cjs');
 const { createStore } = require('./main/store.cjs');
 const { createMediaPipeline } = require('./main/media-pipeline.cjs');
 const { createAiService } = require('./main/ai.cjs');
+const { createDataAssets } = require('./main/data-assets.cjs');
+const { migrateAllStores } = require('./main/migrations.cjs');
 
 const { UNAUTHORIZED_ERROR, authorizeRoot, authorizePaths, isPathAuthorized } =
   createAuthorization();
@@ -74,6 +76,7 @@ const {
   withStoreLock,
   writeStore,
   registerStoreIpc,
+  mergeStore,
 } = store;
 
 const media = createMediaPipeline({
@@ -1137,6 +1140,7 @@ handle('storage-notices', async () => ok(drainStorageNotices()));
 
 // AI 配置 / 分析 / 测试连接通道由 ./main/ai.cjs 提供
 registerAiIpc({ handle, ok, fail });
+createDataAssets({ handle, ok, fail, isPathAuthorized });
 
 // ---------------------------------------------------------------------------
 // 窗口尺寸记忆：下次启动回到上次的位置与大小
@@ -1276,7 +1280,18 @@ app.on('ready', () => {
   Promise.all([
     readStore(STORE_CONFIG).catch(() => ({})),
     readStore(STORE_AI_CONFIG).catch(() => ({})),
-  ]).then(() => createWindow());
+  ])
+    .then(async () => {
+      // v1 → v2：标注资产从「路径」换成「内容指纹」。必须在建窗口前跑完，
+      // 否则渲染层拿到的是旧结构。迁移失败不能卡住启动 —— 旧配置仍在磁盘上，
+      // 且写盘前已轮转 .bak 留了副本。
+      try {
+        await migrateAllStores({ readStore, mergeStore, logger });
+      } catch (error) {
+        logger.error('[migrate] 配置结构升级失败:', error);
+      }
+    })
+    .then(() => createWindow());
 });
 
 app.on('window-all-closed', () => {

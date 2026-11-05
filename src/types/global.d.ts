@@ -215,6 +215,8 @@ declare global {
        * 启动加载完配置后调用一次；非空时应当提示用户。
        */
       storageNotices: () => Promise<IpcResult<StorageRecoveryNotice[]>>;
+      /** 批量计算内容指纹；未授权路径不出现在结果里 */
+      computeFileIds: (paths: string[]) => Promise<IpcResult<Record<string, string>>>;
       /** AI 图片分析（主进程代理 DeepSeek，API Key 不出主进程） */
       analyzeImage: (payload: { base64: string; mimeType: string }) => Promise<
         IpcResult<{ description?: string; tags?: string[] } | null>
