@@ -27,3 +27,6 @@ release
 *.njsproj
 *.sln
 *.sw?
+
+# WorkBuddy 本地工作数据（会话记忆、评审产物等），不入库
+.workbuddy-ai/

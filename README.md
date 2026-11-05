@@ -4,12 +4,12 @@
 
 | 项目 | 说明 |
 | --- | --- |
-| 定位 | 个人自用的本地照片 / 视频整理工具，macOS 优先 |
-| 隐私 | 全部本地处理；AI 分析是唯一可选的联网功能，密钥仅由主进程持有 |
+| 定位 | **个人自用**的本地照片 / 视频整理工具，macOS 优先；不对外分发，不做签名 / 公证 / 自动更新 |
+| 隐私 | 全部本地处理；AI 分析是唯一可选的联网功能，密钥由主进程读取并代理请求、在本机明文存储（界面只读到尾号掩码，见「已知限制」） |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
 | 当前版本 | v0.6.0（开发中）· 待办与路线图见 [`TODO.md`](./TODO.md) |
-| 质量护栏 | ESLint 0 problems · 单测 266 项 · 主进程集成测试 88 项 · Electron 冒烟 1 项 |
-| 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md) |
+| 质量护栏 | ESLint 0 problems · 单测 266 项 · 主进程集成测试 104 项 · Electron 冒烟 1 项 |
+| 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
 
 ---
 
@@ -46,7 +46,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `npm run format` / `format:check` | Prettier（仓库尚未全量格式化，见下） |
 | `npm run test` | `test:main` + `test:unit` |
 | `npm run test:unit` | Vitest 纯函数单测（266 项） |
-| `npm run test:main` | 打桩 electron 的主进程集成测试（88 项） |
+| `npm run test:main` | 打桩 electron 的主进程集成测试（104 项，含 AI 密钥边界 16 项） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
 
 > **两个环境注意事项**
@@ -109,7 +109,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - **文件信息**：尺寸、体积、内容创建 / 修改 / 创建时间；就地重命名（Enter 提交 / Esc 取消）
 - **单张导出**：转 JPEG / PNG / WebP，可调质量，实时预览与体积估算
 - **视频**：内嵌播放器预览，展示时长 / 分辨率 / 容器格式；无法解码时说明原因并提供「在访达中显示」
-- **DeepSeek AI 分析**：生成图片描述与标签，结果参与搜索与筛选并持久化缓存。在「设置 → AI 分析设置…」（`⌘,`）配置 Key / 接口 / 模型，主进程读盘并代理请求，渲染进程不接触密钥
+- **DeepSeek AI 分析**：生成图片描述与标签，结果参与搜索与筛选并持久化缓存。在「设置 → AI 分析设置…」（`⌘,`）配置 Key / 接口 / 模型，主进程读盘并代理请求；渲染层只能写入新密钥、读不回已保存的值（设置弹窗只显示尾号掩码）
 
 ### 界面与体验
 
@@ -189,7 +189,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `DEEPSEEK_BASE_URL` | 可选，默认 `https://api.deepseek.com` |
 | `DEEPSEEK_MODEL` | 可选，默认 `deepseek-flash` |
 
-> 优先级：应用内设置 > 环境变量（`.env.local` / `.env` / 系统环境变量 / `userData/ai.env`）> 内置默认值；应用内留空的字段自动回退。密钥仅由主进程读取，不进入前端产物。未配置时除 AI 分析外所有功能照常可用。
+> 优先级：应用内设置 > 环境变量（`.env.local` / `.env` / 系统环境变量 / `userData/ai.env`）> 内置默认值；应用内留空的字段自动回退。密钥由主进程读取并代理请求，不进入前端产物；**以明文保存在本机 `ai-config.json`**（自用定位下的既定取舍，见 TODO X1），但「AI 设置」只显示尾号掩码、读不回完整值。未配置时除 AI 分析外所有功能照常可用。
 
 ### 数据存储位置
 
@@ -199,7 +199,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | --- | --- | --- |
 | `config.json` | 收藏、隐藏、标签、时间修正、智能相簿、视频元数据、常驻来源与视图偏好 | 临时文件 + rename 原子写入；解析失败自动备份为 `config.json.corrupt-<时间戳>`，并在启动时 Toast 告知备份位置 |
 | `ai-cache.json` | AI 分析结果缓存 | 上限 2000 条，超出淘汰最早 |
-| `ai-config.json` | AI 服务配置（Key / 接口 / 模型） | 明文存储，仅主进程读取 |
+| `ai-config.json` | AI 服务配置（Key / 接口 / 模型） | **明文存储**，仅主进程读取；读取接口只回 `hasApiKey` + 尾号掩码，不回完整密钥 |
 | `ai.env` | 可选的环境变量兜底文件 | 优先级低于 `.env.local` 与系统环境变量 |
 | `thumbnails/` | 磁盘缩略图缓存 | 重启复用，超限自动清理最久未访问项 |
 
@@ -211,7 +211,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 | 分类 | 选型 |
 | --- | --- |
-| 桌面壳 | Electron 44（主进程 `electron/main.js` + 预加载 `electron/preload.js`） |
+| 桌面壳 | Electron 44（主进程 `electron/main.js` 1,292 行 + `electron/main/` 4 个领域模块 + 预加载 `electron/preload.js`） |
 | 前端 | React 19、TypeScript 7 |
 | 构建 | Vite 8（`@vitejs/plugin-react`） |
 | 样式 | Tailwind CSS 4（CSS-first `@theme`）+ `src/styles/styles.css` 的 CSS 变量 |
@@ -241,6 +241,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 | CSP | 策略**唯一定义**在 `electron/lib/csp.cjs`，主进程 `onHeadersReceived` 与构建期注入的 `<meta>` 共用同一份字符串；生产 `script-src` 不含 `unsafe-inline` |
 | 体积闸门 | 设在读取之前（先 `stat` 再决定是否读）：`read-file` 64MB、`ai-analyze` 20MB base64 |
 | 写盘 | `reserveUniquePath()` 用 `open(path,'wx')` 原子占位，消除「探测存在性 → 再写」的 TOCTOU；`write-file-unique` 的 `fileName` 经 `path.basename()` 归一化 |
+| AI 密钥 | 主进程读取本机明文配置并代理请求；`ai-config-get` 只回 `hasApiKey` + 尾号掩码，渲染层读不回完整值；写入仍允许（用户在设置里填新 Key） |
 
 > 这层防的是**内容级攻击**（被当作图片加载的 SVG、将来的远程内容等 —— 它们能构造 `pm://` 请求但无法调用 IPC）。渲染进程若被完全攻破，攻击者天然拥有全部 IPC 能力，需要靠 CSP 与沙箱收敛。
 
@@ -264,8 +265,13 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 ```
 .
 ├── electron/             # 主进程（Node / CommonJS）
-│   ├── main.js           #   窗口、菜单、文件系统/IPC、pm:// 协议、扫描/哈希/缩略图/EXIF
+│   ├── main.js           #   入口：窗口、菜单、IPC 注册、pm:// 协议（1,292 行）
 │   ├── preload.js        #   contextBridge 暴露 window.electronAPI
+│   ├── main/             #   按领域拆出的主进程模块（2026-11-05，见 CODE_REVIEW 附录 F）
+│   │   ├── ai.cjs        #     DeepSeek 代理、AI 配置读写与密钥掩码
+│   │   ├── authorization.cjs #  会话级路径白名单
+│   │   ├── media-pipeline.cjs # 扫描 / EXIF / 缩略图 / HEIC / dHash
+│   │   └── store.cjs     #     本地 JSON 存储、原子写、损坏备份与通知
 │   └── lib/
 │       ├── csp.cjs       #     CSP 策略唯一定义（响应头与构建期 meta 共用同一份）
 │       ├── dhash.cjs     #     感知哈希算法本体（主进程与渲染层共用唯一实现）
@@ -312,7 +318,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   └── styles/styles.css #   主题变量与基础样式（Tailwind v4 CSS-first）
 ├── tests/                # 三层验证
 │   ├── unit/             #   Vitest 纯函数单测（266 项 / 10 个文件）
-│   ├── main-process/     #   打桩 electron 的集成测试（88 项）+ harness.cjs 脚手架
+│   ├── main-process/     #   打桩 electron 的集成测试（104 项，含 ai-config-privacy）+ harness.cjs 脚手架
 │   └── smoke/            #   真启动 Electron 的端到端冒烟
 ├── build/                # electron-builder 资源（图标 / afterPack / DMG 重压钩子）
 ├── index.html            # Vite 入口 HTML
@@ -342,6 +348,8 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 - **QuickLook 保持深色底**：与系统「预览 / 照片」一致，不随浅色主题变化。
 - **地图为离线轻量版**：底图与地名来自内嵌的 Natural Earth 数据（低精度陆地轮廓 + 1731 条城市），只到城市级、不联网。地名表为独立 chunk（58.8KB / gzip 24.4KB），首次进入地图视图才加载。
 - **打包目前仅 macOS**；删除已用 `shell.trashItem` 支持三端。
+
+- **AI 密钥以明文落盘**：`ai-config.json` 未用 `safeStorage` 加密（见 TODO X1）。这是「个人自用、单机本地」定位下的既定取舍；已收紧的是读取方向 —— `ai-config-get` 只回 `hasApiKey` + 尾号掩码，渲染层读不回完整值。若日后要分发给他人，此项应重新评估。
 
 **功能缺口**
 

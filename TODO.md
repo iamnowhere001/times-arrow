@@ -1,6 +1,6 @@
 # PhotoMinder TODO
 
-> **最后更新**：2026-09-16（架构重构与工程化批次：P0 5/5、P1 10/10、P2 10/20 已完成（另 21 部分完成）；冗余清理批次见 CODE_REVIEW 附录 E；v0.6.1 余 N9 / N10；K 批次余 K3–K6（K4 部分完成）、K7–K13、K16 / K20 / K26、K31 / K32，K27–K30 已部分落地）
+> **最后更新**：2026-11-05（2026-09-16 批次：P0 5/5、P1 10/10、P2 10/20 已完成（另 21 部分完成）；冗余清理批次见 CODE_REVIEW 附录 E；v0.6.1 余 N9 / N10；K 批次余 K3–K6（K4 部分完成）、K7–K13、K16 / K20 / K26、K31 / K32，K27–K30 已部分落地。**2026-11-05 补充**：主进程拆为 4 个模块、AI 配置读取改掩码回显（附录 F）；产品定位确认为「个人自用」，不对外分发）
 > **相关文档**：功能现状见 [`README.md`](./README.md)；审查结论与修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)
 
 | 约定 | 说明 |
@@ -24,6 +24,7 @@
 | v0.6.0 | F3 浏览形态补充 | ✅ 已完成 |
 | **v0.6.1 敢用版** | **N8 来源持久化 ✅、N9 操作日志与撤销、N10 配置备份与路径重连** | **进行中（N9 / N10 待开始）** |
 | — | **架构重构与工程化（CODE_REVIEW P0 / P1 / P2）** | **P0 ✅ 5/5 · P1 ✅ 10/10 · P2 进行中 9/20** |
+| — | 主进程模块化 + AI 密钥边界（CODE_REVIEW 附录 F） | ✅ 已完成（2026-11-05，不占产品排期） |
 | v0.6.2 闭环版 | F7–F10 | 规划中 |
 | v0.6.x | K 批次 D（视觉与身份）、F1 / F2 / F4–F6 / F11–F17 按需 | 规划中 |
 
@@ -219,13 +220,13 @@
 
 | 编号 | 事项 | 状态 / 暂缓理由 |
 | --- | --- | --- |
-| X1 | API Key 用 `safeStorage` 加密 + 主进程代理 | 暂缓。个人自用、本地单机，泄露风险可接受（「主进程代理」半边已落地） |
+| X1 | API Key 用 `safeStorage` 加密 + 主进程代理 | 🔶 **部分完成（2026-11-05）**：定位已确认「个人自用」，`safeStorage` 加密维持暂缓（本机明文存储，泄露风险可接受）；「主进程代理」与「读取不回明文」均已落地 —— `ai-config-get` 只回 `hasApiKey` + 尾号掩码，设置弹窗读不回完整值。见 CODE_REVIEW 附录 F |
 | X2 | 移除 `no-sandbox`、开启 sandbox、CSP、IPC 路径校验 | ✅ **已全部完成**（2026-09-15 起，CODE_REVIEW 附录 A / B）。原暂缓理由「收益低、改动面大」经实测不成立：改动集中在 1 个文件、以数十行计。保留编号以免破坏历史引用 |
 | X3 | 基础图片编辑（裁剪 / 翻转 / 调色） | 暂缓。系统「预览 / 照片」已够用，重复造轮子 |
 | X4 | 地图视图（EXIF GPS 展示） | ✅ 已随 F3 落地轻量版：离线点阵底图 + 点位聚合，未引入地图 SDK；需街道级细节再议 |
 | X5 | 跨平台打包（Win/Linux）+ 自动更新 | 暂缓。只在 macOS 自用 |
 | X7 | `App.tsx` 大拆分 + 开启 `strict` + 引入 `@types/react` | 🔶 **部分完成**（2026-09-16）：`App.tsx` 3707 → 1279 行，拆出 15 个功能域 hook；`@types/react` 已在依赖里。**仍未做**：`strict: true` —— 打开会暴露大量隐式 `any`，需专项处理，暂缓 |
-| X8 | 测试 / ESLint / CI | 🔶 **部分完成**（2026-09-16）：三层测试（单测 266 项 / 主进程集成 88 项 / Electron 冒烟）与 ESLint + Prettier 均已落地且纳入 `npm run test` / `lint`。**仍未做**：CI —— 本机 `npm install` 与 Electron 沙箱都有环境限制，先不接 |
+| X8 | 测试 / ESLint / CI | 🔶 **部分完成**（2026-09-16）：三层测试（单测 266 项 / 主进程集成 104 项，落地时 88 项 / Electron 冒烟）与 ESLint + Prettier 均已落地且纳入 `npm run test` / `lint`。**仍未做**：CI —— 本机 `npm install` 与 Electron 沙箱都有环境限制，先不接 |
 | X9 | 十万级库 Worker 化压测与调优 | 暂缓。除非库规模真的到十万级 |
 | X10 | 云同步 / Google Photos 等外部集成 | 暂缓。与「纯本地」定位冲突 |
 | X11 | 视频重编码导出 / 转码预览 | 暂缓。依赖 ffmpeg，体积与复杂度陡增；原文件可直接复制 |
@@ -253,6 +254,8 @@
 - **2026-09-16 · 架构重构（CODE_REVIEW P2，9/20）**：`App.tsx` 3707 → 1279 行，拆出 `useAppConfig`、`usePersistedLibraryData`、`useLibraryDerived`、`useLibraryImport`、`useLibrarySources`、`useIngestPipeline`、`useWatcherSync`、`useSelection`、`useFileOperations`、`useFileOpFeedback`、`useDragAndDrop`、`useKeyboardShortcuts`、`useQuickLook`、`useSmartAlbums`、`useCollapseAnimation` 共 15 个 hook；`utils/index.ts` 1024 → 86 行 barrel，实现拆到 `lib/` 下 9 个模块；dHash 收敛为 `electron/lib/dhash.cjs` 单一实现；照片时间语义收敛到 `src/lib/media/photoTime.ts`（12 处内联回退链清空，附静态断言）；搜索索引改 `WeakMap` 预小写缓存；`placeIndex` / `dateKeyCache` 改用真 LRU；存储损坏由静默备份改为 Toast 告知；地名表外置 `places.data.json` + 动态 `import()`（独立 chunk 58.8KB，主 bundle 不再承担）；四个整页视图各挂 `ErrorBoundary` + 共用 `ViewErrorFallback`。详见 `CODE_REVIEW.md` 附录 C / D。
 
 - **2026-09-16 · 冗余清理批次（CODE_REVIEW P2-21 部分 / P2-32）**：抽公共图标库 `src/components/icons/`，收敛 5 组重复定义（返回箭头 3 份 → 1 份、刷新/重置、漏斗、加号各 2 份 → 1 份），尺寸与线宽差异在调用点参数化还原，**行为零变化**；清理 `RenameModal` 的失效 `eslint-disable`；修掉 `useFileOperations` 重命名 replace 分支里模板字符串吞掉 `\.` 的真实瑕疵（改用 `lastIndexOf + slice`）；全量「未使用 import」扫描为 0。详见 `CODE_REVIEW.md` 附录 E。
+
+- **2026-11-05 · 主进程模块化与 AI 密钥边界（CODE_REVIEW 附录 F）**：确认产品定位为**个人自用**，据此不引入 `safeStorage`、签名公证与自动更新等分发向成本。① `electron/main.js` 2,746 → 1,292 行，拆出 `electron/main/` 4 个 .cjs（ai / authorization / media-pipeline / store），31 个 IPC channel 与 preload 双向差集为空、行为零变化，补齐了此前文档滞后 7 周且未提交的重构；② `ai-config-get` 从回传明文 `apiKey` 改为 `hasApiKey` + 尾号掩码，设置弹窗改为「留空 = 保持现有值、清除需显式勾选」，`DetailsPane` 的未配置判断同步改字段；新增 `ai-config-privacy.test.cjs` 16 项钉住读取不泄露、轮换与清除后的状态。三层验证：typecheck / lint / 主进程 104 项 / 单测 266 项 / build 全过。三份文档快照与措辞同步至当前代码。
 
 ### 已核对无需复查的范围（两轮审查结论）
 
