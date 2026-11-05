@@ -112,7 +112,11 @@ function createStore({ userDataDir, logger }) {
     const older = `${target}.bak.1`;
     try {
       // rename 到已存在目标在 POSIX 上是覆盖，无需先 unlink
-      try { await rename(bak, older); } catch { /* 还没有上一版 .bak */ }
+      try {
+        await rename(bak, older);
+      } catch {
+        /* 还没有上一版 .bak */
+      }
       await copyFile(target, bak);
     } catch (error) {
       logger.warn('[store] config 备份轮转失败:', error.message);

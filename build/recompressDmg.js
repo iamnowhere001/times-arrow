@@ -77,7 +77,9 @@ function main() {
 
     const after = fs.statSync(tmpDmg).size;
     if (after >= before) {
-      console.log(`[recompress-dmg] ${TARGET_FORMAT} 未带来收益（${mb(before)} → ${mb(after)}），保留原 DMG`);
+      console.log(
+        `[recompress-dmg] ${TARGET_FORMAT} 未带来收益（${mb(before)} → ${mb(after)}），保留原 DMG`
+      );
       return;
     }
 
@@ -88,7 +90,9 @@ function main() {
     const blockmap = `${target.file}.blockmap`;
     if (fs.existsSync(blockmap)) fs.rmSync(blockmap);
 
-    console.log(`[recompress-dmg] ${target.name}: ${mb(before)} → ${mb(after)}（-${(100 - (after / before) * 100).toFixed(1)}%）`);
+    console.log(
+      `[recompress-dmg] ${target.name}: ${mb(before)} → ${mb(after)}（-${(100 - (after / before) * 100).toFixed(1)}%）`
+    );
   } catch (error) {
     console.warn(`[recompress-dmg] 压缩失败，保留原 DMG：${error.message}`);
   } finally {

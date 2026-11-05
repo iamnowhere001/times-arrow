@@ -73,9 +73,9 @@ export function createLruCache<K, V>(
       return value;
     },
 
-    peek: key => map.get(key),
+    peek: (key) => map.get(key),
 
-    has: key => map.has(key),
+    has: (key) => map.has(key),
 
     set(key, value) {
       if (map.has(key)) map.delete(key);
@@ -126,7 +126,7 @@ export function createLruCache<K, V>(
 const registry: Array<LruCache<unknown, unknown>> = [];
 
 export function registerCache(cache: LruCache<unknown, unknown>): void {
-  if (!registry.some(item => item === cache)) registry.push(cache);
+  if (!registry.some((item) => item === cache)) registry.push(cache);
 }
 
 export interface CacheReleaseReport {
@@ -140,7 +140,10 @@ export interface CacheReleaseReport {
  * - soft：易失缓存裁到一半，常驻缓存仅在接近上限时轻裁；
  * - hard：易失缓存全部清空，常驻缓存裁到 1/4。
  */
-export function releaseMemory(level: ReleaseLevel = 'soft', reason = 'manual'): CacheReleaseReport[] {
+export function releaseMemory(
+  level: ReleaseLevel = 'soft',
+  reason = 'manual'
+): CacheReleaseReport[] {
   const reports: CacheReleaseReport[] = [];
 
   for (const cache of registry) {
@@ -164,7 +167,7 @@ export function releaseMemory(level: ReleaseLevel = 'soft', reason = 'manual'): 
   if (reports.length > 0) {
     logger.info(
       `[cache] release(${level}, ${reason})`,
-      reports.map(r => `${r.name}: ${r.before}→${r.after}`).join(', ')
+      reports.map((r) => `${r.name}: ${r.before}→${r.after}`).join(', ')
     );
   }
   return reports;
@@ -183,7 +186,7 @@ export function installMemoryPressureListener(): () => void {
   const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
   if (!api?.onMemoryPressure) return () => {};
 
-  const off = api.onMemoryPressure(level => {
+  const off = api.onMemoryPressure((level) => {
     releaseMemory(level === 'hard' ? 'hard' : 'soft', 'memory-pressure');
   });
   return typeof off === 'function' ? off : () => {};

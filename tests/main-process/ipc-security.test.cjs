@@ -316,7 +316,11 @@ function isResult(r) {
   // 真正「启动时已损坏」的场景见 storage-recovery.test.cjs ——
   // 那里必须在 require(main.js) 之前就把损坏文件放好，否则会被 ready 的预读缓存吃掉。
   const notices = await call('storage-notices');
-  check('正常启动时不产生损坏通知', notices.ok && notices.data.length === 0, JSON.stringify(notices));
+  check(
+    '正常启动时不产生损坏通知',
+    notices.ok && notices.data.length === 0,
+    JSON.stringify(notices)
+  );
 
   process.exit(summary() === 0 ? 0 : 1);
 })().catch((e) => {

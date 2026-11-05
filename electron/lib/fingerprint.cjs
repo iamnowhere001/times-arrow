@@ -82,9 +82,7 @@ async function computeFileFingerprints(paths, concurrency = 8) {
       if (id) result[filePath] = id;
     }
   };
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, queue.length) }, worker)
-  );
+  await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, worker));
   return result;
 }
 

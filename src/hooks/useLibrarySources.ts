@@ -10,7 +10,15 @@
  * 照片还在列表里、下次启动却不会恢复」的悬空状态）。
  */
 
-import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
 import { LibrarySource, Photo } from '@/types';
 import { logger } from '@/lib/logger';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
@@ -81,11 +89,11 @@ export function useLibrarySources({
     const next = upsertSources(sourcesRef.current, incoming);
     sourcesRef.current = next;
     setSources(next);
-    setUnavailableSourcePaths(prev => {
+    setUnavailableSourcePaths((prev) => {
       if (prev.size === 0) return prev;
       const updated = new Set(prev);
       let changed = false;
-      incoming.forEach(entry => {
+      incoming.forEach((entry) => {
         if (updated.delete(entry.path)) changed = true;
       });
       return changed ? updated : prev;
@@ -102,14 +110,16 @@ export function useLibrarySources({
       return;
     }
     try {
-      const result = await api.checkPaths(list.map(source => source.path));
+      const result = await api.checkPaths(list.map((source) => source.path));
       if (!result.ok) {
         logger.warn('来源可用性检查失败:', result.error);
         return;
       }
       const availability = result.data;
       setUnavailableSourcePaths(
-        new Set(list.filter(source => availability[source.path] === false).map(source => source.path))
+        new Set(
+          list.filter((source) => availability[source.path] === false).map((source) => source.path)
+        )
       );
     } catch (error) {
       logger.warn('来源可用性检查失败:', error);
@@ -123,54 +133,72 @@ export function useLibrarySources({
    * 当前列表里属于这些来源的条目一并移出 —— 否则会留下「来源已移除、
    * 照片还在列表里、下次启动却不会恢复」的悬空状态。
    */
-  const removeSources = useCallback((removed: LibrarySource[]) => {
-    if (removed.length === 0) return;
-    const removedPaths = new Set(removed.map(source => source.path));
-    const dirPrefixes = removed
-      .filter(source => source.kind === 'directory')
-      .map(source => `${source.path}/`);
+  const removeSources = useCallback(
+    (removed: LibrarySource[]) => {
+      if (removed.length === 0) return;
+      const removedPaths = new Set(removed.map((source) => source.path));
+      const dirPrefixes = removed
+        .filter((source) => source.kind === 'directory')
+        .map((source) => `${source.path}/`);
 
-    const next = sourcesRef.current.filter(source => !removedPaths.has(source.path));
-    sourcesRef.current = next;
-    setSources(next);
-    void savePersistedConfig({ sources: next });
-    setUnavailableSourcePaths(prev => {
-      if (prev.size === 0) return prev;
-      const updated = new Set(prev);
-      let changed = false;
-      removedPaths.forEach(path => {
-        if (updated.delete(path)) changed = true;
+      const next = sourcesRef.current.filter((source) => !removedPaths.has(source.path));
+      sourcesRef.current = next;
+      setSources(next);
+      void savePersistedConfig({ sources: next });
+      setUnavailableSourcePaths((prev) => {
+        if (prev.size === 0) return prev;
+        const updated = new Set(prev);
+        let changed = false;
+        removedPaths.forEach((path) => {
+          if (updated.delete(path)) changed = true;
+        });
+        return changed ? updated : prev;
       });
-      return changed ? updated : prev;
-    });
 
-    const targets = photosRef.current.filter(photo => {
-      const p = photo.path;
-      if (!p) return false;
-      return removedPaths.has(p) || dirPrefixes.some(prefix => p.startsWith(prefix));
-    });
-    if (targets.length > 0) {
-      const ids = new Set(targets.map(photo => photo.id));
-      forgetImportedPaths(targets.map(photo => photo.path as string).filter(Boolean));
-      removeWithCollapse(ids);
-      removeIdsFromSelection(ids);
-      pruneDuplicateGroups(ids);
-    }
+      const targets = photosRef.current.filter((photo) => {
+        const p = photo.path;
+        if (!p) return false;
+        return removedPaths.has(p) || dirPrefixes.some((prefix) => p.startsWith(prefix));
+      });
+      if (targets.length > 0) {
+        const ids = new Set(targets.map((photo) => photo.id));
+        forgetImportedPaths(targets.map((photo) => photo.path as string).filter(Boolean));
+        removeWithCollapse(ids);
+        removeIdsFromSelection(ids);
+        pruneDuplicateGroups(ids);
+      }
 
-    // 正在监听的目录属于被移除来源：停止监听，避免继续对已移除来源报外部变动
-    const watched = getWatchedDir();
-    if (watched && (removedPaths.has(watched) || dirPrefixes.some(prefix => watched.startsWith(prefix)))) {
-      unwatchCurrentDir();
-    }
+      // 正在监听的目录属于被移除来源：停止监听，避免继续对已移除来源报外部变动
+      const watched = getWatchedDir();
+      if (
+        watched &&
+        (removedPaths.has(watched) || dirPrefixes.some((prefix) => watched.startsWith(prefix)))
+      ) {
+        unwatchCurrentDir();
+      }
 
-    const label = removed.length === 1 ? `「${basenameOfPath(removed[0].path)}」` : `${removed.length} 个来源`;
-    showToast(
-      targets.length > 0
-        ? `已移除来源${label}，列表中的 ${targets.length} 项一并移出（磁盘文件与收藏 / 标签保留）`
-        : `已移除来源${label}`,
-      'info'
-    );
-  }, [forgetImportedPaths, getWatchedDir, photosRef, pruneDuplicateGroups, removeIdsFromSelection, removeWithCollapse, showToast, unwatchCurrentDir]);
+      const label =
+        removed.length === 1
+          ? `「${basenameOfPath(removed[0].path)}」`
+          : `${removed.length} 个来源`;
+      showToast(
+        targets.length > 0
+          ? `已移除来源${label}，列表中的 ${targets.length} 项一并移出（磁盘文件与收藏 / 标签保留）`
+          : `已移除来源${label}`,
+        'info'
+      );
+    },
+    [
+      forgetImportedPaths,
+      getWatchedDir,
+      photosRef,
+      pruneDuplicateGroups,
+      removeIdsFromSelection,
+      removeWithCollapse,
+      showToast,
+      unwatchCurrentDir,
+    ]
+  );
 
   // 启动时若存在常驻来源：询问是否恢复上次的图库（每个会话只问一次）
   useEffect(() => {

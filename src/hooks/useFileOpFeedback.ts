@@ -56,7 +56,7 @@ export function useFileOpFeedback(): FileOpFeedbackResult {
 
   const reportFileOp = useCallback((done: number, file: string) => {
     fileOpLatestRef.current = { done, file };
-    setFileOpOverlay(prev => (prev ? { ...prev, done, file } : prev));
+    setFileOpOverlay((prev) => (prev ? { ...prev, done, file } : prev));
   }, []);
 
   const endFileOp = useCallback(() => {
@@ -68,9 +68,12 @@ export function useFileOpFeedback(): FileOpFeedbackResult {
     setFileOpOverlay(null);
   }, []);
 
-  useEffect(() => () => {
-    if (fileOpTimerRef.current !== null) window.clearTimeout(fileOpTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (fileOpTimerRef.current !== null) window.clearTimeout(fileOpTimerRef.current);
+    },
+    []
+  );
 
   return { isFileOpBusy, fileOpOverlay, beginFileOp, reportFileOp, endFileOp };
 }

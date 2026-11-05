@@ -118,7 +118,7 @@ export function groupPhotos(photos: Photo[], sortConfig: SortConfig): PhotoGroup
   const groupTimeOf = (photo: Photo): number =>
     sortConfig.key === 'dateModified' ? photo.lastModified : photoTakenTime(photo);
 
-  sorted.forEach(photo => {
+  sorted.forEach((photo) => {
     const key = getDateGroupKey(groupTimeOf(photo), todayKey, yesterdayKey);
 
     if (!groups[key]) {

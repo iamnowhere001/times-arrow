@@ -75,10 +75,7 @@ async function migrateAllStores({ readStore, mergeStore, logger }) {
   const aiCache = await readStore(STORE_AI_CACHE);
 
   // 两个文件都已是 v2 时是 no-op，不能每次启动都重算一遍指纹
-  if (
-    Number(config?.version) >= CONFIG_VERSION &&
-    Number(aiCache?.version) >= CONFIG_VERSION
-  ) {
+  if (Number(config?.version) >= CONFIG_VERSION && Number(aiCache?.version) >= CONFIG_VERSION) {
     return { changed: false, stats: null };
   }
 

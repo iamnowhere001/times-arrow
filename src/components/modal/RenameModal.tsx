@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Photo, RenameOptions } from '@/types';
 import { folderOfPath, formatDateForNaming, repairFileName } from '@/utils';
@@ -45,7 +44,14 @@ interface PreviewResult {
 
 const PREVIEW_MAX_ROWS = 5;
 
-const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, photos, count, isBusy = false }) => {
+const RenameModal: React.FC<RenameModalProps> = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  photos,
+  count,
+  isBusy = false,
+}) => {
   const [mode, setMode] = useState<'sequence' | 'replace' | 'date' | 'repair'>('sequence');
 
   const [prefix, setPrefix] = useState('照片_');
@@ -121,7 +127,13 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
       }
     }
 
-    if (mode === 'repair' && !fixMojibake && !stripJunkPrefix && !stripCopyMarks && !fallbackToDate) {
+    if (
+      mode === 'repair' &&
+      !fixMojibake &&
+      !stripJunkPrefix &&
+      !stripCopyMarks &&
+      !fallbackToDate
+    ) {
       return { rows, error: '请至少启用一条处理规则', truncated: 0, changedCount: 0 };
     }
 
@@ -139,7 +151,7 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
           photoTakenTime(photo)
         );
         to = repaired.name;
-        note = repaired.changed ? (repaired.notes.join('、') || '已处理') : '无需修改';
+        note = repaired.changed ? repaired.notes.join('、') || '已处理' : '无需修改';
       } else if (mode === 'sequence') {
         to = `${prefix}${(startNumber + i).toString().padStart(numberPadding, '0')}${ext}`;
       } else if (mode === 'replace') {
@@ -190,8 +202,20 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
 
     return { rows, error, truncated, changedCount };
   }, [
-    photos, mode, prefix, startNumber, numberPadding, findText, replaceText, useRegex,
-    datePrefix, dateFormat, fixMojibake, stripJunkPrefix, stripCopyMarks, fallbackToDate,
+    photos,
+    mode,
+    prefix,
+    startNumber,
+    numberPadding,
+    findText,
+    replaceText,
+    useRegex,
+    datePrefix,
+    dateFormat,
+    fixMojibake,
+    stripJunkPrefix,
+    stripCopyMarks,
+    fallbackToDate,
   ]);
 
   const canConfirm = !preview.error && photos.length > 0 && !isBusy;
@@ -241,18 +265,21 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
         <div className="px-6 py-5 border-b border-[var(--border-subtle)]">
           <h3 className="text-lg font-semibold text-[var(--text-primary)]">批量重命名</h3>
           <p className="text-sm text-[var(--text-tertiary)] mt-1">
-            将重命名 {count} 个项目（图片 / 视频），磁盘上的文件名会被直接改写（同名时自动追加序号，不会覆盖）。
+            将重命名 {count} 个项目（图片 /
+            视频），磁盘上的文件名会被直接改写（同名时自动追加序号，不会覆盖）。
           </p>
         </div>
 
         <div className="p-6 space-y-5 overflow-y-auto">
           <div className="grid grid-cols-2 gap-1 bg-[var(--bg-input)] p-1 rounded-xl">
-            {([
-              ['sequence', '格式化名称'],
-              ['replace', '替换文本'],
-              ['date', '按拍摄时间命名'],
-              ['repair', '乱码修复'],
-            ] as const).map(([value, label]) => (
+            {(
+              [
+                ['sequence', '格式化名称'],
+                ['replace', '替换文本'],
+                ['date', '按拍摄时间命名'],
+                ['repair', '乱码修复'],
+              ] as const
+            ).map(([value, label]) => (
               <button
                 key={value}
                 onClick={() => setMode(value)}
@@ -273,7 +300,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
             <div className="space-y-5 animate-fadeIn">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">名称前缀</label>
+                  <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                    名称前缀
+                  </label>
                   <input
                     type="text"
                     value={prefix}
@@ -283,7 +312,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">起始编号</label>
+                  <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                    起始编号
+                  </label>
                   <input
                     type="number"
                     value={startNumber}
@@ -299,7 +330,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">编号位数</label>
+                <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                  编号位数
+                </label>
                 <div className="flex gap-2">
                   {[1, 2, 3, 4, 5].map((digits) => (
                     <button
@@ -321,7 +354,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
             <div className="space-y-5 animate-fadeIn">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">名称前缀</label>
+                  <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                    名称前缀
+                  </label>
                   <input
                     type="text"
                     value={datePrefix}
@@ -331,7 +366,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">日期格式</label>
+                  <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                    日期格式
+                  </label>
                   <input
                     type="text"
                     value={dateFormat}
@@ -343,7 +380,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">可用占位符</label>
+                <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                  可用占位符
+                </label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     ['yyyy', '年份 (4位)'],
@@ -355,11 +394,19 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                   ].map(([token, desc]) => (
                     <button
                       key={token}
-                      onClick={() => setDateFormat((f) => (f.includes(token) ? f : f + (f.endsWith('_') || f === '' ? token : `_${token}`)))}
+                      onClick={() =>
+                        setDateFormat((f) =>
+                          f.includes(token)
+                            ? f
+                            : f + (f.endsWith('_') || f === '' ? token : `_${token}`)
+                        )
+                      }
                       className="flex items-center gap-1.5 px-2 py-1.5 bg-[var(--bg-input)] border border-[var(--border-subtle)] rounded-lg hover:border-[var(--accent-blue)] transition-all text-left"
                       title={`点击插入 ${token}`}
                     >
-                      <span className="px-1.5 py-0.5 bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--accent-cyan)] rounded-md text-xs font-mono">{token}</span>
+                      <span className="px-1.5 py-0.5 bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--accent-cyan)] rounded-md text-xs font-mono">
+                        {token}
+                      </span>
                       <span className="text-xs text-[var(--text-tertiary)] truncate">{desc}</span>
                     </button>
                   ))}
@@ -369,38 +416,42 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
           ) : mode === 'repair' ? (
             <div className="space-y-5 animate-fadeIn">
               <div>
-                <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">处理规则</label>
+                <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                  处理规则
+                </label>
                 <div className="space-y-2">
-                  {([
-                    {
-                      id: 'fixMojibake',
-                      checked: fixMojibake,
-                      onChange: setFixMojibake,
-                      title: '修复乱码字符',
-                      desc: '如「æµ·æ»¨」「º£±õ」还原为中文（编码被错误解码造成）',
-                    },
-                    {
-                      id: 'stripJunkPrefix',
-                      checked: stripJunkPrefix,
-                      onChange: setStripJunkPrefix,
-                      title: '去掉无意义前缀',
-                      desc: '如 IMG_2639、DSC01234、mmexport1712… 这类自动命名',
-                    },
-                    {
-                      id: 'stripCopyMarks',
-                      checked: stripCopyMarks,
-                      onChange: setStripCopyMarks,
-                      title: '去掉重复标记',
-                      desc: '如「照片 (1)」「照片 - 副本」「照片 copy 2」',
-                    },
-                    {
-                      id: 'fallbackToDate',
-                      checked: fallbackToDate,
-                      onChange: setFallbackToDate,
-                      title: '无意义时改用拍摄时间',
-                      desc: '清理后只剩数字或符号的名称，按拍摄时间重新命名',
-                    },
-                  ] as const).map((rule) => (
+                  {(
+                    [
+                      {
+                        id: 'fixMojibake',
+                        checked: fixMojibake,
+                        onChange: setFixMojibake,
+                        title: '修复乱码字符',
+                        desc: '如「æµ·æ»¨」「º£±õ」还原为中文（编码被错误解码造成）',
+                      },
+                      {
+                        id: 'stripJunkPrefix',
+                        checked: stripJunkPrefix,
+                        onChange: setStripJunkPrefix,
+                        title: '去掉无意义前缀',
+                        desc: '如 IMG_2639、DSC01234、mmexport1712… 这类自动命名',
+                      },
+                      {
+                        id: 'stripCopyMarks',
+                        checked: stripCopyMarks,
+                        onChange: setStripCopyMarks,
+                        title: '去掉重复标记',
+                        desc: '如「照片 (1)」「照片 - 副本」「照片 copy 2」',
+                      },
+                      {
+                        id: 'fallbackToDate',
+                        checked: fallbackToDate,
+                        onChange: setFallbackToDate,
+                        title: '无意义时改用拍摄时间',
+                        desc: '清理后只剩数字或符号的名称，按拍摄时间重新命名',
+                      },
+                    ] as const
+                  ).map((rule) => (
                     <label
                       key={rule.id}
                       htmlFor={rule.id}
@@ -414,8 +465,12 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                         className="mt-0.5 rounded-sm border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] focus:ring-[rgba(var(--accent-blue-rgb),0.5)] cursor-pointer accent-[var(--accent-blue)]"
                       />
                       <span className="min-w-0">
-                        <span className="block text-sm text-[var(--text-secondary)]">{rule.title}</span>
-                        <span className="block text-xs text-[var(--text-quaternary)] mt-0.5">{rule.desc}</span>
+                        <span className="block text-sm text-[var(--text-secondary)]">
+                          {rule.title}
+                        </span>
+                        <span className="block text-xs text-[var(--text-quaternary)] mt-0.5">
+                          {rule.desc}
+                        </span>
                       </span>
                     </label>
                   ))}
@@ -425,7 +480,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
               {fallbackToDate && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">名称前缀</label>
+                    <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                      名称前缀
+                    </label>
                     <input
                       type="text"
                       value={datePrefix}
@@ -435,7 +492,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">日期格式</label>
+                    <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                      日期格式
+                    </label>
                     <input
                       type="text"
                       value={dateFormat}
@@ -450,7 +509,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
           ) : (
             <div className="space-y-5 animate-fadeIn">
               <div>
-                <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">查找</label>
+                <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                  查找
+                </label>
                 <input
                   type="text"
                   value={findText}
@@ -465,7 +526,9 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">替换为</label>
+                <label className="block text-sm font-medium text-[var(--text-tertiary)] mb-2">
+                  替换为
+                </label>
                 <input
                   type="text"
                   value={replaceText}
@@ -483,7 +546,12 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                   onChange={(e) => setUseRegex(e.target.checked)}
                   className="rounded-sm border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] focus:ring-[rgba(var(--accent-blue-rgb),0.5)] cursor-pointer accent-[var(--accent-blue)]"
                 />
-                <label htmlFor="useRegex" className="text-sm text-[var(--text-secondary)] select-none cursor-pointer">使用正则表达式</label>
+                <label
+                  htmlFor="useRegex"
+                  className="text-sm text-[var(--text-secondary)] select-none cursor-pointer"
+                >
+                  使用正则表达式
+                </label>
               </div>
             </div>
           )}
@@ -509,23 +577,34 @@ const RenameModal: React.FC<RenameModalProps> = ({ isOpen, onClose, onConfirm, p
                   {preview.rows.map((row, idx) => (
                     <div key={`${row.from}-${idx}`} className="min-w-0">
                       <div className="flex items-center gap-2 text-xs font-mono min-w-0">
-                        <span className="text-[var(--text-tertiary)] truncate max-w-[38%]" title={row.from}>{row.from}</span>
+                        <span
+                          className="text-[var(--text-tertiary)] truncate max-w-[38%]"
+                          title={row.from}
+                        >
+                          {row.from}
+                        </span>
                         <span className="text-[var(--text-quaternary)] shrink-0">→</span>
                         <span
                           className={`truncate ${row.from === row.to ? 'text-[var(--text-quaternary)]' : 'text-[var(--text-primary)]'}`}
                           title={row.to}
                         >
                           {row.to}
-                          {row.adjusted && <span className="text-[var(--accent-cyan)]"> （重名已加序号）</span>}
+                          {row.adjusted && (
+                            <span className="text-[var(--accent-cyan)]"> （重名已加序号）</span>
+                          )}
                         </span>
                       </div>
                       {row.note && (
-                        <p className="text-[10px] text-[var(--text-quaternary)] mt-0.5 truncate">· {row.note}</p>
+                        <p className="text-[10px] text-[var(--text-quaternary)] mt-0.5 truncate">
+                          · {row.note}
+                        </p>
                       )}
                     </div>
                   ))}
                   {preview.truncated > 0 && (
-                    <p className="text-xs text-[var(--text-quaternary)]">…等共 {photos.length} 项</p>
+                    <p className="text-xs text-[var(--text-quaternary)]">
+                      …等共 {photos.length} 项
+                    </p>
                   )}
                 </div>
               </>

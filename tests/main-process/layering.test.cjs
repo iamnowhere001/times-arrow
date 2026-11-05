@@ -99,7 +99,8 @@ check(
   hooksToComponentsHits.length === 0,
   hooksToComponentsHits.map((h) => `${h.file}:${h.line}`).join('；')
 );
-for (const hit of hooksToComponentsHits) console.log(`        ${hit.file}:${hit.line}  ${hit.text}`);
+for (const hit of hooksToComponentsHits)
+  console.log(`        ${hit.file}:${hit.line}  ${hit.text}`);
 
 section('2. src/lib 不得 import 上层聚合 barrel @/utils');
 const libBarrelHits = scan(libFiles, /from ['"]@\/utils['"]/);

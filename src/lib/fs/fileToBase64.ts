@@ -22,6 +22,6 @@ export const fileToBase64 = (file: File): Promise<string> => {
       const base64 = result.split(',')[1];
       resolve(base64);
     };
-    reader.onerror = error => reject(error);
+    reader.onerror = (error) => reject(error);
   });
 };

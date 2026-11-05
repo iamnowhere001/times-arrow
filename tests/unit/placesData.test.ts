@@ -103,7 +103,11 @@ describe('places.data.json 数据完整性', () => {
         continue;
       }
       const [longitude, latitude, name, sub, rank] = cells;
-      if (typeof longitude !== 'number' || !Number.isFinite(longitude) || Math.abs(longitude) > 180) {
+      if (
+        typeof longitude !== 'number' ||
+        !Number.isFinite(longitude) ||
+        Math.abs(longitude) > 180
+      ) {
         offenders.push(`${where} 经度非法: ${String(longitude)}`);
       }
       if (typeof latitude !== 'number' || !Number.isFinite(latitude) || Math.abs(latitude) > 90) {

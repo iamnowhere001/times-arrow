@@ -77,7 +77,8 @@ describe('@/utils 的公开 API 完整性', () => {
 
   it('函数类导出都是可调用的', () => {
     const fnNames = EXPECTED_EXPORTS.filter(
-      (name) => !/^[A-Z_]+$/.test(name) && !name.endsWith('Error') && name !== 'DuplicateScanAbortError'
+      (name) =>
+        !/^[A-Z_]+$/.test(name) && !name.endsWith('Error') && name !== 'DuplicateScanAbortError'
     ).filter((name) => typeof (utils as Record<string, unknown>)[name] === 'function');
     // 常量（Set / 正则等）不是函数，这里只要求「是函数的那些确实可调用」
     expect(fnNames.length).toBeGreaterThan(20);
@@ -95,8 +96,12 @@ describe('@/utils 只做再导出', () => {
     // 不允许：function 声明、class 声明、箭头函数赋值、const/let 定义。
     expect(source, 'barrel 里出现了函数实现').not.toMatch(/^\s*(?:export\s+)?function\s/m);
     expect(source, 'barrel 里出现了类实现').not.toMatch(/^\s*(?:export\s+)?class\s/m);
-    expect(source, 'barrel 里出现了箭头函数实现').not.toMatch(/^\s*(?:export\s+)?const\s+\w+\s*=\s*(?:async\s*)?\(/m);
-    expect(source, 'barrel 里出现了常量定义').not.toMatch(/^\s*(?:export\s+)?const\s+\w+\s*=\s*[^;]*;/m);
+    expect(source, 'barrel 里出现了箭头函数实现').not.toMatch(
+      /^\s*(?:export\s+)?const\s+\w+\s*=\s*(?:async\s*)?\(/m
+    );
+    expect(source, 'barrel 里出现了常量定义').not.toMatch(
+      /^\s*(?:export\s+)?const\s+\w+\s*=\s*[^;]*;/m
+    );
   });
 
   it('每一段语句都是 import 或 export', () => {

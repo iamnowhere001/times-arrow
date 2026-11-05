@@ -105,12 +105,12 @@ export function useLibraryDerived({
 
   // groupedPhotos 内部已完成排序，这里直接展开，避免对同一份数据重复排序
   const sortedPhotos = useMemo(
-    () => groupedPhotos.flatMap(group => group.photos),
+    () => groupedPhotos.flatMap((group) => group.photos),
     [groupedPhotos]
   );
 
   const timelinePhotos = useMemo(
-    () => sortPhotosByTimeline(photos.filter(p => !p.isHidden)),
+    () => sortPhotosByTimeline(photos.filter((p) => !p.isHidden)),
     [photos]
   );
 
@@ -173,7 +173,7 @@ export function useLibraryDerived({
 
   /** 当前视图恰好等价于哪个相簿（用于侧栏高亮） */
   const activeAlbumId = useMemo(
-    () => albums.find(album => filtersEqual(album.filters, filters))?.id ?? null,
+    () => albums.find((album) => filtersEqual(album.filters, filters))?.id ?? null,
     [albums, filters]
   );
 
@@ -181,7 +181,7 @@ export function useLibraryDerived({
   // 口径必须与 matchesFilters 一致 —— 隐藏项本来就不会出现在结果里，
   // 若把「只存在于隐藏项」的相机 / 标签列成可选，用户选中后必然得到 0 条结果。
   const filterOptions = useMemo(() => {
-    const candidates = photos.filter(p => !p.isHidden);
+    const candidates = photos.filter((p) => !p.isHidden);
     return { ...buildFilterOptions(candidates), tags: buildTagOptions(candidates) };
   }, [photos]);
 

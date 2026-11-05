@@ -38,7 +38,9 @@ export const ThumbImage: React.FC<{
           preload="metadata"
           muted
           playsInline
-          onLoadedMetadata={e => reportVideoMetaFromElement(videoMetaKeyOf(photo), e.currentTarget)}
+          onLoadedMetadata={(e) =>
+            reportVideoMetaFromElement(videoMetaKeyOf(photo), e.currentTarget)
+          }
           className={className}
           aria-label={alt ?? photo.name}
         />

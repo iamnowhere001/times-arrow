@@ -21,29 +21,35 @@ export function useToasts(): UseToastsResult {
   const [toasts, setToasts] = useState<ToastData[]>([]);
   const toastIdRef = useRef(0);
 
-  const showToast = useCallback((
-    message: string,
-    type: ToastType = 'info',
-    /** 可选操作按钮（如「重试」）：带按钮的 Toast 不会自动消失 */
-    action?: ToastAction
-  ) => {
-    const id = ++toastIdRef.current;
-    setToasts(prev => {
-      const next = [...prev, { id, message, type, action }];
-      if (next.length <= MAX_TOASTS) return next;
+  const showToast = useCallback(
+    (
+      message: string,
+      type: ToastType = 'info',
+      /** 可选操作按钮（如「重试」）：带按钮的 Toast 不会自动消失 */
+      action?: ToastAction
+    ) => {
+      const id = ++toastIdRef.current;
+      setToasts((prev) => {
+        const next = [...prev, { id, message, type, action }];
+        if (next.length <= MAX_TOASTS) return next;
 
-      // 超限时优先淘汰「不带操作按钮」的旧条目。
-      // 直接砍最早一条的话，带「重试」的失败提示会被后来的普通提示静默顶掉，
-      // 用户就失去了唯一的恢复入口（只有最后一条不参与淘汰）。
-      const candidates = next.slice(0, -1);
-      const index = Math.max(0, candidates.findIndex(t => !t.action));
-      next.splice(index, 1);
-      return next;
-    });
-  }, []);
+        // 超限时优先淘汰「不带操作按钮」的旧条目。
+        // 直接砍最早一条的话，带「重试」的失败提示会被后来的普通提示静默顶掉，
+        // 用户就失去了唯一的恢复入口（只有最后一条不参与淘汰）。
+        const candidates = next.slice(0, -1);
+        const index = Math.max(
+          0,
+          candidates.findIndex((t) => !t.action)
+        );
+        next.splice(index, 1);
+        return next;
+      });
+    },
+    []
+  );
 
   const dismissToast = useCallback((id: number) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   return { toasts, showToast, dismissToast };

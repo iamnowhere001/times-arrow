@@ -10,7 +10,15 @@
  * 目录扫描、来源记录、恢复图库等「编排」逻辑不在这里，见 hooks/useLibraryImport。
  */
 
-import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
 import { logger } from '@/lib/logger';
 import { assetKeyOf } from '@/lib/media/photoIdentity';
 import { AiCacheEntry, Photo } from '@/types';
@@ -61,7 +69,10 @@ export interface IngestPipelineResult {
   /** 元数据（尺寸 / EXIF / 拍摄时间）批量补齐：主进程一次读取，渲染层按批合并成一次 setState */
   loadMetadata: (targets: Photo[]) => Promise<void>;
   /** 统一导入管线：只登记「磁盘路径 + pm:// 原图地址」，返回真正加入列表的条目数 */
-  ingestFiles: (infos: FileInfo[], onProgress?: (done: number, total: number) => void) => Promise<number>;
+  ingestFiles: (
+    infos: FileInfo[],
+    onProgress?: (done: number, total: number) => void
+  ) => Promise<number>;
 }
 
 export function useIngestPipeline({
@@ -152,163 +163,181 @@ export function useIngestPipeline({
 
   // 元数据（尺寸 / EXIF / 拍摄时间）批量补齐：
   // 主进程一次读取返回全部信息，渲染层按批合并成一次 setState
-  const loadMetadata = useCallback(async (targets: Photo[]) => {
-    if (!window.electronAPI || targets.length === 0) return;
+  const loadMetadata = useCallback(
+    async (targets: Photo[]) => {
+      if (!window.electronAPI || targets.length === 0) return;
 
-    // 节流合并提交：每次 setPhotos 都会触发全量排序 + 分组，
-    // 逐小批提交在大库下会产生上百次 O(n log n) 重排。
-    const FLUSH_INTERVAL = 400;
-    let pending = new Map<string, Partial<Photo>>();
-    let scheduled = false;
-    let lastFlush = 0;
+      // 节流合并提交：每次 setPhotos 都会触发全量排序 + 分组，
+      // 逐小批提交在大库下会产生上百次 O(n log n) 重排。
+      const FLUSH_INTERVAL = 400;
+      let pending = new Map<string, Partial<Photo>>();
+      let scheduled = false;
+      let lastFlush = 0;
 
-    const flush = () => {
-      scheduled = false;
-      lastFlush = Date.now();
-      if (pending.size === 0) return;
+      const flush = () => {
+        scheduled = false;
+        lastFlush = Date.now();
+        if (pending.size === 0) return;
 
-      const patch = pending;
-      pending = new Map();
-      setPhotos(prev =>
-        prev.map(p => {
-          const update = patch.get(p.id);
-          return update ? { ...p, ...update } : p;
-        })
-      );
-    };
+        const patch = pending;
+        pending = new Map();
+        setPhotos((prev) =>
+          prev.map((p) => {
+            const update = patch.get(p.id);
+            return update ? { ...p, ...update } : p;
+          })
+        );
+      };
 
-    const scheduleFlush = () => {
-      if (scheduled) return;
-      scheduled = true;
-      const wait = Math.max(0, FLUSH_INTERVAL - (Date.now() - lastFlush));
-      window.setTimeout(flush, wait);
-    };
+      const scheduleFlush = () => {
+        if (scheduled) return;
+        scheduled = true;
+        const wait = Math.max(0, FLUSH_INTERVAL - (Date.now() - lastFlush));
+        window.setTimeout(flush, wait);
+      };
 
-    await mapWithConcurrency(targets, 8, async photo => {
-      if (!photo.path) return;
-      try {
-        const metaRes = await window.electronAPI.getMetadata(photo.path);
-        // 拿不到元数据（未授权 / 已删除 / 解码失败）只是少了几项信息，不打断整批导入
-        if (!metaRes.ok) return;
-        const meta = metaRes.data;
-        if (!meta.dimensions && !meta.dateTaken && !meta.exif) return;
+      await mapWithConcurrency(targets, 8, async (photo) => {
+        if (!photo.path) return;
+        try {
+          const metaRes = await window.electronAPI.getMetadata(photo.path);
+          // 拿不到元数据（未授权 / 已删除 / 解码失败）只是少了几项信息，不打断整批导入
+          if (!metaRes.ok) return;
+          const meta = metaRes.data;
+          if (!meta.dimensions && !meta.dateTaken && !meta.exif) return;
 
-        const updates: Partial<Photo> = {};
-        if (meta.dimensions) updates.dimensions = meta.dimensions;
-        if (meta.exif) updates.exif = meta.exif;
-        // 手动修正过的时间优先于 EXIF，避免被读盘结果覆盖
-        const override = dateOverridesRef.current.get(assetKeyOf(photo));
-        if (override !== undefined) {
-          updates.dateTaken = override;
-          updates.dateAdjusted = true;
-        } else if (meta.dateTaken) {
-          updates.dateTaken = meta.dateTaken;
+          const updates: Partial<Photo> = {};
+          if (meta.dimensions) updates.dimensions = meta.dimensions;
+          if (meta.exif) updates.exif = meta.exif;
+          // 手动修正过的时间优先于 EXIF，避免被读盘结果覆盖
+          const override = dateOverridesRef.current.get(assetKeyOf(photo));
+          if (override !== undefined) {
+            updates.dateTaken = override;
+            updates.dateAdjusted = true;
+          } else if (meta.dateTaken) {
+            updates.dateTaken = meta.dateTaken;
+          }
+
+          pending.set(photo.id, updates);
+          scheduleFlush();
+        } catch {
+          /* 单张失败不影响整体导入 */
         }
+      });
 
-        pending.set(photo.id, updates);
-        scheduleFlush();
-      } catch {
-        /* 单张失败不影响整体导入 */
-      }
-    });
-
-    // 收尾：提交剩余更新
-    flush();
-  }, [dateOverridesRef, setPhotos]);
+      // 收尾：提交剩余更新
+      flush();
+    },
+    [dateOverridesRef, setPhotos]
+  );
 
   // 统一导入管线：
   // 只向主进程索取「磁盘缩略图 + pm:// 原图地址」，不再把整张图片以 base64 读进内存
   // 只登记「磁盘路径 + pm:// 原图地址」，缩略图改为卡片进入视口时按需生成。
   // 这样几万张也能秒级入库，且不会一次性占满 CPU / 磁盘缓存。
-  const ingestFiles = useCallback(async (
-    infos: FileInfo[],
-    /** 每批提交后回调（已处理数 / 总数），供遮罩显示真实进度 */
-    onProgress?: (done: number, total: number) => void
-  ): Promise<number> => {
-    if (!infos || infos.length === 0) return 0;
+  const ingestFiles = useCallback(
+    async (
+      infos: FileInfo[],
+      /** 每批提交后回调（已处理数 / 总数），供遮罩显示真实进度 */
+      onProgress?: (done: number, total: number) => void
+    ): Promise<number> => {
+      if (!infos || infos.length === 0) return 0;
 
-    // 按路径去重，重复打开同一目录时不再产生重复条目
-    const fresh = infos.filter(info => !importedPathsRef.current.has(info.path));
-    if (fresh.length === 0) return 0;
+      // 按路径去重，重复打开同一目录时不再产生重复条目
+      const fresh = infos.filter((info) => !importedPathsRef.current.has(info.path));
+      if (fresh.length === 0) return 0;
 
-    const total = fresh.length;
+      const total = fresh.length;
 
-    // 内容指纹是标注资产跨重启的身份：一次性批量向主进程索取，避免逐文件 IPC。
-    // 算不出的路径（读取失败 / 未授权）降级成 path: 前缀的稳定键，不让整批入库失败。
-    let fileIds: Record<string, string> = {};
-    try {
-      const res = await window.electronAPI?.computeFileIds?.(fresh.map(info => info.path));
-      if (res?.ok) fileIds = res.data ?? {};
-    } catch (error) {
-      logger.warn('内容指纹计算失败，本次入库退化为按路径关联:', error);
-    }
-
-    const session = Date.now();
-    const controller = new AbortController();
-    importAbortRef.current = controller;
-    const isCancelled = () => controller.signal.aborted || cancelRequestedRef.current;
-
-    const created: Photo[] = [];
-    // 分批提交：每批一次 setState（每次都会触发全量排序 / 分组），批越大重排次数越少
-    const COMMIT_SIZE = 2000;
-
-    try {
-      for (let start = 0; start < total; start += COMMIT_SIZE) {
-        if (isCancelled()) break;
-
-        const end = Math.min(start + COMMIT_SIZE, total);
-        const batch: Photo[] = [];
-        for (let i = start; i < end; i += 1) {
-          const info = fresh[i];
-          const fileId = fileIds[info.path] || `path:${info.path}`;
-          const photo: Omit<Photo, 'isFavorite'> = {
-            id: `photo-${session}-${i}`,
-            fileId,
-            name: info.name,
-            url: pmFileUrl(info.path),
-            path: info.path,
-            size: info.size,
-            type: mediaMimeType(info.name),
-            kind: mediaKindOf(info.name),
-            lastModified: info.mtime,
-            dateCreated: info.created || undefined,
-          };
-          // 标注资产一律按内容指纹关联；文件挪过位置也能自动找回
-          const key = assetKeyOf(photo);
-          const override = dateOverridesRef.current.get(key);
-          const video = getVideoMeta(key);
-          const ai = aiCacheRef.current.get(key);
-          batch.push({
-            ...photo,
-            isFavorite: favoritesRef.current.has(key),
-            isHidden: hiddenRef.current.has(key) || undefined,
-            tags: tagsRef.current.get(key),
-            ...(override !== undefined ? { dateTaken: override, dateAdjusted: true } : null),
-            ...(video
-              ? { duration: video.duration, dimensions: { width: video.width, height: video.height } }
-              : null),
-            ...(ai ? { aiDescription: ai.description, aiTags: ai.tags } : null),
-          });
-        }
-
-        // 只有真正进入列表的路径才标记为已导入，取消后可以重新添加
-        batch.forEach(photo => importedPathsRef.current.add(photo.path as string));
-        created.push(...batch);
-        setPhotos(prev => prev.concat(batch));
-        onProgress?.(end, total);
-
-        // 让出主线程：保证进度条与「取消」按钮始终可响应
-        await new Promise(resolve => setTimeout(resolve, 0));
+      // 内容指纹是标注资产跨重启的身份：一次性批量向主进程索取，避免逐文件 IPC。
+      // 算不出的路径（读取失败 / 未授权）降级成 path: 前缀的稳定键，不让整批入库失败。
+      let fileIds: Record<string, string> = {};
+      try {
+        const res = await window.electronAPI?.computeFileIds?.(fresh.map((info) => info.path));
+        if (res?.ok) fileIds = res.data ?? {};
+      } catch (error) {
+        logger.warn('内容指纹计算失败，本次入库退化为按路径关联:', error);
       }
-    } finally {
-      if (importAbortRef.current === controller) importAbortRef.current = null;
-    }
 
-    // 元数据后台补齐，不阻塞首屏
-    loadMetadata(created);
+      const session = Date.now();
+      const controller = new AbortController();
+      importAbortRef.current = controller;
+      const isCancelled = () => controller.signal.aborted || cancelRequestedRef.current;
 
-    return created.length;
-  }, [aiCacheRef, dateOverridesRef, favoritesRef, hiddenRef, importedPathsRef, loadMetadata, setPhotos, tagsRef]);
+      const created: Photo[] = [];
+      // 分批提交：每批一次 setState（每次都会触发全量排序 / 分组），批越大重排次数越少
+      const COMMIT_SIZE = 2000;
+
+      try {
+        for (let start = 0; start < total; start += COMMIT_SIZE) {
+          if (isCancelled()) break;
+
+          const end = Math.min(start + COMMIT_SIZE, total);
+          const batch: Photo[] = [];
+          for (let i = start; i < end; i += 1) {
+            const info = fresh[i];
+            const fileId = fileIds[info.path] || `path:${info.path}`;
+            const photo: Omit<Photo, 'isFavorite'> = {
+              id: `photo-${session}-${i}`,
+              fileId,
+              name: info.name,
+              url: pmFileUrl(info.path),
+              path: info.path,
+              size: info.size,
+              type: mediaMimeType(info.name),
+              kind: mediaKindOf(info.name),
+              lastModified: info.mtime,
+              dateCreated: info.created || undefined,
+            };
+            // 标注资产一律按内容指纹关联；文件挪过位置也能自动找回
+            const key = assetKeyOf(photo);
+            const override = dateOverridesRef.current.get(key);
+            const video = getVideoMeta(key);
+            const ai = aiCacheRef.current.get(key);
+            batch.push({
+              ...photo,
+              isFavorite: favoritesRef.current.has(key),
+              isHidden: hiddenRef.current.has(key) || undefined,
+              tags: tagsRef.current.get(key),
+              ...(override !== undefined ? { dateTaken: override, dateAdjusted: true } : null),
+              ...(video
+                ? {
+                    duration: video.duration,
+                    dimensions: { width: video.width, height: video.height },
+                  }
+                : null),
+              ...(ai ? { aiDescription: ai.description, aiTags: ai.tags } : null),
+            });
+          }
+
+          // 只有真正进入列表的路径才标记为已导入，取消后可以重新添加
+          batch.forEach((photo) => importedPathsRef.current.add(photo.path as string));
+          created.push(...batch);
+          setPhotos((prev) => prev.concat(batch));
+          onProgress?.(end, total);
+
+          // 让出主线程：保证进度条与「取消」按钮始终可响应
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      } finally {
+        if (importAbortRef.current === controller) importAbortRef.current = null;
+      }
+
+      // 元数据后台补齐，不阻塞首屏
+      loadMetadata(created);
+
+      return created.length;
+    },
+    [
+      aiCacheRef,
+      dateOverridesRef,
+      favoritesRef,
+      hiddenRef,
+      importedPathsRef,
+      loadMetadata,
+      setPhotos,
+      tagsRef,
+    ]
+  );
 
   return {
     loading,

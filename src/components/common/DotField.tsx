@@ -74,7 +74,12 @@ interface DotGridProps {
  * 均匀点阵底纹：无语义，只作「点阵语言」的底噪。
  * 用于加载占位这类需要一点质感、但不应传达信息的场合。
  */
-export const DotGrid: React.FC<DotGridProps> = ({ cols = 24, rows = 6, className, opacity = 1 }) => {
+export const DotGrid: React.FC<DotGridProps> = ({
+  cols = 24,
+  rows = 6,
+  className,
+  opacity = 1,
+}) => {
   const { d, viewBox, aspect } = useMemo(() => {
     const grid = buildUniformGrid(cols, rows);
     return {
@@ -131,13 +136,7 @@ const PIN_PATH = (() => {
 
 /** 点阵定位销图标：与侧栏其它图标同尺寸（18px），viewBox 7 × 9 */
 export const DotPinIcon = ({ size = 18 }: { size?: number }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 7 9"
-    fill="none"
-    aria-hidden="true"
-  >
+  <svg width={size} height={size} viewBox="0 0 7 9" fill="none" aria-hidden="true">
     <path d={PIN_PATH} fill="currentColor" />
   </svg>
 );

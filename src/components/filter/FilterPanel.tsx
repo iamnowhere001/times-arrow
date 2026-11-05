@@ -91,7 +91,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       className="absolute right-0 top-full mt-2 z-50 w-[336px] max-w-[calc(100vw-24px)] max-h-[72vh] overflow-y-auto custom-scrollbar rounded-2xl border border-[var(--border-default)] bg-[var(--bg-elevated)] backdrop-blur-xl shadow-2xl p-4 space-y-4 animate-fadeIn"
       role="dialog"
       aria-label="筛选条件"
-      onClick={e => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
     >
       {/* 范围：收藏 + 媒体类型 */}
       <section>
@@ -106,9 +106,11 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           </Chip>
         </div>
 
-        <span className="block text-xs font-medium text-[var(--text-secondary)] mt-3 mb-2">媒体类型</span>
+        <span className="block text-xs font-medium text-[var(--text-secondary)] mt-3 mb-2">
+          媒体类型
+        </span>
         <div className="flex flex-wrap gap-1.5">
-          {MEDIA_FILTER_OPTIONS.map(value => (
+          {MEDIA_FILTER_OPTIONS.map((value) => (
             <Chip
               key={value}
               active={filters.mediaFilter === value}
@@ -132,7 +134,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           日期范围
         </SectionTitle>
         <div className="flex flex-wrap gap-1.5 mb-2">
-          {DATE_PRESET_OPTIONS.map(option => (
+          {DATE_PRESET_OPTIONS.map((option) => (
             <Chip
               key={option.value}
               active={datePreset === option.value}
@@ -147,7 +149,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             type="date"
             value={toDateInputValue(filters.dateFrom)}
             max={toDateInputValue(filters.dateTo) || undefined}
-            onChange={e => onChange({ dateFrom: startOfDayFromInput(e.target.value) })}
+            onChange={(e) => onChange({ dateFrom: startOfDayFromInput(e.target.value) })}
             className="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
             aria-label="起始日期"
           />
@@ -156,7 +158,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             type="date"
             value={toDateInputValue(filters.dateTo)}
             min={toDateInputValue(filters.dateFrom) || undefined}
-            onChange={e => onChange({ dateTo: endOfDayFromInput(e.target.value) })}
+            onChange={(e) => onChange({ dateTo: endOfDayFromInput(e.target.value) })}
             className="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
             aria-label="结束日期"
           />
@@ -170,10 +172,12 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       <section className="pt-4 border-t border-[var(--border-subtle)]">
         <SectionTitle>相机 / 机型</SectionTitle>
         {options.cameras.length === 0 ? (
-          <p className="text-[11px] text-[var(--text-quaternary)]">当前图库暂无可用的相机信息（EXIF）。</p>
+          <p className="text-[11px] text-[var(--text-quaternary)]">
+            当前图库暂无可用的相机信息（EXIF）。
+          </p>
         ) : (
           <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto custom-scrollbar">
-            {options.cameras.map(camera => (
+            {options.cameras.map((camera) => (
               <Chip
                 key={camera}
                 active={filters.cameras.includes(camera)}
@@ -191,7 +195,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       <section className="pt-4 border-t border-[var(--border-subtle)]">
         <SectionTitle>格式</SectionTitle>
         <div className="flex flex-wrap gap-1.5">
-          {options.formats.map(format => (
+          {options.formats.map((format) => (
             <Chip
               key={format}
               active={filters.formats.includes(format)}
@@ -212,7 +216,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           </p>
         ) : (
           <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto custom-scrollbar">
-            {options.tags.map(tag => (
+            {options.tags.map((tag) => (
               <Chip
                 key={tag}
                 active={filters.tags.includes(tag)}
@@ -229,7 +233,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       <section className="pt-4 border-t border-[var(--border-subtle)]">
         <SectionTitle>文件大小</SectionTitle>
         <div className="flex flex-wrap gap-1.5">
-          {SIZE_FILTER_OPTIONS.map(option => (
+          {SIZE_FILTER_OPTIONS.map((option) => (
             <Chip
               key={option.value}
               active={filters.sizeFilter === option.value}
@@ -246,7 +250,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         <section className="pt-4 border-t border-[var(--border-subtle)]">
           <SectionTitle>视频时长</SectionTitle>
           <div className="flex flex-wrap gap-1.5">
-            {DURATION_FILTER_OPTIONS.map(option => (
+            {DURATION_FILTER_OPTIONS.map((option) => (
               <Chip
                 key={option.value}
                 active={filters.durationFilter === option.value}

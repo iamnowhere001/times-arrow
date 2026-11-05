@@ -13,7 +13,15 @@
 
 import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { assetKeyOf } from '@/lib/media/photoIdentity';
-import { AiCacheEntry, LibrarySource, Photo, PhotoFilters, SmartAlbum, SortConfig, ViewMode } from '@/types';
+import {
+  AiCacheEntry,
+  LibrarySource,
+  Photo,
+  PhotoFilters,
+  SmartAlbum,
+  SortConfig,
+  ViewMode,
+} from '@/types';
 import { normalizeFilters } from '@/lib/filter/filters';
 import {
   loadPersistedConfig,
@@ -22,11 +30,14 @@ import {
 } from '@/lib/persistence/persistence';
 import { readSourcesFromConfig } from '@/lib/persistence/sources';
 import { loadAiCache } from '@/lib/persistence/aiCache';
-import { getVideoMeta, seedVideoMeta, snapshotVideoMeta, subscribeVideoMeta, videoMetaKeyOf } from '@/lib/media/videoMeta';
 import {
-  DUPLICATE_SIMILARITY_MAX,
-  DUPLICATE_SIMILARITY_MIN,
-} from '@/lib/duplicate/constants';
+  getVideoMeta,
+  seedVideoMeta,
+  snapshotVideoMeta,
+  subscribeVideoMeta,
+  videoMetaKeyOf,
+} from '@/lib/media/videoMeta';
+import { DUPLICATE_SIMILARITY_MAX, DUPLICATE_SIMILARITY_MIN } from '@/lib/duplicate/constants';
 import { ToastAction, type ToastType } from '@/types/toast';
 import type { Theme } from '@/hooks/useThemeMode';
 
@@ -107,7 +118,7 @@ export function useAppConfig({
   // 配置 / AI 缓存落盘失败时统一提示：这类失败在界面上没有任何征兆，
   // 不提示的话用户只会在下次启动时发现「收藏、相簿、标签全没了」
   useEffect(() => {
-    setPersistenceErrorHandler(message => showToast(message, 'error'));
+    setPersistenceErrorHandler((message) => showToast(message, 'error'));
     return () => setPersistenceErrorHandler(null);
   }, [showToast]);
 
@@ -139,8 +150,8 @@ export function useAppConfig({
       })();
 
       // v2 起这些 key 是内容指纹（不再是磁盘路径），变量名沿用只为少改一行
-      (config.favorites ?? []).forEach(path => favoritesRef.current.add(path));
-      (config.hidden ?? []).forEach(path => hiddenRef.current.add(path));
+      (config.favorites ?? []).forEach((path) => favoritesRef.current.add(path));
+      (config.hidden ?? []).forEach((path) => hiddenRef.current.add(path));
       Object.entries(config.tags ?? {}).forEach(([path, tags]) => {
         if (Array.isArray(tags) && tags.length > 0) tagsRef.current.set(path, tags);
       });
@@ -164,15 +175,18 @@ export function useAppConfig({
       setAlbums(
         Array.isArray(config.albums)
           ? config.albums
-              .filter(album => album && typeof album.name === 'string' && album.name.trim().length > 0)
-              .map(album => ({ ...album, filters: normalizeFilters(album.filters) }))
+              .filter(
+                (album) => album && typeof album.name === 'string' && album.name.trim().length > 0
+              )
+              .map((album) => ({ ...album, filters: normalizeFilters(album.filters) }))
           : []
       );
 
       // 视图偏好：决定「重启后打开看到什么样」
       const prefs = config.preferences;
       if (prefs) {
-        if (prefs.theme === 'light' || prefs.theme === 'dark' || prefs.theme === 'system') setTheme(prefs.theme);
+        if (prefs.theme === 'light' || prefs.theme === 'dark' || prefs.theme === 'system')
+          setTheme(prefs.theme);
         if (prefs.viewMode === 'grid' || prefs.viewMode === 'list') setViewMode(prefs.viewMode);
         if (prefs.sortKey) {
           setSortConfig({
@@ -192,7 +206,10 @@ export function useAppConfig({
       if (duplicate) {
         if (typeof duplicate.similarity === 'number' && Number.isFinite(duplicate.similarity)) {
           setDuplicateSimilarity(
-            Math.min(DUPLICATE_SIMILARITY_MAX, Math.max(DUPLICATE_SIMILARITY_MIN, duplicate.similarity))
+            Math.min(
+              DUPLICATE_SIMILARITY_MAX,
+              Math.max(DUPLICATE_SIMILARITY_MIN, duplicate.similarity)
+            )
           );
         }
         if (duplicate.scope === 'all' || duplicate.scope === 'sameFolder') {
@@ -205,9 +222,9 @@ export function useAppConfig({
       if (cancelled) return;
       aiCacheRef.current = aiCache;
 
-      setPhotos(prev => {
+      setPhotos((prev) => {
         if (prev.length === 0) return prev;
-        return prev.map(photo => {
+        return prev.map((photo) => {
           const key = assetKeyOf(photo);
           const override = dateOverridesRef.current.get(key);
           const video = getVideoMeta(key);
@@ -219,7 +236,10 @@ export function useAppConfig({
             tags: tagsRef.current.get(key),
             ...(override !== undefined ? { dateTaken: override, dateAdjusted: true } : null),
             ...(video
-              ? { duration: video.duration, dimensions: { width: video.width, height: video.height } }
+              ? {
+                  duration: video.duration,
+                  dimensions: { width: video.width, height: video.height },
+                }
               : null),
             ...(ai ? { aiDescription: ai.description, aiTags: ai.tags } : null),
           };
@@ -232,17 +252,39 @@ export function useAppConfig({
     return () => {
       cancelled = true;
     };
-  // oxlint-disable-next-line react-hooks/exhaustive-deps — sourcesRef 是稳定 ref，只读取 .current，不参与触发条件
-  }, [aiCacheRef, dateOverridesRef, favoritesRef, hiddenRef, photosRef, refreshSourceAvailability, setAlbums, setDuplicateScope, setDuplicateSimilarity, setIsConfigLoaded, setIsDetailsPaneOpen, setIsLeftPaneOpen, setPhotos, setScale, setSortConfig, setSources, setTheme, setViewMode, showToast, tagsRef, updateFilters]);
+    // oxlint-disable-next-line react-hooks/exhaustive-deps — sourcesRef 是稳定 ref，只读取 .current，不参与触发条件
+  }, [
+    aiCacheRef,
+    dateOverridesRef,
+    favoritesRef,
+    hiddenRef,
+    photosRef,
+    refreshSourceAvailability,
+    setAlbums,
+    setDuplicateScope,
+    setDuplicateSimilarity,
+    setIsConfigLoaded,
+    setIsDetailsPaneOpen,
+    setIsLeftPaneOpen,
+    setPhotos,
+    setScale,
+    setSortConfig,
+    setSources,
+    setTheme,
+    setViewMode,
+    showToast,
+    tagsRef,
+    updateFilters,
+  ]);
 
   // 视频元数据上报：回写到对应条目（时长 / 分辨率）。
   // 写入延迟合并，避免同时加载多个视频时反复落盘。
   const videoMetaSaveTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const unsubscribe = subscribeVideoMeta((key, meta) => {
-      setPhotos(prev => {
+      setPhotos((prev) => {
         let changed = false;
-        const next = prev.map(photo => {
+        const next = prev.map((photo) => {
           if (videoMetaKeyOf(photo) !== key) return photo;
           if (
             photo.duration === meta.duration &&
@@ -252,7 +294,11 @@ export function useAppConfig({
             return photo;
           }
           changed = true;
-          return { ...photo, duration: meta.duration, dimensions: { width: meta.width, height: meta.height } };
+          return {
+            ...photo,
+            duration: meta.duration,
+            dimensions: { width: meta.width, height: meta.height },
+          };
         });
         return changed ? next : prev;
       });

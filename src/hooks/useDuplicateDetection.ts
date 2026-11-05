@@ -8,7 +8,14 @@
  * 全部通过参数注入，Hook 本身不直接持有这些状态。
  */
 
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import { DuplicateScope, Photo } from '@/types';
 import {
   findDuplicatePhotos,
@@ -17,10 +24,7 @@ import {
   markRecommended,
   type DuplicateScanProgress,
 } from '@/utils';
-import {
-  DUPLICATE_SIMILARITY_DEFAULT,
-  similarityToDistance,
-} from '@/lib/duplicate/constants';
+import { DUPLICATE_SIMILARITY_DEFAULT, similarityToDistance } from '@/lib/duplicate/constants';
 import { releaseMemory } from '@/lib/cache/cacheManager';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
 import { logger } from '@/lib/logger';
@@ -71,7 +75,9 @@ export interface DuplicateDetectionResult {
   pruneDuplicateGroups: (ids: Set<string>) => void;
 }
 
-export function useDuplicateDetection(params: UseDuplicateDetectionParams): DuplicateDetectionResult {
+export function useDuplicateDetection(
+  params: UseDuplicateDetectionParams
+): DuplicateDetectionResult {
   const {
     photos,
     showToast,
@@ -100,7 +106,9 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
   const [duplicateSimilarity, setDuplicateSimilarity] = useState(DUPLICATE_SIMILARITY_DEFAULT);
   const [duplicateScope, setDuplicateScope] = useState<DuplicateScope>('all');
   /** 最近一次实际生效的检测参数：用于判断参数变化后是否需要自动重跑 */
-  const lastDuplicateOptionsRef = useRef<{ similarity: number; scope: DuplicateScope } | null>(null);
+  const lastDuplicateOptionsRef = useRef<{ similarity: number; scope: DuplicateScope } | null>(
+    null
+  );
   const duplicateRecheckTimerRef = useRef<number | null>(null);
   /** 进行中的重复检测：取消时 abort，检测管线会在下一个分片边界停下并释放 */
   const duplicateAbortRef = useRef<AbortController | null>(null);
@@ -110,10 +118,13 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
   useEffect(() => {
     if (!isConfigLoaded) return;
 
-    if (duplicatePrefsTimerRef.current !== null) window.clearTimeout(duplicatePrefsTimerRef.current);
+    if (duplicatePrefsTimerRef.current !== null)
+      window.clearTimeout(duplicatePrefsTimerRef.current);
     duplicatePrefsTimerRef.current = window.setTimeout(() => {
       duplicatePrefsTimerRef.current = null;
-      void savePersistedConfig({ duplicate: { similarity: duplicateSimilarity, scope: duplicateScope } });
+      void savePersistedConfig({
+        duplicate: { similarity: duplicateSimilarity, scope: duplicateScope },
+      });
     }, 600);
 
     return () => {
@@ -125,84 +136,91 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
   }, [isConfigLoaded, duplicateSimilarity, duplicateScope]);
 
   // 检测：支持传入阈值 / 范围覆盖（参数变化时自动重跑）
-  const handleCheckDuplicates = useCallback(async (
-    override?: { similarity?: number; scope?: DuplicateScope },
-    mode: 'full' | 'repartition' = 'full'
-  ) => {
-    // 重复检测只针对图片：视频逐帧比对既慢又无意义。
-    // 已隐藏项同样排除：隐藏是跨视图的语义，不该因为进到检测页就重新可见（还能被删掉）
-    const imagePhotos = photos.filter(p => !isVideoPhoto(p) && !p.isHidden);
-    if (imagePhotos.length === 0) {
-      showToast(photos.length > 0 ? '相似检测仅支持图片' : '没有照片可检查相似项', 'info');
-      return;
-    }
-
-    const runSimilarity = override?.similarity ?? duplicateSimilarity;
-    const runScope = override?.scope ?? duplicateScope;
-
-    // 上一轮还在跑就先取消：两轮重叠会同时占用 CPU 与内存，是列表卡顿的主要来源
-    duplicateAbortRef.current?.abort();
-    const controller = new AbortController();
-    duplicateAbortRef.current = controller;
-
-    // 检测是整页流程：先把主内容区切到重复检测页，再开始扫描
-    onEnterDuplicates();
-
-    // 已有结果 + 明确要求重分组 → 走轻量路径：保留列表，只叠一条细进度。
-    // 没有结果可保留时（首次扫描 / 上次无结果）仍按全量处理。
-    const isRepartition = mode === 'repartition' && duplicateGroupsRef.current.length > 0;
-    setIsProcessingDuplicates(!isRepartition);
-    setIsRepartitioningDuplicates(isRepartition);
-    if (!isRepartition) setDuplicateGroups([]);
-    setDuplicateProgress({
-      processed: 0,
-      total: imagePhotos.length,
-      candidates: 0,
-      cached: 0,
-      skipped: 0,
-      elapsedMs: 0,
-      phase: 'hashing',
-    });
-
-    try {
-      // 复用同一套检测管线；哈希有跨调用缓存，调参后重跑主要是重新分组
-      const detectedDuplicates = await findDuplicatePhotos(
-        imagePhotos,
-        // 界面用相似度百分比，检测管线仍以汉明距离（bit）为准
-        { threshold: similarityToDistance(runSimilarity), sameFolderOnly: runScope === 'sameFolder', signal: controller.signal },
-        setDuplicateProgress
-      );
-      setDuplicateGroups(detectedDuplicates);
-
-      if (detectedDuplicates.length > 0) {
-        showToast(`找到 ${detectedDuplicates.length} 组相似照片`, 'info');
-      } else {
-        showToast('未找到相似照片', 'success');
-      }
-    } catch (error) {
-      // 取消是用户主动行为而非故障：静默收尾，不弹错误
-      if (isDuplicateScanAbort(error)) {
-        // 重新分组被新一轮取代时不能清空：旧结果还要继续撑着界面
-        if (!isRepartition) setDuplicateGroups([]);
+  const handleCheckDuplicates = useCallback(
+    async (
+      override?: { similarity?: number; scope?: DuplicateScope },
+      mode: 'full' | 'repartition' = 'full'
+    ) => {
+      // 重复检测只针对图片：视频逐帧比对既慢又无意义。
+      // 已隐藏项同样排除：隐藏是跨视图的语义，不该因为进到检测页就重新可见（还能被删掉）
+      const imagePhotos = photos.filter((p) => !isVideoPhoto(p) && !p.isHidden);
+      if (imagePhotos.length === 0) {
+        showToast(photos.length > 0 ? '相似检测仅支持图片' : '没有照片可检查相似项', 'info');
         return;
       }
-      logger.error('Error detecting duplicates:', error);
-      showToast('检测相似照片失败', 'error');
-    } finally {
-      // 无论成功 / 取消 / 失败，本轮使用的参数都要记下来。
-      // 否则取消后「参数与上次不同」的条件一直成立，自动重跑 effect 会把用户的取消吞掉，
-      // 表现为：点了取消，进度条消失几百毫秒后又自己跑起来。
-      lastDuplicateOptionsRef.current = { similarity: runSimilarity, scope: runScope };
-      if (duplicateAbortRef.current === controller) duplicateAbortRef.current = null;
-      setIsProcessingDuplicates(false);
-      setIsRepartitioningDuplicates(false);
-      setDuplicateProgress(prev =>
-        prev ? { ...prev, processed: prev.total, etaMs: undefined, phase: 'done' } : prev
-      );
-      // 检测结束（或取消）后回收易失缓存，把峰值内存还回去
-      releaseMemory('soft', 'duplicate-scan-done');
-    }
-  }, [photos, duplicateSimilarity, duplicateScope, showToast, onEnterDuplicates]);
+
+      const runSimilarity = override?.similarity ?? duplicateSimilarity;
+      const runScope = override?.scope ?? duplicateScope;
+
+      // 上一轮还在跑就先取消：两轮重叠会同时占用 CPU 与内存，是列表卡顿的主要来源
+      duplicateAbortRef.current?.abort();
+      const controller = new AbortController();
+      duplicateAbortRef.current = controller;
+
+      // 检测是整页流程：先把主内容区切到重复检测页，再开始扫描
+      onEnterDuplicates();
+
+      // 已有结果 + 明确要求重分组 → 走轻量路径：保留列表，只叠一条细进度。
+      // 没有结果可保留时（首次扫描 / 上次无结果）仍按全量处理。
+      const isRepartition = mode === 'repartition' && duplicateGroupsRef.current.length > 0;
+      setIsProcessingDuplicates(!isRepartition);
+      setIsRepartitioningDuplicates(isRepartition);
+      if (!isRepartition) setDuplicateGroups([]);
+      setDuplicateProgress({
+        processed: 0,
+        total: imagePhotos.length,
+        candidates: 0,
+        cached: 0,
+        skipped: 0,
+        elapsedMs: 0,
+        phase: 'hashing',
+      });
+
+      try {
+        // 复用同一套检测管线；哈希有跨调用缓存，调参后重跑主要是重新分组
+        const detectedDuplicates = await findDuplicatePhotos(
+          imagePhotos,
+          // 界面用相似度百分比，检测管线仍以汉明距离（bit）为准
+          {
+            threshold: similarityToDistance(runSimilarity),
+            sameFolderOnly: runScope === 'sameFolder',
+            signal: controller.signal,
+          },
+          setDuplicateProgress
+        );
+        setDuplicateGroups(detectedDuplicates);
+
+        if (detectedDuplicates.length > 0) {
+          showToast(`找到 ${detectedDuplicates.length} 组相似照片`, 'info');
+        } else {
+          showToast('未找到相似照片', 'success');
+        }
+      } catch (error) {
+        // 取消是用户主动行为而非故障：静默收尾，不弹错误
+        if (isDuplicateScanAbort(error)) {
+          // 重新分组被新一轮取代时不能清空：旧结果还要继续撑着界面
+          if (!isRepartition) setDuplicateGroups([]);
+          return;
+        }
+        logger.error('Error detecting duplicates:', error);
+        showToast('检测相似照片失败', 'error');
+      } finally {
+        // 无论成功 / 取消 / 失败，本轮使用的参数都要记下来。
+        // 否则取消后「参数与上次不同」的条件一直成立，自动重跑 effect 会把用户的取消吞掉，
+        // 表现为：点了取消，进度条消失几百毫秒后又自己跑起来。
+        lastDuplicateOptionsRef.current = { similarity: runSimilarity, scope: runScope };
+        if (duplicateAbortRef.current === controller) duplicateAbortRef.current = null;
+        setIsProcessingDuplicates(false);
+        setIsRepartitioningDuplicates(false);
+        setDuplicateProgress((prev) =>
+          prev ? { ...prev, processed: prev.total, etaMs: undefined, phase: 'done' } : prev
+        );
+        // 检测结束（或取消）后回收易失缓存，把峰值内存还回去
+        releaseMemory('soft', 'duplicate-scan-done');
+      }
+    },
+    [photos, duplicateSimilarity, duplicateScope, showToast, onEnterDuplicates]
+  );
 
   /** 取消进行中的重复检测 */
   const handleCancelDuplicates = useCallback(() => {
@@ -235,7 +253,10 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
     }
     duplicateRecheckTimerRef.current = window.setTimeout(() => {
       duplicateRecheckTimerRef.current = null;
-      handleCheckDuplicates({ similarity: duplicateSimilarity, scope: duplicateScope }, 'repartition');
+      handleCheckDuplicates(
+        { similarity: duplicateSimilarity, scope: duplicateScope },
+        'repartition'
+      );
     }, 300);
 
     return () => {
@@ -244,14 +265,21 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
         duplicateRecheckTimerRef.current = null;
       }
     };
-  }, [duplicateSimilarity, duplicateScope, isDuplicateDetectorOpen, isProcessingDuplicates, isRepartitioningDuplicates, handleCheckDuplicates]);
+  }, [
+    duplicateSimilarity,
+    duplicateScope,
+    isDuplicateDetectorOpen,
+    isProcessingDuplicates,
+    isRepartitioningDuplicates,
+    handleCheckDuplicates,
+  ]);
 
   /** 按删除结果收敛检测分组：去掉已删条目、丢弃不足 2 张的组、重算推荐保留项 */
   const pruneDuplicateGroups = useCallback((ids: Set<string>) => {
-    setDuplicateGroups(prev =>
+    setDuplicateGroups((prev) =>
       prev
-        .map(group => group.filter(p => !ids.has(p.id)))
-        .filter(group => group.length > 1)
+        .map((group) => group.filter((p) => !ids.has(p.id)))
+        .filter((group) => group.length > 1)
         .map(markRecommended)
     );
   }, []);
@@ -273,11 +301,11 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
       removeIdsFromSelection(deletedIds);
       // 分组与图库同步延后收敛，避免「列表先空一格、分组后跳一下」的错位
       scheduleAfterExit(() => {
-        setDuplicateGroups(prev =>
+        setDuplicateGroups((prev) =>
           prev
-            .map(group => group.filter(p => !deletedIds.has(p.id)))
-            .filter(group => group.length > 1)
-            .map(group => markRecommended(group))
+            .map((group) => group.filter((p) => !deletedIds.has(p.id)))
+            .filter((group) => group.length > 1)
+            .map((group) => markRecommended(group))
         );
       });
     }
@@ -287,12 +315,21 @@ export function useDuplicateDetection(params: UseDuplicateDetectionParams): Dupl
       return;
     }
 
-    errors.forEach(error => logger.error('删除重复照片失败：', error));
+    errors.forEach((error) => logger.error('删除重复照片失败：', error));
     const detail = errors[0] + (errors.length > 1 ? ` 等 ${errors.length} 项` : '');
-    const retryAction = { label: '重试', onClick: () => { void handleDeleteDuplicates(failedPhotos); } };
+    const retryAction = {
+      label: '重试',
+      onClick: () => {
+        void handleDeleteDuplicates(failedPhotos);
+      },
+    };
 
     if (deletedIds.size > 0) {
-      showToast(`已删除 ${deletedIds.size} 张，${failedPhotos.length} 张失败：${detail}`, 'warning', retryAction);
+      showToast(
+        `已删除 ${deletedIds.size} 张，${failedPhotos.length} 张失败：${detail}`,
+        'warning',
+        retryAction
+      );
     } else {
       showToast(`删除失败：${detail}`, 'error', retryAction);
     }

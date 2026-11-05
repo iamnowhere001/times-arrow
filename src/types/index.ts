@@ -1,4 +1,3 @@
-
 export interface ExifData {
   make?: string;
   model?: string;
@@ -30,8 +29,8 @@ export interface Photo {
   type: string;
   lastModified: number; // File Modification Date
   dateCreated?: number; // File Creation Date from filesystem
-  dateTaken?: number;   // EXIF Content Creation Date
-  exif?: ExifData;      // Detailed EXIF metadata
+  dateTaken?: number; // EXIF Content Creation Date
+  exif?: ExifData; // Detailed EXIF metadata
   dimensions?: { width: number; height: number };
   aiDescription?: string;
   aiTags?: string[];

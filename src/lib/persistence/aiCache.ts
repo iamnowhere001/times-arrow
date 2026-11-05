@@ -20,7 +20,8 @@ const api = () => window.electronAPI;
 const normalizeEntry = (entry: AiCacheEntry | undefined): AiCacheEntry | null => {
   if (!entry || typeof entry !== 'object') return null;
 
-  const description = typeof entry.description === 'string' && entry.description ? entry.description : undefined;
+  const description =
+    typeof entry.description === 'string' && entry.description ? entry.description : undefined;
   const tags = Array.isArray(entry.tags)
     ? entry.tags.filter((tag): tag is string => typeof tag === 'string' && tag.length > 0)
     : undefined;

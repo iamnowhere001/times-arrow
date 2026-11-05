@@ -131,7 +131,11 @@ export const hammingDistance = (hash1: string, hash2: string): number => {
  * 这里用 LRU（命中刷新、超限逐项淘汰），淘汰只影响重算一次的代价。
  */
 const HASH_CACHE_LIMIT = 20000;
-export const imageHashCache = createLruCache<string, string>('imageHash', HASH_CACHE_LIMIT, 'sticky');
+export const imageHashCache = createLruCache<string, string>(
+  'imageHash',
+  HASH_CACHE_LIMIT,
+  'sticky'
+);
 
 /** 清空指纹缓存：切换图库 / 释放内存时用 */
 export const clearImageHashCache = (): void => imageHashCache.clear();

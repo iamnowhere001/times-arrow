@@ -1,11 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Photo } from '@/types';
 import { formatVideoDuration, isVideoPhoto, isVideoPlaybackUncertain } from '@/utils';
 import VideoPlayer, { VideoPlayerHandle } from '@/components/detail/VideoPlayer';
@@ -91,7 +84,9 @@ const QuickLook: React.FC<QuickLookProps> = ({
   const [slideshowInterval, setSlideshowInterval] = useState(readSlideshowInterval);
   const [isIntervalMenuOpen, setIsIntervalMenuOpen] = useState(false);
   // 大图加载状态：按 photo.id 记录，避免上一张的 load 事件误判当前这张（HEIC / 大图解码较慢）
-  const [mediaStatus, setMediaStatus] = useState<{ id: string; state: 'ready' | 'error' } | null>(null);
+  const [mediaStatus, setMediaStatus] = useState<{ id: string; state: 'ready' | 'error' } | null>(
+    null
+  );
   // 慢图才显示转圈：连续翻页时快速命中缓存，不应每张都闪一下加载动画
   const [showSpinner, setShowSpinner] = useState(false);
 
@@ -211,7 +206,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
   // 缩放 / 旋转后重新约束位置
   useEffect(() => {
     if (isVideo) return;
-    setPosition(prev => clampPosition(prev, scale, rotation));
+    setPosition((prev) => clampPosition(prev, scale, rotation));
   }, [scale, rotation, isVideo, clampPosition]);
 
   // 滚轮 / 触控板捏合缩放：必须用非 passive 监听才能 preventDefault（否则会触发整页缩放）
@@ -228,7 +223,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
   }, [isVideo, scale, zoomTo]);
 
   const handleRotate = useCallback((deg: number) => {
-    setRotation(prev => prev + deg);
+    setRotation((prev) => prev + deg);
   }, []);
 
   const resetView = useCallback(() => {
@@ -241,15 +236,18 @@ const QuickLook: React.FC<QuickLookProps> = ({
   const preloadKey = (preloadSources ?? []).join('|');
   useEffect(() => {
     if (isVideo || !preloadKey) return;
-    const images = preloadKey.split('|').filter(Boolean).map(src => {
-      const img = new Image();
-      img.decoding = 'async';
-      img.src = src;
-      return img;
-    });
+    const images = preloadKey
+      .split('|')
+      .filter(Boolean)
+      .map((src) => {
+        const img = new Image();
+        img.decoding = 'async';
+        img.src = src;
+        return img;
+      });
     return () => {
       // 显式断引用与取消挂载，避免为「已翻过去」的图片保留解码结果
-      images.forEach(img => {
+      images.forEach((img) => {
         img.onload = null;
         img.onerror = null;
         img.src = '';
@@ -419,10 +417,16 @@ const QuickLook: React.FC<QuickLookProps> = ({
           if (isVideo) videoHandle?.toggleMute();
           break;
         case 'ArrowUp':
-          if (isVideo) { e.preventDefault(); videoHandle?.nudgeVolume(0.05); }
+          if (isVideo) {
+            e.preventDefault();
+            videoHandle?.nudgeVolume(0.05);
+          }
           break;
         case 'ArrowDown':
-          if (isVideo) { e.preventDefault(); videoHandle?.nudgeVolume(-0.05); }
+          if (isVideo) {
+            e.preventDefault();
+            videoHandle?.nudgeVolume(-0.05);
+          }
           break;
         case 'Escape':
         case 'q':
@@ -451,7 +455,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
         case ' ':
           e.preventDefault();
           if (isVideo) videoHandle?.togglePlay();
-          else setIsSlideshow(prev => !prev);
+          else setIsSlideshow((prev) => !prev);
           break;
         default:
           break;
@@ -541,23 +545,31 @@ const QuickLook: React.FC<QuickLookProps> = ({
       >
         <div className="max-w-[min(72vw,560px)] bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] px-6 py-2 rounded-full shadow-2xl flex items-center gap-4 text-sm font-medium text-[rgba(255,255,255,0.95)]">
           <span className="truncate max-w-[280px]">{photo.name}</span>
-          {typeof currentIndex === 'number' && currentIndex >= 0 && typeof totalCount === 'number' && (
-            <>
-              <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
-              <span className="text-[rgba(255,255,255,0.6)] font-mono text-xs whitespace-nowrap">{currentIndex + 1} / {totalCount}</span>
-            </>
-          )}
+          {typeof currentIndex === 'number' &&
+            currentIndex >= 0 &&
+            typeof totalCount === 'number' && (
+              <>
+                <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
+                <span className="text-[rgba(255,255,255,0.6)] font-mono text-xs whitespace-nowrap">
+                  {currentIndex + 1} / {totalCount}
+                </span>
+              </>
+            )}
           {!isVideo && (
             <>
               <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
-              <span className="text-[rgba(255,255,255,0.6)] font-mono text-xs whitespace-nowrap">{Math.round(scale * 100)}%</span>
+              <span className="text-[rgba(255,255,255,0.6)] font-mono text-xs whitespace-nowrap">
+                {Math.round(scale * 100)}%
+              </span>
             </>
           )}
           {isVideo && (
             <>
               <div className="w-px h-3 bg-[rgba(255,255,255,0.2)]" />
               <span className="flex items-center gap-1.5 text-[var(--accent-cyan)] text-xs whitespace-nowrap">
-                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
                 {videoMetaText}
               </span>
             </>
@@ -571,7 +583,9 @@ const QuickLook: React.FC<QuickLookProps> = ({
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent-cyan)]" />
                 </span>
                 幻灯片播放中
-                <span className="font-numeric tabular-nums text-[rgba(255,255,255,0.55)]">{slideshowInterval}s</span>
+                <span className="font-numeric tabular-nums text-[rgba(255,255,255,0.55)]">
+                  {slideshowInterval}s
+                </span>
               </span>
             </>
           )}
@@ -579,17 +593,34 @@ const QuickLook: React.FC<QuickLookProps> = ({
       </div>
 
       <button
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
         className={`absolute top-6 right-6 z-30 w-10 h-10 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl hover:bg-[rgba(50,50,60,0.9)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] transition-all duration-300 border border-[rgba(255,255,255,0.1)] hover:scale-105 active:scale-95 ${chromeClass}`}
         title="关闭（Esc）"
         aria-label="关闭预览"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
       </button>
 
       {onToggleFavorite && (
         <button
-          onClick={(e) => { e.stopPropagation(); toggleFavorite(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFavorite();
+          }}
           className={`absolute top-6 right-20 z-30 w-10 h-10 backdrop-blur-xl rounded-full flex items-center justify-center transition-all duration-300 border hover:scale-105 active:scale-95 ${chromeClass} ${
             photo.isFavorite
               ? 'bg-[rgba(var(--accent-pink-rgb),0.25)] border-[rgba(var(--accent-pink-rgb),0.4)] text-[var(--accent-pink)]'
@@ -598,8 +629,19 @@ const QuickLook: React.FC<QuickLookProps> = ({
           title={photo.isFavorite ? '取消收藏（F）' : '收藏（F）'}
           aria-label="收藏"
         >
-          <svg width="18" height="18" fill={photo.isFavorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+          <svg
+            width="18"
+            height="18"
+            fill={photo.isFavorite ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+            />
           </svg>
         </button>
       )}
@@ -613,7 +655,11 @@ const QuickLook: React.FC<QuickLookProps> = ({
         onMouseLeave={handleMouseUp}
       >
         {isVideo ? (
-          <VideoPlayer photo={photo} controlRef={videoControlRef} onRevealInFinder={revealInFinder} />
+          <VideoPlayer
+            photo={photo}
+            controlRef={videoControlRef}
+            onRevealInFinder={revealInFinder}
+          />
         ) : (
           <>
             {/* 交叉淡入：上一张的定格快照垫底；新图就绪时两层一起换位。
@@ -659,13 +705,23 @@ const QuickLook: React.FC<QuickLookProps> = ({
             )}
             {imageFailed && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 px-8 text-center pointer-events-none">
-                <svg className="w-10 h-10 text-[rgba(255,255,255,0.4)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
+                <svg
+                  className="w-10 h-10 text-[rgba(255,255,255,0.4)]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="1.5"
+                >
                   <circle cx="12" cy="12" r="10" />
                   <line x1="12" y1="8" x2="12" y2="12" />
                   <line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
-                <p className="text-sm font-medium text-[rgba(255,255,255,0.85)]">无法显示这张图片</p>
-                <p className="text-xs text-[rgba(255,255,255,0.5)] truncate max-w-full">{photo.name}</p>
+                <p className="text-sm font-medium text-[rgba(255,255,255,0.85)]">
+                  无法显示这张图片
+                </p>
+                <p className="text-xs text-[rgba(255,255,255,0.5)] truncate max-w-full">
+                  {photo.name}
+                </p>
               </div>
             )}
 
@@ -732,12 +788,30 @@ const QuickLook: React.FC<QuickLookProps> = ({
         {hasPrev && (
           <div
             className={`absolute left-0 z-20 group cursor-pointer transition-opacity duration-300 ${chromeClass} ${
-              isVideo ? 'top-1/2 -translate-y-1/2 -mt-3 p-3 pl-4' : 'inset-y-0 w-24 flex items-center justify-start pl-4 hover:bg-gradient-to-r hover:from-[rgba(0,0,0,0.4)] hover:to-transparent'
+              isVideo
+                ? 'top-1/2 -translate-y-1/2 -mt-3 p-3 pl-4'
+                : 'inset-y-0 w-24 flex items-center justify-start pl-4 hover:bg-gradient-to-r hover:from-[rgba(0,0,0,0.4)] hover:to-transparent'
             }`}
-            onClick={(e) => { e.stopPropagation(); onPrev(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPrev();
+            }}
           >
-            <button className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform -translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg" title="上一张（←）" aria-label="上一张">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6" /></svg>
+            <button
+              className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform -translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg"
+              title="上一张（←）"
+              aria-label="上一张"
+            >
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
             </button>
           </div>
         )}
@@ -745,12 +819,30 @@ const QuickLook: React.FC<QuickLookProps> = ({
         {hasNext && (
           <div
             className={`absolute right-0 z-20 group cursor-pointer transition-opacity duration-300 ${chromeClass} ${
-              isVideo ? 'top-1/2 -translate-y-1/2 -mt-3 p-3 pr-4' : 'inset-y-0 w-24 flex items-center justify-end pr-4 hover:bg-gradient-to-l hover:from-[rgba(0,0,0,0.4)] hover:to-transparent'
+              isVideo
+                ? 'top-1/2 -translate-y-1/2 -mt-3 p-3 pr-4'
+                : 'inset-y-0 w-24 flex items-center justify-end pr-4 hover:bg-gradient-to-l hover:from-[rgba(0,0,0,0.4)] hover:to-transparent'
             }`}
-            onClick={(e) => { e.stopPropagation(); onNext(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onNext();
+            }}
           >
-            <button className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg" title="下一张（→）" aria-label="下一张">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg>
+            <button
+              className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg"
+              title="下一张（→）"
+              aria-label="下一张"
+            >
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M9 18l6-6-6-6" />
+              </svg>
             </button>
           </div>
         )}
@@ -774,39 +866,115 @@ const QuickLook: React.FC<QuickLookProps> = ({
                   }`}
                   title={photo.isFavorite ? '取消收藏（F）' : '收藏（F）'}
                 >
-                  <svg width="20" height="20" fill={photo.isFavorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
+                  <svg
+                    width="20"
+                    height="20"
+                    fill={photo.isFavorite ? 'currentColor' : 'none'}
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                    />
+                  </svg>
                 </button>
                 <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1" />
               </>
             )}
 
             <div className="flex items-center">
-              <button onClick={() => handleZoom(-0.25)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="缩小（-）">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><line x1="8" y1="11" x2="14" y2="11" /></svg>
+              <button
+                onClick={() => handleZoom(-0.25)}
+                className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90"
+                title="缩小（-）"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  <line x1="8" y1="11" x2="14" y2="11" />
+                </svg>
               </button>
-              <button onClick={() => zoomTo(1)} className="px-2 h-10 flex items-center justify-center text-xs font-semibold tabular-nums text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="适应窗口（0）">
+              <button
+                onClick={() => zoomTo(1)}
+                className="px-2 h-10 flex items-center justify-center text-xs font-semibold tabular-nums text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90"
+                title="适应窗口（0）"
+              >
                 {Math.round(scale * 100)}%
               </button>
-              <button onClick={() => handleZoom(0.25)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="放大（+）">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><line x1="11" y1="8" x2="11" y2="14" /><line x1="8" y1="11" x2="14" y2="11" /></svg>
+              <button
+                onClick={() => handleZoom(0.25)}
+                className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90"
+                title="放大（+）"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  <line x1="11" y1="8" x2="11" y2="14" />
+                  <line x1="8" y1="11" x2="14" y2="11" />
+                </svg>
               </button>
             </div>
 
             <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1" />
 
             <div className="flex items-center">
-              <button onClick={() => handleRotate(-90)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="向左旋转（⇧R）">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+              <button
+                onClick={() => handleRotate(-90)}
+                className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90"
+                title="向左旋转（⇧R）"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                </svg>
               </button>
-              <button onClick={() => handleRotate(90)} className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90" title="向右旋转（R）">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg>
+              <button
+                onClick={() => handleRotate(90)}
+                className="w-10 h-10 flex items-center justify-center text-[rgba(255,255,255,0.8)] hover:text-white hover:bg-[rgba(255,255,255,0.1)] rounded-xl transition-all active:scale-90"
+                title="向右旋转（R）"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                  <path d="M21 3v5h-5" />
+                </svg>
               </button>
             </div>
 
             <div className="w-px h-5 bg-[rgba(255,255,255,0.2)] mx-1" />
 
             <button
-              onClick={() => setIsSlideshow(prev => !prev)}
+              onClick={() => setIsSlideshow((prev) => !prev)}
               className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all active:scale-90 ${
                 isSlideshow
                   ? 'text-[var(--accent-cyan)] bg-[rgba(var(--accent-cyan-rgb),0.15)]'
@@ -815,16 +983,21 @@ const QuickLook: React.FC<QuickLookProps> = ({
               title={isSlideshow ? '暂停幻灯片（空格）' : '幻灯片播放（空格）'}
             >
               {isSlideshow ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
               ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
               )}
             </button>
 
             {/* 间隔：播放前后都能调，选中即记忆（顶栏会同步显示当前秒数） */}
             <div className="relative" ref={intervalMenuRef}>
               <button
-                onClick={() => setIsIntervalMenuOpen(prev => !prev)}
+                onClick={() => setIsIntervalMenuOpen((prev) => !prev)}
                 className={`h-10 min-w-[44px] px-2 flex items-center justify-center rounded-xl font-numeric text-xs font-semibold tabular-nums transition-all active:scale-90 ${
                   isIntervalMenuOpen
                     ? 'text-white bg-[rgba(255,255,255,0.14)]'
@@ -843,7 +1016,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
                   aria-label="幻灯片间隔"
                   className="absolute bottom-12 left-1/2 -translate-x-1/2 w-[132px] p-1 rounded-2xl bg-[rgba(30,30,40,0.95)] backdrop-blur-xl border border-[rgba(255,255,255,0.12)] shadow-2xl animate-scaleIn"
                 >
-                  {SLIDESHOW_INTERVAL_OPTIONS.map(seconds => {
+                  {SLIDESHOW_INTERVAL_OPTIONS.map((seconds) => {
                     const active = slideshowInterval === seconds;
                     return (
                       <button
@@ -862,7 +1035,16 @@ const QuickLook: React.FC<QuickLookProps> = ({
                       >
                         <span className="font-numeric tabular-nums">{seconds} 秒</span>
                         {active && (
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
                             <polyline points="20 6 9 17 4 12"></polyline>
                           </svg>
                         )}

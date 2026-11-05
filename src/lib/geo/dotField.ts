@@ -33,8 +33,7 @@ export interface LatRange {
 }
 
 /** 纬度 → 行号。掩码 y=0 对应北纬 90°，共 360 行覆盖 180°，即每度 2 行 */
-const rowFromLat = (lat: number): number =>
-  Math.round(((90 - lat) / 180) * LAND_MASK_HEIGHT);
+const rowFromLat = (lat: number): number => Math.round(((90 - lat) / 180) * LAND_MASK_HEIGHT);
 
 /** 采样步长：按目标列数反推，至少 1 格 */
 const stepFromCols = (targetCols: number): number =>

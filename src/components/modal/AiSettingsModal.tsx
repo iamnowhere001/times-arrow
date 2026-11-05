@@ -9,7 +9,16 @@ interface AiSettingsModalProps {
 }
 
 const EyeIcon = ({ off }: { off?: boolean }) => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.9"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
     <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
     <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path>
@@ -48,7 +57,10 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
   const [clearKeyOnSave, setClearKeyOnSave] = useState(false);
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
-  const [defaults, setDefaults] = useState({ baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' });
+  const [defaults, setDefaults] = useState({
+    baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-flash',
+  });
   const [keySource, setKeySource] = useState<AiKeySource>('none');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -77,7 +89,7 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
     setIsLoading(true);
     api
       .getAiConfig()
-      .then(response => {
+      .then((response) => {
         if (cancelled) return;
         if (!response.ok) {
           setLoadError(response.error);
@@ -134,7 +146,10 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
       });
       setTestResult(
         result.ok
-          ? { ok: true, message: `连接成功，模型：${result.data.model || model.trim() || defaults.model}` }
+          ? {
+              ok: true,
+              message: `连接成功，模型：${result.data.model || model.trim() || defaults.model}`,
+            }
           : { ok: false, message: result.error }
       );
     } catch (error) {
@@ -174,7 +189,8 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
   };
 
   const statusStyles: Record<AiKeySource, string> = {
-    settings: 'border-[rgba(var(--accent-green-rgb),0.3)] bg-[rgba(var(--accent-green-rgb),0.1)] text-[var(--accent-green)]',
+    settings:
+      'border-[rgba(var(--accent-green-rgb),0.3)] bg-[rgba(var(--accent-green-rgb),0.1)] text-[var(--accent-green)]',
     env: 'border-[rgba(var(--accent-blue-rgb),0.3)] bg-[rgba(var(--accent-blue-rgb),0.1)] text-[var(--accent-blue)]',
     none: 'border-[rgba(var(--accent-pink-rgb),0.3)] bg-[rgba(var(--accent-pink-rgb),0.1)] text-[var(--accent-pink)]',
   };
@@ -191,7 +207,7 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
         role="dialog"
         aria-modal="true"
         aria-label="AI 分析设置"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-[var(--border-subtle)]">
           <h3 className="text-lg font-semibold text-[var(--text-primary)]">AI 分析设置</h3>
@@ -204,7 +220,8 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
           {!electronReady && (
             <div className="rounded-xl border border-[rgba(var(--accent-pink-rgb),0.3)] bg-[rgba(var(--accent-pink-rgb),0.1)] px-4 py-3">
               <p className="text-xs leading-relaxed text-[var(--accent-pink)]">
-                当前环境无法读写配置（仅 Electron 桌面端支持）。请通过 <code className="font-mono">.env.local</code> 配置 DEEPSEEK_API_KEY。
+                当前环境无法读写配置（仅 Electron 桌面端支持）。请通过{' '}
+                <code className="font-mono">.env.local</code> 配置 DEEPSEEK_API_KEY。
               </p>
             </div>
           )}
@@ -228,7 +245,9 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
 
           <div>
             <div className="flex items-baseline justify-between mb-1.5">
-              <label className="block text-xs font-medium text-[var(--text-tertiary)]">API Key</label>
+              <label className="block text-xs font-medium text-[var(--text-tertiary)]">
+                API Key
+              </label>
               <span className="text-[11px] text-[var(--text-quaternary)]">不修改请留空</span>
             </div>
             <div className="relative">
@@ -236,7 +255,7 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
                 type={showKey ? 'text' : 'password'}
                 value={isLoading ? '' : apiKey}
                 disabled={!electronReady || isLoading}
-                onChange={e => {
+                onChange={(e) => {
                   setApiKey(e.target.value);
                   setTestResult(null);
                 }}
@@ -247,7 +266,7 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
               />
               <button
                 type="button"
-                onClick={() => setShowKey(v => !v)}
+                onClick={() => setShowKey((v) => !v)}
                 title={showKey ? '隐藏密钥' : '显示密钥'}
                 aria-label={showKey ? '隐藏密钥' : '显示密钥'}
                 disabled={!electronReady}
@@ -261,7 +280,7 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
                 <input
                   type="checkbox"
                   checked={clearKeyOnSave}
-                  onChange={e => {
+                  onChange={(e) => {
                     setClearKeyOnSave(e.target.checked);
                     setTestResult(null);
                   }}
@@ -272,18 +291,21 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
               </label>
             )}
             <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-quaternary)]">
-              留空表示保持现有密钥不变。密钥以明文保存在本机 <code className="font-mono">userData/ai-config.json</code>，
+              留空表示保持现有密钥不变。密钥以明文保存在本机{' '}
+              <code className="font-mono">userData/ai-config.json</code>，
               仅由主进程读取并代理请求；界面只显示尾号掩码，不会读回完整密钥。
             </p>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">接口地址</label>
+            <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">
+              接口地址
+            </label>
             <input
               type="text"
               value={isLoading ? '' : baseUrl}
               disabled={!electronReady || isLoading}
-              onChange={e => {
+              onChange={(e) => {
                 setBaseUrl(e.target.value);
                 setTestResult(null);
               }}
@@ -295,12 +317,14 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">模型</label>
+            <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">
+              模型
+            </label>
             <input
               type="text"
               value={isLoading ? '' : model}
               disabled={!electronReady || isLoading}
-              onChange={e => {
+              onChange={(e) => {
                 setModel(e.target.value);
                 setTestResult(null);
               }}
@@ -334,7 +358,9 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
             disabled={!electronReady || isTesting || isLoading || (!apiKey.trim() && !hasApiKey)}
             className="px-4 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] hover:bg-[var(--bg-glass-hover)] rounded-xl transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {isTesting && <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />}
+            {isTesting && (
+              <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+            )}
             {isTesting ? '测试中…' : '测试连接'}
           </button>
           <div className="flex items-center gap-3">
@@ -349,7 +375,9 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
               disabled={!electronReady || isSaving || isLoading}
               className="px-6 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              {isSaving && <span className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />}
+              {isSaving && (
+                <span className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+              )}
               保存
             </button>
           </div>

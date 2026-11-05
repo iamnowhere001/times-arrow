@@ -18,7 +18,14 @@ interface ActiveFiltersBarProps {
 }
 
 const CloseIcon = () => (
-  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5" strokeLinecap="round">
+  <svg
+    className="w-3 h-3"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+  >
     <path d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
@@ -47,7 +54,7 @@ const ActiveFiltersBar: React.FC<ActiveFiltersBarProps> = ({
         筛选
       </span>
 
-      {chips.map(chip => (
+      {chips.map((chip) => (
         <button
           key={chip.key}
           type="button"
@@ -74,7 +81,15 @@ const ActiveFiltersBar: React.FC<ActiveFiltersBarProps> = ({
         title="把当前条件保存为智能相簿，内容会随图库自动更新"
         className="shrink-0 flex items-center gap-1 text-xs font-medium text-[var(--accent-blue)] px-2 py-1 rounded-lg hover:bg-[rgba(var(--accent-blue-rgb),0.12)] transition-all duration-200"
       >
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          className="w-3.5 h-3.5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
           <polyline points="17 21 17 13 7 13 7 21" />
           <polyline points="7 3 7 8 15 8" />

@@ -1,4 +1,15 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, shell, protocol, nativeImage, clipboard, session } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  ipcMain,
+  dialog,
+  shell,
+  protocol,
+  nativeImage,
+  clipboard,
+  session,
+} = require('electron');
 
 // 沙箱默认开启 —— 这是 Electron 的默认值，也是渲染进程与操作系统之间的最后一道隔离。
 // 这里不再无条件追加 no-sandbox / disable-setuid-sandbox / disable-gpu-sandbox：
@@ -329,7 +340,8 @@ function createWindow() {
 
   // 加载React应用
   // 在开发模式下加载本地服务器，生产模式下加载build目录
-  const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '../dist/index.html')}`;
+  const startUrl =
+    process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '../dist/index.html')}`;
   mainWindow.loadURL(startUrl);
 
   // 开发模式下打开开发者工具
@@ -652,8 +664,7 @@ handle('move-files', async (event, filePaths, targetDir, priorTargets) => {
     }
 
     // K2 重试幂等：上次「复制成功但删源失败」的残留副本优先补删源
-    const priorTo =
-      priorTargets && typeof priorTargets === 'object' ? priorTargets[srcPath] : null;
+    const priorTo = priorTargets && typeof priorTargets === 'object' ? priorTargets[srcPath] : null;
     if (typeof priorTo === 'string' && priorTo) {
       const resumed = await resumePartialMove(srcPath, priorTo);
       if (resumed) {
@@ -832,16 +843,18 @@ async function openImportDialog() {
   const files = [];
   const directories = [];
   let ignored = 0;
-  await Promise.all(result.filePaths.map(async (filePath) => {
-    try {
-      const stat = await fs.promises.stat(filePath);
-      if (stat.isDirectory()) directories.push(filePath);
-      else if (isMediaFile(filePath)) files.push(filePath);
-      else ignored += 1;
-    } catch {
-      ignored += 1;
-    }
-  }));
+  await Promise.all(
+    result.filePaths.map(async (filePath) => {
+      try {
+        const stat = await fs.promises.stat(filePath);
+        if (stat.isDirectory()) directories.push(filePath);
+        else if (isMediaFile(filePath)) files.push(filePath);
+        else ignored += 1;
+      } catch {
+        ignored += 1;
+      }
+    })
+  );
 
   // 用户主动选择的路径 → 授权本次会话可访问（后续 pm://file 与文件类 IPC 依赖它）
   authorizePaths([...files, ...directories]);
@@ -898,7 +911,9 @@ handle('read-file', async (event, filePath) => {
     return fail('文件不存在或无法访问');
   }
   if (sourceSize > MAX_READ_FILE_BYTES) {
-    return fail(`文件过大（${formatMb(sourceSize)}），超过 ${formatMb(MAX_READ_FILE_BYTES)} 的单次读取上限`);
+    return fail(
+      `文件过大（${formatMb(sourceSize)}），超过 ${formatMb(MAX_READ_FILE_BYTES)} 的单次读取上限`
+    );
   }
 
   if (isHeicFile(filePath)) {
@@ -1086,7 +1101,9 @@ registerMediaPipelineIpc({ handle, ok, fail });
 // 这些路径来自应用自己持久化的图库来源（用户此前主动选过），因此存在的就地授权，
 // 保证「重启后恢复图库」这条链路无需再次弹窗。
 handle('check-paths', async (event, paths) => {
-  const list = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string' && p.length > 0) : [];
+  const list = Array.isArray(paths)
+    ? paths.filter((p) => typeof p === 'string' && p.length > 0)
+    : [];
   const settled = await Promise.all(
     list.map(async (target) => {
       try {

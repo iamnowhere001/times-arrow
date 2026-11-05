@@ -24,7 +24,8 @@ function normalizeSource(raw: unknown): LibrarySource | null {
   if (typeof item.path !== 'string' || item.path.length === 0) return null;
   if (item.kind !== 'directory' && item.kind !== 'file') return null;
 
-  const addedAt = typeof item.addedAt === 'number' && Number.isFinite(item.addedAt) ? item.addedAt : 0;
+  const addedAt =
+    typeof item.addedAt === 'number' && Number.isFinite(item.addedAt) ? item.addedAt : 0;
   const lastOpenedAt =
     typeof item.lastOpenedAt === 'number' && Number.isFinite(item.lastOpenedAt)
       ? item.lastOpenedAt
@@ -87,14 +88,19 @@ export function upsertSources(
 ): LibrarySource[] {
   if (incoming.length === 0) return list;
 
-  const byPath = new Map(list.map(source => [source.path, source]));
+  const byPath = new Map(list.map((source) => [source.path, source]));
   for (const entry of incoming) {
     if (!entry.path) continue;
     const prev = byPath.get(entry.path);
     if (prev) {
       byPath.set(entry.path, { ...prev, kind: entry.kind, lastOpenedAt: now });
     } else {
-      byPath.set(entry.path, { path: entry.path, kind: entry.kind, addedAt: now, lastOpenedAt: now });
+      byPath.set(entry.path, {
+        path: entry.path,
+        kind: entry.kind,
+        addedAt: now,
+        lastOpenedAt: now,
+      });
     }
   }
 

@@ -25,14 +25,17 @@ export async function mapWithConcurrency<T, R>(
   const results = new Array<R>(items.length);
   let cursor = 0;
 
-  const runners = Array.from({ length: Math.min(Math.max(concurrency, 1), items.length) }, async () => {
-    while (cursor < items.length) {
-      if (shouldStop?.()) return;
-      const index = cursor;
-      cursor += 1;
-      results[index] = await worker(items[index], index);
+  const runners = Array.from(
+    { length: Math.min(Math.max(concurrency, 1), items.length) },
+    async () => {
+      while (cursor < items.length) {
+        if (shouldStop?.()) return;
+        const index = cursor;
+        cursor += 1;
+        results[index] = await worker(items[index], index);
+      }
     }
-  });
+  );
 
   await Promise.all(runners);
   return results;

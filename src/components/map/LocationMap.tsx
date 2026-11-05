@@ -92,7 +92,16 @@ const PALETTE = {
 
 /** 地图钉：与「按地点」的语义直接对应 */
 const MapPinIcon = ({ size = 14 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.9"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"></path>
     <circle cx="12" cy="10" r="3"></circle>
   </svg>
@@ -100,7 +109,16 @@ const MapPinIcon = ({ size = 14 }: { size?: number }) => (
 
 /** 复位视野：准星 */
 const CrosshairIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="15"
+    height="15"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.9"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <circle cx="12" cy="12" r="7.5"></circle>
     <line x1="12" y1="2" x2="12" y2="5"></line>
     <line x1="12" y1="19" x2="12" y2="22"></line>
@@ -111,7 +129,15 @@ const CrosshairIcon = () => (
 );
 
 const MinusIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+  <svg
+    width="15"
+    height="15"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+  >
     <line x1="5" y1="12" x2="19" y2="12"></line>
   </svg>
 );
@@ -159,7 +185,7 @@ function drawGraticule(
 ): void {
   const colors = isLight ? PALETTE.light : PALETTE.dark;
   const pxPerDegree = camera.scale / 360;
-  const stepDeg = [30, 15, 5, 2, 1, 0.5].find(step => pxPerDegree * step >= 80) ?? 0.5;
+  const stepDeg = [30, 15, 5, 2, 1, 0.5].find((step) => pxPerDegree * step >= 80) ?? 0.5;
 
   ctx.strokeStyle = colors.grid;
   ctx.lineWidth = 1;
@@ -298,7 +324,7 @@ function drawPlaceLabels(
     const width = ctx.measureText(text).width;
     const rect: LabelRect = { x, y: y - 7, width, height: 14 };
     if (x < 2 || x + width > viewport.width - 2 || y < 8 || y > viewport.height - 8) return;
-    if (occupied.some(item => overlaps(item, rect))) return;
+    if (occupied.some((item) => overlaps(item, rect))) return;
     occupied.push(rect);
     // 底色描边：让字从点阵与柔光里立起来，是所有地图标注的通用做法
     ctx.lineWidth = 2.5;
@@ -325,7 +351,8 @@ function drawPlaceLabels(
   const candidates: { name: string; x: number; y: number; rank: number; dist: number }[] = [];
   for (const place of getPlaces()) {
     const screen = worldToScreen(projectLngLat(place.longitude, place.latitude), camera, viewport);
-    if (screen.x < 0 || screen.x > viewport.width || screen.y < 0 || screen.y > viewport.height) continue;
+    if (screen.x < 0 || screen.x > viewport.width || screen.y < 0 || screen.y > viewport.height)
+      continue;
     candidates.push({
       name: place.name,
       x: screen.x,
@@ -341,7 +368,7 @@ function drawPlaceLabels(
   for (const candidate of candidates) {
     if (placed >= MAX_PLACE_LABELS) break;
     const marker: LabelRect = { x: candidate.x - 2, y: candidate.y - 2, width: 4, height: 4 };
-    if (occupied.some(item => overlaps(item, marker, 1))) continue;
+    if (occupied.some((item) => overlaps(item, marker, 1))) continue;
     const before = occupied.length;
     drawLabel(candidate.name, candidate.x + 6, candidate.y, colors.placeLabel);
     if (occupied.length === before) continue; // 被越界或重叠挡下
@@ -405,7 +432,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
   const measureStripEdge = useCallback(() => {
     const el = stripScrollRef.current;
     if (!el) return;
-    setStripEdge(prev => {
+    setStripEdge((prev) => {
       const next = {
         left: el.scrollLeft > 4,
         right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
@@ -444,7 +471,9 @@ const LocationMap: React.FC<LocationMapProps> = ({
     const update = () => {
       const width = el.clientWidth;
       const height = el.clientHeight;
-      setViewport(prev => (prev.width === width && prev.height === height ? prev : { width, height }));
+      setViewport((prev) =>
+        prev.width === width && prev.height === height ? prev : { width, height }
+      );
     };
     update();
     const observer = new ResizeObserver(update);
@@ -455,7 +484,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
   // 首次拿到视口尺寸时取景到全部点位；之后视口变化只夹取相机，不打断用户当前的视角
   useEffect(() => {
     if (viewport.width <= 0 || viewport.height <= 0) return;
-    setCamera(prev => {
+    setCamera((prev) => {
       if (prev) return clampCamera(prev, viewport);
       return fitCameraToPoints(points, viewport) ?? worldCamera(viewport);
     });
@@ -473,10 +502,10 @@ const LocationMap: React.FC<LocationMapProps> = ({
 
   // 照片集合变化（删除 / 隐藏 / 重命名）后，选中地点里已消失的照片要跟着收敛
   useEffect(() => {
-    setActiveSite(prev => {
+    setActiveSite((prev) => {
       if (!prev) return prev;
-      const aliveIds = new Set(photos.map(photo => photo.id));
-      const alive = prev.photos.filter(p => aliveIds.has(p.id));
+      const aliveIds = new Set(photos.map((photo) => photo.id));
+      const alive = prev.photos.filter((p) => aliveIds.has(p.id));
       if (alive.length === prev.photos.length) return prev;
       if (alive.length === 0) return null;
       return { ...prev, photos: alive };
@@ -515,7 +544,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
     if (!drag) return;
     const dx = latestPointerRef.current.x - drag.startX;
     const dy = latestPointerRef.current.y - drag.startY;
-    setCamera(prev =>
+    setCamera((prev) =>
       prev
         ? clampCamera(
             {
@@ -529,9 +558,12 @@ const LocationMap: React.FC<LocationMapProps> = ({
     );
   }, [viewport]);
 
-  useEffect(() => () => {
-    if (dragRafRef.current) cancelAnimationFrame(dragRafRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (dragRafRef.current) cancelAnimationFrame(dragRafRef.current);
+    },
+    []
+  );
 
   const localPoint = (e: { clientX: number; clientY: number }) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -575,7 +607,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
     }
 
     const hit = findClusterAt(clusters, local.x, local.y, HIT_RADIUS_PX);
-    setHover(prev => {
+    setHover((prev) => {
       if (!hit) return prev === null ? prev : null;
       if (prev && prev.key === hit.key) return prev;
       return {
@@ -584,7 +616,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
         y: hit.y,
         longitude: hit.longitude,
         latitude: hit.latitude,
-        photos: hit.points.map(p => p.photo),
+        photos: hit.points.map((p) => p.photo),
         placeHint: formatPlaceHint(findNearestPlace(hit.latitude, hit.longitude)),
       };
     });
@@ -635,12 +667,16 @@ const LocationMap: React.FC<LocationMapProps> = ({
       setActiveSite(null);
       return;
     }
-    openSite(hit.points.map(p => p.photo), hit.longitude, hit.latitude);
+    openSite(
+      hit.points.map((p) => p.photo),
+      hit.longitude,
+      hit.latitude
+    );
   };
 
   const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const local = localPoint(e);
-    setCamera(prev => (prev ? zoomCameraAt(prev, viewport, local.x, local.y, ZOOM_STEP) : prev));
+    setCamera((prev) => (prev ? zoomCameraAt(prev, viewport, local.x, local.y, ZOOM_STEP) : prev));
   };
 
   // 滚轮缩放：必须用非 passive 监听才能 preventDefault（否则整页跟着上下滚）
@@ -652,7 +688,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
       const local = localPoint(e);
       const factor = Math.exp(-e.deltaY * WHEEL_ZOOM_SENSITIVITY);
       setHasInteracted(true);
-      setCamera(prev => (prev ? zoomCameraAt(prev, viewport, local.x, local.y, factor) : prev));
+      setCamera((prev) => (prev ? zoomCameraAt(prev, viewport, local.x, local.y, factor) : prev));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -660,7 +696,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
 
   const handleZoomButton = useCallback(
     (factor: number) => {
-      setCamera(prev =>
+      setCamera((prev) =>
         prev ? zoomCameraAt(prev, viewport, viewport.width / 2, viewport.height / 2, factor) : prev
       );
     },
@@ -678,7 +714,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const pan = (dx: number, dy: number) => {
       e.preventDefault();
-      setCamera(prev =>
+      setCamera((prev) =>
         prev
           ? clampCamera(
               {
@@ -727,7 +763,11 @@ const LocationMap: React.FC<LocationMapProps> = ({
 
   const activeScreen = useMemo(() => {
     if (!activeSite || !camera || viewport.width <= 0) return null;
-    return worldToScreen(projectLngLat(activeSite.longitude, activeSite.latitude), camera, viewport);
+    return worldToScreen(
+      projectLngLat(activeSite.longitude, activeSite.latitude),
+      camera,
+      viewport
+    );
   }, [activeSite, camera, viewport]);
 
   useEffect(() => {
@@ -746,14 +786,25 @@ const LocationMap: React.FC<LocationMapProps> = ({
     ctx.clearRect(0, 0, viewport.width, viewport.height);
 
     // 拖拽时底图减半密度：帧预算让给「跟手」
-    drawLandMask(ctx, camera, viewport, isLight, dragging ? LAND_DOT_SPACING * 2 : LAND_DOT_SPACING);
+    drawLandMask(
+      ctx,
+      camera,
+      viewport,
+      isLight,
+      dragging ? LAND_DOT_SPACING * 2 : LAND_DOT_SPACING
+    );
     drawGraticule(ctx, camera, viewport, isLight);
     drawClusters(ctx, clusters, hover?.key ?? null, activeScreen, isLight);
 
     // 光点与其柔光先登记占位，地名标签不压在圆点上
-    const occupied: LabelRect[] = clusters.map(cluster => {
+    const occupied: LabelRect[] = clusters.map((cluster) => {
       const radius = clusterRadius(cluster.points.length) * 2;
-      return { x: cluster.x - radius, y: cluster.y - radius, width: radius * 2, height: radius * 2 };
+      return {
+        x: cluster.x - radius,
+        y: cluster.y - radius,
+        width: radius * 2,
+        height: radius * 2,
+      };
     });
     drawPlaceLabels(ctx, camera, viewport, clusters, isLight, occupied);
     // placesReady 参与依赖：地名表是按需加载的，到位后要补一次重绘把城市标注画上
@@ -817,7 +868,9 @@ const LocationMap: React.FC<LocationMapProps> = ({
           </button>
 
           <div className="flex min-w-0 items-center gap-2.5">
-            <h1 className="truncate text-[17px] font-semibold text-[var(--text-primary)]">按地点浏览</h1>
+            <h1 className="truncate text-[17px] font-semibold text-[var(--text-primary)]">
+              按地点浏览
+            </h1>
             {!isEmpty && (
               <div className="hidden items-center gap-2 text-[11px] text-[var(--text-tertiary)] lg:flex">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-glass)] px-2 py-0.5">
@@ -826,7 +879,9 @@ const LocationMap: React.FC<LocationMapProps> = ({
                 </span>
                 <span className="font-numeric tabular-nums">{points.length} 张照片</span>
                 {missingCount > 0 && (
-                  <span className="text-[var(--text-quaternary)]">· 另有 {missingCount} 张未记录地点</span>
+                  <span className="text-[var(--text-quaternary)]">
+                    · 另有 {missingCount} 张未记录地点
+                  </span>
                 )}
               </div>
             )}
@@ -869,7 +924,9 @@ const LocationMap: React.FC<LocationMapProps> = ({
               <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.1)] border border-[rgba(var(--accent-blue-rgb),0.22)] text-[var(--accent-blue)]">
                 <MapPinIcon size={30} />
               </div>
-              <h2 className="mb-2 text-xl font-semibold text-[var(--text-primary)]">还没有带地点的照片</h2>
+              <h2 className="mb-2 text-xl font-semibold text-[var(--text-primary)]">
+                还没有带地点的照片
+              </h2>
               <p className="mb-6 text-sm leading-relaxed text-[var(--text-tertiary)]">
                 {photos.length === 0
                   ? '导入照片后，带 GPS 信息的照片会在这里落成光点，按拍摄地点聚成一个个可浏览的地点。'
@@ -925,7 +982,9 @@ const LocationMap: React.FC<LocationMapProps> = ({
               <div className="pointer-events-none absolute bottom-4 left-4 z-20">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 py-1 text-[11px] text-[var(--text-tertiary)] backdrop-blur-xl">
                   视野内
-                  <span className="font-numeric tabular-nums text-[var(--text-secondary)]">{inViewCount}</span>
+                  <span className="font-numeric tabular-nums text-[var(--text-secondary)]">
+                    {inViewCount}
+                  </span>
                   张
                 </span>
               </div>
@@ -933,10 +992,13 @@ const LocationMap: React.FC<LocationMapProps> = ({
 
             {/* 悬停预览：一眼看清这个地点拍到了什么 */}
             {hover && !activeSite && hoverCardStyle && (
-              <div className="pointer-events-none absolute z-30 animate-scaleIn" style={hoverCardStyle}>
+              <div
+                className="pointer-events-none absolute z-30 animate-scaleIn"
+                style={hoverCardStyle}
+              >
                 <div className="overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-lg)] backdrop-blur-xl">
                   <div className="flex gap-1 p-1.5">
-                    {hoverPreview.map(photo => (
+                    {hoverPreview.map((photo) => (
                       <div
                         key={photo.id}
                         className="relative h-[50px] w-[50px] shrink-0 overflow-hidden rounded-lg bg-[var(--bg-card)]"
@@ -977,7 +1039,9 @@ const LocationMap: React.FC<LocationMapProps> = ({
                   <div className="flex items-center gap-3 border-b border-[var(--border-subtle)] px-4 py-2">
                     <span className="flex min-w-0 items-center gap-1.5 text-[var(--accent-blue)]">
                       <MapPinIcon size={13} />
-                      <span className="truncate text-[12.5px] font-medium">{activeSite.placeHint}</span>
+                      <span className="truncate text-[12.5px] font-medium">
+                        {activeSite.placeHint}
+                      </span>
                     </span>
                     <span className="hidden shrink-0 font-numeric text-[11px] tabular-nums text-[var(--text-quaternary)] sm:inline">
                       {formatLatLng(activeSite.latitude, activeSite.longitude)}
@@ -993,7 +1057,15 @@ const LocationMap: React.FC<LocationMapProps> = ({
                       aria-label="关闭地点照片条"
                       className="ml-auto flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]"
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      >
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
                       </svg>
@@ -1006,32 +1078,37 @@ const LocationMap: React.FC<LocationMapProps> = ({
                       onScroll={measureStripEdge}
                       className="custom-scrollbar flex gap-2 overflow-x-auto p-3"
                     >
-                    {activeSite.photos.slice(0, STRIP_LIMIT).map(photo => (
-                      <button
-                        key={photo.id}
-                        type="button"
-                        onClick={() => onQuickLook(photo, activeSite.photos)}
-                        title={photo.name}
-                        className="group relative h-[84px] w-[84px] shrink-0 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] transition-[transform,border-color,box-shadow] duration-200 ease-entrance hover:-translate-y-0.5 hover:border-[var(--border-hover)] hover:shadow-[var(--shadow-md)] focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] active:translate-y-0"
-                      >
-                        <ThumbImage
-                          photo={photo}
-                          size={168}
-                          className="h-full w-full object-cover"
-                          alt={photo.name}
-                        />
-                        {photo.isFavorite && (
-                          <span className="absolute left-1.5 top-1.5 z-20 flex h-4 w-4 items-center justify-center rounded-full bg-black/50 backdrop-blur-xs">
-                            <svg width="9" height="9" viewBox="0 0 24 24" fill="var(--accent-blue)">
-                              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
-                            </svg>
-                          </span>
-                        )}
-                        {isVideoPhoto(photo) && photo.duration ? (
-                          <DurationBadge text={formatVideoDuration(photo.duration)} />
-                        ) : null}
-                      </button>
-                    ))}
+                      {activeSite.photos.slice(0, STRIP_LIMIT).map((photo) => (
+                        <button
+                          key={photo.id}
+                          type="button"
+                          onClick={() => onQuickLook(photo, activeSite.photos)}
+                          title={photo.name}
+                          className="group relative h-[84px] w-[84px] shrink-0 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] transition-[transform,border-color,box-shadow] duration-200 ease-entrance hover:-translate-y-0.5 hover:border-[var(--border-hover)] hover:shadow-[var(--shadow-md)] focus-visible:ring-2 focus-visible:ring-[var(--accent-blue)] active:translate-y-0"
+                        >
+                          <ThumbImage
+                            photo={photo}
+                            size={168}
+                            className="h-full w-full object-cover"
+                            alt={photo.name}
+                          />
+                          {photo.isFavorite && (
+                            <span className="absolute left-1.5 top-1.5 z-20 flex h-4 w-4 items-center justify-center rounded-full bg-black/50 backdrop-blur-xs">
+                              <svg
+                                width="9"
+                                height="9"
+                                viewBox="0 0 24 24"
+                                fill="var(--accent-blue)"
+                              >
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                              </svg>
+                            </span>
+                          )}
+                          {isVideoPhoto(photo) && photo.duration ? (
+                            <DurationBadge text={formatVideoDuration(photo.duration)} />
+                          ) : null}
+                        </button>
+                      ))}
                     </div>
 
                     {/* 边缘渐隐：哪一端还有照片，哪一端才亮 */}

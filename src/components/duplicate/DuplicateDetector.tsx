@@ -1,14 +1,15 @@
-
 import React, { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
 import { Photo, type DuplicateScope } from '@/types';
-import { formatBytes, hammingDistance, photoOriginalTime, type DuplicateScanProgress } from '@/utils';
+import {
+  formatBytes,
+  hammingDistance,
+  photoOriginalTime,
+  type DuplicateScanProgress,
+} from '@/utils';
 import { useThumbnailSrc } from '@/hooks/useThumbnailSrc';
 import DeleteConfirmModal from '@/components/modal/DeleteConfirmModal';
 import { ChevronLeftIcon, RefreshIcon } from '@/components/icons';
-import {
-  DUPLICATE_SIMILARITY_MAX,
-  DUPLICATE_SIMILARITY_MIN,
-} from '@/lib/duplicate/constants';
+import { DUPLICATE_SIMILARITY_MAX, DUPLICATE_SIMILARITY_MIN } from '@/lib/duplicate/constants';
 
 /**
  * 取末两级目录做展示标签（`…/2024/01`）。
@@ -22,10 +23,10 @@ const getFolderPath = (path: string): string => {
   if (!path) return '';
   const fullPath = path.substring(0, path.lastIndexOf('/'));
   if (!fullPath) return '';
-  
-  const segments = fullPath.split('/').filter(segment => segment);
+
+  const segments = fullPath.split('/').filter((segment) => segment);
   if (segments.length <= 2) return fullPath;
-  
+
   return segments.slice(-2).join('/');
 };
 
@@ -61,7 +62,11 @@ const similarityVs = (photo: Photo, base: Photo): number | null => {
 };
 
 /** 卡片上的一行「标签 + 时间」 */
-const TimeRow: React.FC<{ label: string; value: string; strong?: boolean }> = ({ label, value, strong }) => (
+const TimeRow: React.FC<{ label: string; value: string; strong?: boolean }> = ({
+  label,
+  value,
+  strong,
+}) => (
   <div className="flex items-center justify-between gap-1">
     <span className="text-[10px] text-[var(--text-quaternary)] shrink-0">{label}</span>
     <span
@@ -76,7 +81,15 @@ const TimeRow: React.FC<{ label: string; value: string; strong?: boolean }> = ({
 );
 
 const DuplicateGlyph = () => (
-  <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    className="w-[18px] h-[18px]"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <rect x="8" y="8" width="12" height="12" rx="2" />
     <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
   </svg>
@@ -239,16 +252,29 @@ const DuplicatePhotoCard = memo(function DuplicatePhotoCard({
             「修改时间」几乎不参与决策，收进卡片悬浮说明里，不再占一行。 */}
         <div className="mt-1 space-y-0.5">
           {photo.dateTaken ? (
-            <TimeRow label="拍摄" value={formatDateTime(photo.dateTaken)} strong={photo.isRecommended} />
+            <TimeRow
+              label="拍摄"
+              value={formatDateTime(photo.dateTaken)}
+              strong={photo.isRecommended}
+            />
           ) : null}
-          <TimeRow label="创建" value={formatDateTime(photo.dateCreated)} strong={photo.isRecommended} />
+          <TimeRow
+            label="创建"
+            value={formatDateTime(photo.dateCreated)}
+            strong={photo.isRecommended}
+          />
         </div>
 
         <div className="flex items-center justify-between gap-1 mt-1">
-          <span className="text-[10px] text-[var(--text-tertiary)] truncate" title={photo.path || folderPath}>
+          <span
+            className="text-[10px] text-[var(--text-tertiary)] truncate"
+            title={photo.path || folderPath}
+          >
             {folderPath}
           </span>
-          <span className="text-[10px] text-[var(--text-tertiary)] shrink-0">{formatBytes(photo.size)}</span>
+          <span className="text-[10px] text-[var(--text-tertiary)] shrink-0">
+            {formatBytes(photo.size)}
+          </span>
         </div>
       </div>
     </div>
@@ -308,13 +334,13 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 
   // 分组变化（例如删除后）时，清掉已不存在的选中 id
   useEffect(() => {
-    setMarkedIds(prev => {
+    setMarkedIds((prev) => {
       if (prev.size === 0) return prev;
       const valid = new Set<string>();
-      duplicateGroups.forEach(group => group.forEach(p => valid.add(p.id)));
+      duplicateGroups.forEach((group) => group.forEach((p) => valid.add(p.id)));
       let changed = false;
       const next = new Set<string>();
-      prev.forEach(id => {
+      prev.forEach((id) => {
         if (valid.has(id)) next.add(id);
         else changed = true;
       });
@@ -324,12 +350,12 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 
   // 同理：删除整组后，把不再存在的展开 key 清掉，避免集合无限累积
   useEffect(() => {
-    setExpandedGroups(prev => {
+    setExpandedGroups((prev) => {
       if (prev.size === 0) return prev;
       const valid = new Set(duplicateGroups.map(groupKeyOf).filter(Boolean));
       let changed = false;
       const next = new Set<string>();
-      prev.forEach(key => {
+      prev.forEach((key) => {
         if (valid.has(key)) next.add(key);
         else changed = true;
       });
@@ -343,20 +369,20 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
    * 且重新展开时可以直接复用已解码的缩略图。
    */
   useEffect(() => {
-    setMountedGroups(prev => {
+    setMountedGroups((prev) => {
       const valid = new Set<string>();
-      duplicateGroups.forEach(group => {
+      duplicateGroups.forEach((group) => {
         const key = groupKeyOf(group);
         if (key) valid.add(key);
       });
 
       let changed = false;
       const next = new Set<string>();
-      prev.forEach(key => {
+      prev.forEach((key) => {
         if (valid.has(key)) next.add(key);
         else changed = true;
       });
-      expandedGroups.forEach(key => {
+      expandedGroups.forEach((key) => {
         if (key && valid.has(key) && !next.has(key)) {
           next.add(key);
           changed = true;
@@ -366,7 +392,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
     });
   }, [expandedGroups, duplicateGroups]);
 
-  const allPhotos = useMemo(() => duplicateGroups.flatMap(g => g), [duplicateGroups]);
+  const allPhotos = useMemo(() => duplicateGroups.flatMap((g) => g), [duplicateGroups]);
 
   /**
    * 每组一次算清「保留项 / 相似度 / 平均相似度」。
@@ -375,12 +401,12 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
    */
   const groupMeta = useMemo(
     () =>
-      duplicateGroups.map(group => {
-        const original = group.find(p => p.isRecommended) || group[0];
+      duplicateGroups.map((group) => {
+        const original = group.find((p) => p.isRecommended) || group[0];
         const sims = new Map<string, number>();
         let sum = 0;
         let count = 0;
-        group.forEach(p => {
+        group.forEach((p) => {
           if (p.id === original.id) {
             sims.set(p.id, 100);
             return;
@@ -402,7 +428,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
   );
 
   const markedPhotos = useMemo(
-    () => allPhotos.filter(p => markedIds.has(p.id)),
+    () => allPhotos.filter((p) => markedIds.has(p.id)),
     [allPhotos, markedIds]
   );
 
@@ -413,7 +439,8 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 
   /** 每组被选中的数量，用于组头统计与「整组删除」提示 */
   const groupMarkedCounts = useMemo(
-    () => duplicateGroups.map(group => group.reduce((n, p) => n + (markedIds.has(p.id) ? 1 : 0), 0)),
+    () =>
+      duplicateGroups.map((group) => group.reduce((n, p) => n + (markedIds.has(p.id) ? 1 : 0), 0)),
     [duplicateGroups, markedIds]
   );
 
@@ -433,9 +460,9 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
   const copyStats = useMemo(() => {
     let count = 0;
     let size = 0;
-    duplicateGroups.forEach(group => {
-      const original = group.find(p => p.isRecommended) || group[0];
-      group.forEach(p => {
+    duplicateGroups.forEach((group) => {
+      const original = group.find((p) => p.isRecommended) || group[0];
+      group.forEach((p) => {
         if (p.id !== original.id) {
           count += 1;
           size += p.size || 0;
@@ -447,7 +474,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 
   const handleToggleGroup = useCallback((key: string) => {
     if (!key) return;
-    setExpandedGroups(prev => {
+    setExpandedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -456,15 +483,15 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
   }, []);
 
   const handleExpandAll = useCallback(() => {
-    setExpandedGroups(prev => {
+    setExpandedGroups((prev) => {
       const keys = duplicateGroups.map(groupKeyOf).filter(Boolean);
-      const allOpen = keys.length > 0 && keys.every(key => prev.has(key));
+      const allOpen = keys.length > 0 && keys.every((key) => prev.has(key));
       return allOpen ? new Set() : new Set(keys);
     });
   }, [duplicateGroups]);
 
   const handleTogglePhoto = useCallback((photo: Photo) => {
-    setMarkedIds(prev => {
+    setMarkedIds((prev) => {
       const next = new Set(prev);
       if (next.has(photo.id)) next.delete(photo.id);
       else next.add(photo.id);
@@ -476,9 +503,9 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 
   /** 整组全选 / 取消全选 */
   const handleGroupSelectAll = useCallback((photos: Photo[], mark: boolean) => {
-    setMarkedIds(prev => {
+    setMarkedIds((prev) => {
       const next = new Set(prev);
-      photos.forEach(p => (mark ? next.add(p.id) : next.delete(p.id)));
+      photos.forEach((p) => (mark ? next.add(p.id) : next.delete(p.id)));
       return next;
     });
   }, []);
@@ -487,15 +514,15 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 
   /** 把「除原图外的拷贝」加入待删除集合 */
   const markCopiesOfGroup = (group: Photo[], next: Set<string>) => {
-    const original = group.find(p => p.isRecommended) || group[0];
-    group.forEach(p => {
+    const original = group.find((p) => p.isRecommended) || group[0];
+    group.forEach((p) => {
       if (p.id !== original.id) next.add(p.id);
     });
   };
 
   /** 单组：只保留最早的原始照片，其余拷贝标记为待删除 */
   const handleKeepOriginalInGroup = useCallback((group: Photo[]) => {
-    setMarkedIds(prev => {
+    setMarkedIds((prev) => {
       const next = new Set<string>(prev);
       markCopiesOfGroup(group, next);
       return next;
@@ -505,7 +532,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
   /** 批量（非默认）：每组保留最初的原图，删除重复拷贝 */
   const handleKeepAllOriginals = useCallback(() => {
     const next = new Set<string>();
-    duplicateGroups.forEach(group => markCopiesOfGroup(group, next));
+    duplicateGroups.forEach((group) => markCopiesOfGroup(group, next));
     setMarkedIds(next);
   }, [duplicateGroups]);
 
@@ -532,7 +559,8 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
       : 0;
 
   const allExpanded =
-    duplicateGroups.length > 0 && duplicateGroups.every(group => expandedGroups.has(groupKeyOf(group)));
+    duplicateGroups.length > 0 &&
+    duplicateGroups.every((group) => expandedGroups.has(groupKeyOf(group)));
   const inSelectionMode = markedPhotos.length > 0;
 
   /**
@@ -550,7 +578,9 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
   return (
     <div className="flex-1 flex flex-col w-full min-h-0">
       {/* 顶栏：与时光画廊 / 按地点两个整页视图同高（52px），形成同一套外壳 */}
-      <div className={`app-drag bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 shrink-0 shadow-[var(--shadow-toolbar)] ${isLeftPaneOpen ? 'px-4' : 'pl-[78px] pr-4'}`}>
+      <div
+        className={`app-drag bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] z-20 shrink-0 shadow-[var(--shadow-toolbar)] ${isLeftPaneOpen ? 'px-4' : 'pl-[78px] pr-4'}`}
+      >
         <div className="app-no-drag flex items-center justify-between h-[52px] gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -572,7 +602,9 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
               <h1 className="text-[15px] font-semibold text-[var(--text-primary)] leading-tight truncate">
                 相似图片检测
               </h1>
-              <p className="text-xs text-[var(--text-tertiary)] leading-tight truncate">{summaryLine}</p>
+              <p className="text-xs text-[var(--text-tertiary)] leading-tight truncate">
+                {summaryLine}
+              </p>
             </div>
           </div>
 
@@ -632,8 +664,13 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                   onClick={handleConfirmDelete}
                   className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-pink),var(--accent-pink-deep))] hover:brightness-110 rounded-lg shadow-lg shadow-[rgba(var(--accent-pink-rgb),0.25)] transition-all duration-200 active:scale-[0.98]"
                 >
-
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <svg
+                    className="w-3.5 h-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2"
+                  >
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                   </svg>
@@ -684,7 +721,15 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                     className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-[var(--accent-contrast)] bg-[var(--accent-green)] hover:brightness-110 shadow-lg shadow-[rgba(var(--accent-green-rgb),0.25)] transition-all duration-200 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                     title="每组保留时间最早的原图，其余相似拷贝标记为待删除"
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      className="w-3.5 h-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
                       <polyline points="20 6 9 17 4 12"></polyline>
                     </svg>
                     只留每组原图
@@ -726,7 +771,9 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                     <div className="w-5 h-5 rounded-full border-2 border-[var(--border-subtle)] border-t-[var(--accent-blue)] animate-spin shrink-0" />
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-[var(--text-primary)] truncate">
-                        {progress?.phase === 'comparing' ? '正在比对分组…' : '正在计算图片指纹（dHash）…'}
+                        {progress?.phase === 'comparing'
+                          ? '正在比对分组…'
+                          : '正在计算图片指纹（dHash）…'}
                       </div>
                       <div className="text-xs text-[var(--text-tertiary)]">
                         图片越多耗时越长，检测期间请保持窗口打开
@@ -751,7 +798,9 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between mt-3 text-xs text-[var(--text-tertiary)]">
-                    <span className="tabular-nums">已用时 {formatDuration(progress?.elapsedMs ?? 0)}</span>
+                    <span className="tabular-nums">
+                      已用时 {formatDuration(progress?.elapsedMs ?? 0)}
+                    </span>
                     <span className="tabular-nums">
                       {progress?.phase === 'comparing'
                         ? '即将完成'
@@ -793,7 +842,9 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                   <div className="w-20 h-20 mx-auto mb-5 rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.1)] border border-[rgba(var(--accent-blue-rgb),0.22)] text-[var(--accent-blue)] flex items-center justify-center">
                     <DuplicateGlyph />
                   </div>
-                  <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">找出图库里的相似图片</h3>
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
+                    找出图库里的相似图片
+                  </h3>
                   <p className="text-sm leading-relaxed text-[var(--text-secondary)] mb-6">
                     以感知哈希逐张比对，找出重复与近似的照片。全部在本机完成，照片不会离开这台电脑。
                   </p>
@@ -812,11 +863,23 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
               <div className="h-full flex items-center justify-center p-8 text-center">
                 <div className="max-w-sm animate-fadeInUp">
                   <div className="w-20 h-20 mx-auto mb-5 rounded-full bg-[rgba(var(--accent-green-rgb),0.1)] flex items-center justify-center">
-                    <svg className="w-10 h-10 text-[var(--accent-green)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <svg
+                      className="w-10 h-10 text-[var(--accent-green)]"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
                     </svg>
                   </div>
-                  <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">未检测到相似图片</h3>
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
+                    未检测到相似图片
+                  </h3>
                   <p className="text-sm text-[var(--text-secondary)] mb-6">
                     当前图库中的图片彼此都不相似。放宽检测参数中的相似度阈值，可以找出更细微的相似图片。
                   </p>
@@ -837,7 +900,8 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                   const groupKey = groupKeyOf(group);
                   const isExpanded = !!groupKey && expandedGroups.has(groupKey);
                   // 只有展开过（或当前展开）的组才渲染卡片，避免打开页面就挂载全部缩略图
-                  const shouldRenderCards = isExpanded || (!!groupKey && mountedGroups.has(groupKey));
+                  const shouldRenderCards =
+                    isExpanded || (!!groupKey && mountedGroups.has(groupKey));
                   const groupMarked = groupMarkedCounts[groupIndex] || 0;
                   const allMarked = groupMarked === group.length;
                   // 组内已按时间升序排列，第一张即最早的原始照片
@@ -878,9 +942,14 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                           {/* 完全相同时并进同一颗胶囊，避免两个中性 chip 并排；只有 <100% 才另起一颗 */}
                           <span
                             className="text-xs text-[var(--text-tertiary)] bg-[var(--bg-glass-hover)] px-2 py-0.5 rounded-full shrink-0 tabular-nums"
-                            title={groupAvgSim === 100 ? '哈希完全一致：这些是同一张图的完全副本' : undefined}
+                            title={
+                              groupAvgSim === 100
+                                ? '哈希完全一致：这些是同一张图的完全副本'
+                                : undefined
+                            }
                           >
-                            1 原图 · {group.length - 1} 张拷贝{groupAvgSim === 100 ? ' · 完全相同' : ''}
+                            1 原图 · {group.length - 1} 张拷贝
+                            {groupAvgSim === 100 ? ' · 完全相同' : ''}
                           </span>
                           {groupAvgSim !== null && groupAvgSim !== 100 && (
                             <span
@@ -891,11 +960,13 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                             </span>
                           )}
                           {groupMarked > 0 && (
-                            <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 tabular-nums ${
-                              allMarked
-                                ? 'bg-[rgba(var(--accent-pink-rgb),0.15)] text-[var(--accent-pink)]'
-                                : 'bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--accent-blue)]'
-                            }`}>
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full shrink-0 tabular-nums ${
+                                allMarked
+                                  ? 'bg-[rgba(var(--accent-pink-rgb),0.15)] text-[var(--accent-pink)]'
+                                  : 'bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--accent-blue)]'
+                              }`}
+                            >
                               {allMarked ? '整组移入回收站' : `已选 ${groupMarked} 张`}
                             </span>
                           )}
@@ -905,9 +976,13 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                         </button>
                         {/* 行内操作：折叠时只在悬停 / 键盘聚焦时浮现，展开时才补上「全选本组」，
                             避免 14 行 × 2 个文字按钮在同屏里堆成一片 */}
-                        <div className={`flex items-center gap-2 shrink-0 transition-opacity duration-200 ${
-                          isExpanded ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100'
-                        }`}>
+                        <div
+                          className={`flex items-center gap-2 shrink-0 transition-opacity duration-200 ${
+                            isExpanded
+                              ? 'opacity-100'
+                              : 'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100'
+                          }`}
+                        >
                           <button
                             onClick={() => handleKeepOriginalInGroup(group)}
                             className="text-xs text-[var(--accent-green)] hover:opacity-80 transition-opacity px-2 py-1 rounded-lg hover:bg-[var(--bg-glass-active)]"
@@ -947,7 +1022,9 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                                     photo={photo}
                                     marked={markedIds.has(photo.id)}
                                     similarity={
-                                      photo.id === original.id ? 100 : meta?.sims.get(photo.id) ?? null
+                                      photo.id === original.id
+                                        ? 100
+                                        : (meta?.sims.get(photo.id) ?? null)
                                     }
                                     onToggle={handleTogglePhoto}
                                     onQuickLook={handleQuickLook}
@@ -976,10 +1053,15 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 
               <div className="mb-4">
                 <div className="flex items-baseline justify-between mb-2">
-                  <span className="text-xs font-medium text-[var(--text-secondary)]" title="以 64 位感知哈希换算；调低会把构图相近但不同的照片也算成一组">
+                  <span
+                    className="text-xs font-medium text-[var(--text-secondary)]"
+                    title="以 64 位感知哈希换算；调低会把构图相近但不同的照片也算成一组"
+                  >
                     相似度阈值
                   </span>
-                  <span className="text-xs tabular-nums text-[var(--accent-cyan)]">≥ {similarity}%</span>
+                  <span className="text-xs tabular-nums text-[var(--accent-cyan)]">
+                    ≥ {similarity}%
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -999,12 +1081,16 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
               </div>
 
               <div>
-                <span className="block text-xs font-medium text-[var(--text-secondary)] mb-2">比对范围</span>
+                <span className="block text-xs font-medium text-[var(--text-secondary)] mb-2">
+                  比对范围
+                </span>
                 <div className="bg-[var(--bg-input)] p-0.5 rounded-xl flex items-center border border-[var(--border-subtle)]">
-                  {([
-                    ['all', '全库跨目录'],
-                    ['sameFolder', '仅同目录'],
-                  ] as const).map(([value, label]) => (
+                  {(
+                    [
+                      ['all', '全库跨目录'],
+                      ['sameFolder', '仅同目录'],
+                    ] as const
+                  ).map(([value, label]) => (
                     <button
                       key={value}
                       onClick={() => onScopeChange(value)}
@@ -1031,12 +1117,23 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
               {/* 「14 组 / 建议保留 14 / 可清理 14」是同义重复，只留真正影响决定的数字 */}
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-xs text-[var(--text-tertiary)]">相似组</span>
-                <span className="text-sm font-semibold tabular-nums text-[var(--text-primary)]">{stats.groupCount}</span>
+                <span className="text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                  {stats.groupCount}
+                </span>
               </div>
               <p className="mt-2.5 text-[11px] leading-relaxed text-[var(--text-tertiary)]">
-                涉及 <span className="font-medium tabular-nums text-[var(--text-primary)]">{stats.totalDuplicateCount}</span> 张 ·
-                可清理 <span className="font-medium tabular-nums text-[var(--accent-pink)]">{copyStats.count}</span> 张 ·
-                可释放 <span className="font-medium tabular-nums text-[var(--accent-cyan)]">{formatBytes(copyStats.size)}</span>
+                涉及{' '}
+                <span className="font-medium tabular-nums text-[var(--text-primary)]">
+                  {stats.totalDuplicateCount}
+                </span>{' '}
+                张 · 可清理{' '}
+                <span className="font-medium tabular-nums text-[var(--accent-pink)]">
+                  {copyStats.count}
+                </span>{' '}
+                张 · 可释放{' '}
+                <span className="font-medium tabular-nums text-[var(--accent-cyan)]">
+                  {formatBytes(copyStats.size)}
+                </span>
               </p>
 
               <p className="mt-4 text-[11px] leading-relaxed text-[var(--text-quaternary)]">
@@ -1047,8 +1144,15 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
             {inSelectionMode && (
               <section className="mt-auto px-4 py-4 border-t border-[var(--border-subtle)]">
                 <p className="text-xs text-[var(--text-secondary)] mb-2.5">
-                  待删除 <span className="font-semibold text-[var(--accent-pink)] tabular-nums">{markedPhotos.length}</span> 张
-                  <span className="text-[var(--text-tertiary)]"> · 约 {formatBytes(markedSize)}</span>
+                  待删除{' '}
+                  <span className="font-semibold text-[var(--accent-pink)] tabular-nums">
+                    {markedPhotos.length}
+                  </span>{' '}
+                  张
+                  <span className="text-[var(--text-tertiary)]">
+                    {' '}
+                    · 约 {formatBytes(markedSize)}
+                  </span>
                 </p>
                 <button
                   onClick={handleConfirmDelete}

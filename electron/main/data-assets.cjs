@@ -105,9 +105,7 @@ function createDataAssets({
         }
       })
       .filter(Boolean);
-    const undone = new Set(
-      all.filter((e) => e.type === 'undo' && e.target).map((e) => e.target)
-    );
+    const undone = new Set(all.filter((e) => e.type === 'undo' && e.target).map((e) => e.target));
     const ops = all
       .filter((e) => e.type !== 'undo')
       .reverse()
@@ -225,7 +223,12 @@ function createDataAssets({
     } catch {
       return fail('文件不是有效的 JSON');
     }
-    if (!payload || payload.app !== 'PhotoMinder' || !payload.config || typeof payload.config !== 'object') {
+    if (
+      !payload ||
+      payload.app !== 'PhotoMinder' ||
+      !payload.config ||
+      typeof payload.config !== 'object'
+    ) {
       return fail('这不是 PhotoMinder 导出的配置文件');
     }
 
@@ -234,7 +237,8 @@ function createDataAssets({
       buttons: ['取消', '导入并覆盖'],
       defaultId: 0,
       cancelId: 0,
-      message: '导入会覆盖当前的收藏 / 标签 / 相簿 / 来源等设置；当前配置已自动备份为 config.json.bak。确定继续？',
+      message:
+        '导入会覆盖当前的收藏 / 标签 / 相簿 / 来源等设置；当前配置已自动备份为 config.json.bak。确定继续？',
     });
     if (answer.response !== 1) return ok(null);
 
@@ -270,7 +274,10 @@ function createDataAssets({
       sources.map(async (s) => ({
         path: s.path,
         kind: s.kind,
-        available: await fs.promises.access(s.path).then(() => true).catch(() => false),
+        available: await fs.promises
+          .access(s.path)
+          .then(() => true)
+          .catch(() => false),
       }))
     );
     const orphans = config.orphans ?? {};
@@ -299,13 +306,14 @@ function createDataAssets({
       s.path === oldRoot ? { ...s, path: newRoot } : s
     );
     const rekey = (p) =>
-      p === oldRoot || p.startsWith(oldRoot + path.sep)
-        ? newRoot + p.slice(oldRoot.length)
-        : null;
+      p === oldRoot || p.startsWith(oldRoot + path.sep) ? newRoot + p.slice(oldRoot.length) : null;
 
     const orphans = JSON.parse(JSON.stringify(config.orphans ?? {}));
     const items = orphanEntries(orphans, rekey);
-    const ids = await computeFileFingerprints(items.map((x) => x.next), 8);
+    const ids = await computeFileFingerprints(
+      items.map((x) => x.next),
+      8
+    );
 
     const patch = { version: CONFIG_VERSION, sources };
     const ensure = (field) => {
@@ -377,7 +385,13 @@ function createDataAssets({
     const files = [];
     try {
       for (const root of roots) {
-        if (!(await fs.promises.access(root).then(() => true).catch(() => false))) continue;
+        if (
+          !(await fs.promises
+            .access(root)
+            .then(() => true)
+            .catch(() => false))
+        )
+          continue;
         const found = [];
         await walk(root, 0, found);
         for (const src of found) {

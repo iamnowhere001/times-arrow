@@ -95,8 +95,12 @@ setTimeout(() => {
   // 这时「CSP 违规 0」是假阴性 —— 页面压根没跑，当然没有违规。必须显式失败。
   if (!windowLoaded) {
     console.error('\n[smoke] 窗口始终没有加载完成，无法判定 CSP 是否误伤应用。');
-    console.error('[smoke] 若日志里出现 "sandbox initialization failed: Operation not permitted"，');
-    console.error('[smoke] 说明本机无法初始化 Chromium 沙箱，请加 PHOTOMINDER_DISABLE_SANDBOX=1 重跑。');
+    console.error(
+      '[smoke] 若日志里出现 "sandbox initialization failed: Operation not permitted"，'
+    );
+    console.error(
+      '[smoke] 说明本机无法初始化 Chromium 沙箱，请加 PHOTOMINDER_DISABLE_SANDBOX=1 重跑。'
+    );
     app.exit(3);
     return;
   }

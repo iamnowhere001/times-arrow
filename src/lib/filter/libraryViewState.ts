@@ -143,9 +143,9 @@ export function deriveLibraryViewState(input: LibraryViewStateInput): LibraryVie
               ? 'favorites'
               : isMediaFilterEmpty
                 ? 'media'
-                // 兜底：列表为空但不属于以上任何一类（例如只剩隐藏项），
-                // 按「没找到」处理，语气与搜索一致。
-                : 'search';
+                : // 兜底：列表为空但不属于以上任何一类（例如只剩隐藏项），
+                  // 按「没找到」处理，语气与搜索一致。
+                  'search';
 
   return {
     emptyKind,

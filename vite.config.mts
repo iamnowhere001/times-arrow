@@ -55,7 +55,7 @@ const SHARED_CJS_PATH = normalizePath(path.resolve(import.meta.dirname, 'electro
 function sharedCjsAsEsm(): Plugin {
   // 配置求值时先 require 一次：既拿到导出键名，也让实现本身出错时在启动阶段就暴露
   const exportNames = Object.keys(nodeRequire(SHARED_CJS_PATH) as Record<string, unknown>).filter(
-    (name) => name !== '__esModule' && /^[A-Za-z_$][\w$]*$/.test(name),
+    (name) => name !== '__esModule' && /^[A-Za-z_$][\w$]*$/.test(name)
   );
 
   const namedExports = exportNames
@@ -102,30 +102,31 @@ function injectCspMeta(): Plugin {
     transformIndexHtml(html) {
       return html.replace(
         /<head(\s[^>]*)?>/i,
-        (match) => `${match}\n    <meta http-equiv="Content-Security-Policy" content="${CSP_PROD_META}" />`,
+        (match) =>
+          `${match}\n    <meta http-equiv="Content-Security-Policy" content="${CSP_PROD_META}" />`
       );
     },
   };
 }
 
 export default defineConfig({
-    base: './',
-    server: {
-      port: 3000,
-      // 只监听回环地址。原先的 '0.0.0.0' 会把开发服务器暴露到局域网，
-      // 而这是一个本地桌面应用的调试服务，没有任何被外部访问的理由。
-      // 注意：`electron:dev` 里的 ELECTRON_START_URL 必须同步用 127.0.0.1，
-      // 否则在 localhost 解析到 ::1 的机器上会连不上只绑了 IPv4 的服务器。
-      host: '127.0.0.1',
-      // Electron 的 ELECTRON_START_URL 固定指向 3000（见 package.json 的 electron:dev），
-      // 端口被占用时必须直接失败，否则 Vite 会静默换到 3001，而 Electron 仍连 3000 的旧进程
-      strictPort: true,
+  base: './',
+  server: {
+    port: 3000,
+    // 只监听回环地址。原先的 '0.0.0.0' 会把开发服务器暴露到局域网，
+    // 而这是一个本地桌面应用的调试服务，没有任何被外部访问的理由。
+    // 注意：`electron:dev` 里的 ELECTRON_START_URL 必须同步用 127.0.0.1，
+    // 否则在 localhost 解析到 ::1 的机器上会连不上只绑了 IPv4 的服务器。
+    host: '127.0.0.1',
+    // Electron 的 ELECTRON_START_URL 固定指向 3000（见 package.json 的 electron:dev），
+    // 端口被占用时必须直接失败，否则 Vite 会静默换到 3001，而 Electron 仍连 3000 的旧进程
+    strictPort: true,
+  },
+  plugins: [react(), tailwindcss(), sharedCjsAsEsm(), injectCspMeta()],
+  resolve: {
+    alias: {
+      // AI 密钥等敏感配置一律由主进程读取 .env，不再注入渲染进程
+      '@': path.resolve(import.meta.dirname, 'src'),
     },
-    plugins: [react(), tailwindcss(), sharedCjsAsEsm(), injectCspMeta()],
-    resolve: {
-      alias: {
-        // AI 密钥等敏感配置一律由主进程读取 .env，不再注入渲染进程
-        '@': path.resolve(import.meta.dirname, 'src'),
-      }
-    }
+  },
 });

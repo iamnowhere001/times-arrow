@@ -260,7 +260,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
     const video = videoRef.current;
     if (!video) return;
     const total = Number.isFinite(video.duration) ? video.duration : 0;
-    const next = Math.min(Math.max(0, video.currentTime + seconds), total || video.currentTime + seconds);
+    const next = Math.min(
+      Math.max(0, video.currentTime + seconds),
+      total || video.currentTime + seconds
+    );
     video.currentTime = Math.max(0, next);
     setCurrentTime(video.currentTime);
   }, []);
@@ -366,20 +369,26 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
     }
   }, []);
 
-  const handleTimeUpdate = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
-    if (!isScrubbing) setCurrentTime(e.currentTarget.currentTime);
-  }, [isScrubbing]);
+  const handleTimeUpdate = useCallback(
+    (e: React.SyntheticEvent<HTMLVideoElement>) => {
+      if (!isScrubbing) setCurrentTime(e.currentTarget.currentTime);
+    },
+    [isScrubbing]
+  );
 
-  const handleError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
-    hideBuffering();
-    setStatus('error');
-    const code = e.currentTarget.error?.code;
-    setErrorReason(
-      code === 4 && playbackUncertain
-        ? `${describeMediaError(code)}，可尝试用系统播放器打开`
-        : describeMediaError(code)
-    );
-  }, [hideBuffering, playbackUncertain]);
+  const handleError = useCallback(
+    (e: React.SyntheticEvent<HTMLVideoElement>) => {
+      hideBuffering();
+      setStatus('error');
+      const code = e.currentTarget.error?.code;
+      setErrorReason(
+        code === 4 && playbackUncertain
+          ? `${describeMediaError(code)}，可尝试用系统播放器打开`
+          : describeMediaError(code)
+      );
+    },
+    [hideBuffering, playbackUncertain]
+  );
 
   /* ------------------------------ 全屏状态同步 ------------------------------ */
   useEffect(() => {
@@ -483,7 +492,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (quality !== 'actual') return;
       e.currentTarget.setPointerCapture?.(e.pointerId);
-      panStartRef.current = { pointerX: e.clientX, pointerY: e.clientY, originX: pan.x, originY: pan.y };
+      panStartRef.current = {
+        pointerX: e.clientX,
+        pointerY: e.clientY,
+        originX: pan.x,
+        originY: pan.y,
+      };
       didPanRef.current = false;
       setIsPanning(true);
     },
@@ -526,9 +540,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
   }, [openMenu]);
 
   /* ------------------------------ 渲染 ------------------------------ */
-  const progressRatio = effectiveDuration > 0
-    ? (isScrubbing ? scrubRatio : currentTime / effectiveDuration)
-    : 0;
+  const progressRatio =
+    effectiveDuration > 0 ? (isScrubbing ? scrubRatio : currentTime / effectiveDuration) : 0;
   const bufferedRatio = effectiveDuration > 0 ? Math.min(1, bufferedEnd / effectiveDuration) : 0;
   const showCenterPlay = !isPlaying && status === 'ready' && hasStarted && !isBuffering;
   const actualMode = quality === 'actual' && mediaSize.width > 0;
@@ -538,11 +551,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
    * 必须由「已知宽高比」显式撑开，而不能让 320px 的首帧海报去决定布局尺寸
    * ——否则海报会按自身像素占位，把视频也限制在 320px 宽。
    */
-  const intrinsicAspect = mediaSize.width > 0 && mediaSize.height > 0
-    ? mediaSize.width / mediaSize.height
-    : dims?.width && dims?.height
-      ? dims.width / dims.height
-      : 0;
+  const intrinsicAspect =
+    mediaSize.width > 0 && mediaSize.height > 0
+      ? mediaSize.width / mediaSize.height
+      : dims?.width && dims?.height
+        ? dims.width / dims.height
+        : 0;
   /** 适应窗口模式：由固定比例容器决定画面尺寸 */
   const fixedBox = !actualMode && intrinsicAspect > 0;
   const canStackPoster = fixedBox || actualMode;
@@ -578,7 +592,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
             transform: `translate(${pan.x}px, ${pan.y}px)`,
             transition: isPanning ? 'none' : 'transform 220ms var(--ease-smooth)',
             ...(fixedBox
-              ? { aspectRatio: String(intrinsicAspect), width: `min(92vw, calc(86vh * ${intrinsicAspect}))` }
+              ? {
+                  aspectRatio: String(intrinsicAspect),
+                  width: `min(92vw, calc(86vh * ${intrinsicAspect}))`,
+                }
               : {}),
           }}
         >
@@ -634,7 +651,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
             } ${fixedBox ? 'absolute inset-0 w-full h-full' : 'max-w-[92vw] max-h-[86vh]'}`}
             style={
               actualMode
-                ? { width: mediaSize.width, height: mediaSize.height, maxWidth: 'none', maxHeight: 'none' }
+                ? {
+                    width: mediaSize.width,
+                    height: mediaSize.height,
+                    maxWidth: 'none',
+                    maxHeight: 'none',
+                  }
                 : undefined
             }
           />
@@ -645,7 +667,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
       {isBuffering && status !== 'error' && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 pointer-events-none">
           <div className="w-12 h-12 rounded-full border-2 border-[rgba(255,255,255,0.18)] border-t-[var(--accent-blue)] animate-spin" />
-          <span className="text-xs font-medium tracking-wide text-[rgba(255,255,255,0.7)]">缓冲中…</span>
+          <span className="text-xs font-medium tracking-wide text-[rgba(255,255,255,0.7)]">
+            缓冲中…
+          </span>
         </div>
       )}
 
@@ -661,7 +685,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
           className="absolute z-10 flex items-center justify-center w-20 h-20 rounded-full bg-[rgba(20,18,16,0.6)] backdrop-blur-md border border-[rgba(255,255,255,0.18)] text-[rgba(255,255,255,0.95)] shadow-2xl transition-transform duration-200 hover:scale-105 active:scale-95"
         >
           {currentTime >= effectiveDuration - 0.5 && effectiveDuration > 0 ? (
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="30"
+              height="30"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M3 12a9 9 0 1 0 3-6.7" />
               <path d="M3 4v5h5" />
             </svg>
@@ -676,16 +709,20 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
       {/* 解码失败：给出原因与外部播放器入口 */}
       {status === 'error' && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 px-8 text-center bg-black/70">
-          <svg className="w-10 h-10 text-[rgba(255,255,255,0.4)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
+          <svg
+            className="w-10 h-10 text-[rgba(255,255,255,0.4)]"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth="1.5"
+          >
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
           <p className="text-sm font-medium text-[rgba(255,255,255,0.88)]">无法播放这段视频</p>
           <p className="text-xs text-[rgba(255,255,255,0.5)] truncate max-w-full">{photo.name}</p>
-          {errorReason && (
-            <p className="text-xs text-[rgba(255,255,255,0.42)]">{errorReason}</p>
-          )}
+          {errorReason && <p className="text-xs text-[rgba(255,255,255,0.42)]">{errorReason}</p>}
           {onRevealInFinder && photo.path && (
             <button
               type="button"
@@ -758,9 +795,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
           <div className="flex flex-wrap items-center gap-1 gap-y-1 mt-1.5 text-[rgba(255,255,255,0.9)]">
             <ControlButton label={isPlaying ? '暂停（空格）' : '播放（空格）'} onClick={togglePlay}>
               {isPlaying ? (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
               ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4" /></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="6 4 20 12 6 20 6 4" />
+                </svg>
               )}
             </ControlButton>
 
@@ -789,7 +831,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
                 if (el) el.loop = next;
               }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M17 2l4 4-4 4" />
                 <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
                 <path d="M7 22l-4-4 4-4" />
@@ -814,7 +865,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
               </button>
               {openMenu === 'speed' && (
                 <Popover>
-                  {SPEED_OPTIONS.map(option => (
+                  {SPEED_OPTIONS.map((option) => (
                     <PopoverItem
                       key={option}
                       active={option === rate}
@@ -894,7 +945,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
             </div>
 
             <ControlButton label="画中画" onClick={() => void togglePiP()}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <rect x="2" y="4" width="20" height="16" rx="2" />
                 <rect x="12" y="12" width="8" height="6" rx="1" fill="currentColor" stroke="none" />
               </svg>
@@ -902,14 +962,32 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
 
             <ControlButton label={isFullscreen ? '退出全屏' : '全屏'} onClick={toggleFullscreen}>
               {isFullscreen ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M8 3v3a2 2 0 0 1-2 2H3" />
                   <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
                   <path d="M3 16h3a2 2 0 0 1 2 2v3" />
                   <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
                 </svg>
               ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M8 3H5a2 2 0 0 0-2 2v3" />
                   <path d="M16 3h3a2 2 0 0 1 2 2v3" />
                   <path d="M3 16v3a2 2 0 0 0 2 2h3" />
@@ -976,7 +1054,16 @@ const PopoverItem: React.FC<{
 /** 快退 10 秒：环形箭头 + 数字 */
 const RewindIcon: React.FC = () => (
   <span className="relative flex items-center justify-center">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M11 19a8 8 0 1 0-7.4-5" />
       <path d="M3 4v5h5" />
     </svg>
@@ -987,7 +1074,16 @@ const RewindIcon: React.FC = () => (
 /** 快进 10 秒 */
 const ForwardIcon: React.FC = () => (
   <span className="relative flex items-center justify-center">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M13 19a8 8 0 1 1 7.4-5" />
       <path d="M21 4v5h-5" />
     </svg>
@@ -999,7 +1095,16 @@ const ForwardIcon: React.FC = () => (
 const VolumeIcon: React.FC<{ level: number }> = ({ level }) => {
   if (level <= 0) {
     return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" />
         <line x1="23" y1="9" x2="17" y2="15" />
         <line x1="17" y1="9" x2="23" y2="15" />
@@ -1007,7 +1112,16 @@ const VolumeIcon: React.FC<{ level: number }> = ({ level }) => {
     );
   }
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" />
       {level < 0.55 ? (
         <path d="M15.5 8.5a5 5 0 0 1 0 7" />

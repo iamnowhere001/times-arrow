@@ -29,7 +29,7 @@ async function captureVideoPoster(photo: Photo, size: number): Promise<string | 
   const source = photo.url;
   if (!source) return null;
 
-  return new Promise<string | null>(resolve => {
+  return new Promise<string | null>((resolve) => {
     const video = document.createElement('video');
     let settled = false;
     let timer = 0;
@@ -173,7 +173,10 @@ async function resolveVideoPoster(photo: Photo, size: number): Promise<string | 
  * 视频首帧：`src` 就绪前不应回退到原视频（列表/网格里大量 <video> 代价极高），
  * 因此额外暴露 `failed`，由调用方决定是否用 <video> 兜底显示画面。
  */
-export function useVideoPoster(photo: Photo, targetSize: number): {
+export function useVideoPoster(
+  photo: Photo,
+  targetSize: number
+): {
   src: string | null;
   failed: boolean;
 } {
@@ -195,7 +198,7 @@ export function useVideoPoster(photo: Photo, targetSize: number): {
     const run = async () => {
       const src = await resolveVideoPoster(photo, targetSize);
       if (cancelled) return;
-      setState(prev => (prev.src === src && prev.failed === !src ? prev : { src, failed: !src }));
+      setState((prev) => (prev.src === src && prev.failed === !src ? prev : { src, failed: !src }));
     };
 
     void run();

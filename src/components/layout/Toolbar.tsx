@@ -1,4 +1,3 @@
-
 import React, { useCallback, useState } from 'react';
 import { PhotoFilters, ViewMode } from '@/types';
 import { countAdvancedFilters } from '@/lib/filter/filters';
@@ -36,7 +35,16 @@ interface ToolbarProps {
 }
 
 const ImageIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
     <circle cx="8.5" cy="8.5" r="1.5"></circle>
     <polyline points="21 15 16 10 5 21"></polyline>
@@ -44,7 +52,16 @@ const ImageIcon = () => (
 );
 
 const GridIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <rect x="3" y="3" width="7" height="7" rx="1"></rect>
     <rect x="14" y="3" width="7" height="7" rx="1"></rect>
     <rect x="14" y="14" width="7" height="7" rx="1"></rect>
@@ -53,7 +70,16 @@ const GridIcon = () => (
 );
 
 const ListIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <line x1="8" y1="6" x2="21" y2="6"></line>
     <line x1="8" y1="12" x2="21" y2="12"></line>
     <line x1="8" y1="18" x2="21" y2="18"></line>
@@ -66,21 +92,47 @@ const ListIcon = () => (
 /** macOS 标准「侧边栏」图标：圆角矩形 + 实心左侧面板（SF Symbol sidebar.left），
     收起 / 展开共用同一图标，状态由侧栏本身表达 */
 const SidebarIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="17"
+    height="17"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M5 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4V4H5Z" fill="currentColor" stroke="none"></path>
     <rect x="3" y="4" width="18" height="16" rx="2"></rect>
   </svg>
 );
 
 const PanelIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
     <line x1="15" y1="3" x2="15" y2="21"></line>
   </svg>
 );
 
 const SearchIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <circle cx="11" cy="11" r="8"></circle>
     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
   </svg>
@@ -194,9 +246,13 @@ const ActionButton: React.FC<{
   >
     <span className="shrink-0 flex items-center justify-center">{icon}</span>
     {compactLabel && (
-      <span className="hidden lg:inline 2xl:hidden text-[13px] font-medium truncate max-w-[64px]">{compactLabel}</span>
+      <span className="hidden lg:inline 2xl:hidden text-[13px] font-medium truncate max-w-[64px]">
+        {compactLabel}
+      </span>
     )}
-    <span className="hidden 2xl:inline text-[13px] font-medium truncate max-w-[120px]">{label}</span>
+    <span className="hidden 2xl:inline text-[13px] font-medium truncate max-w-[120px]">
+      {label}
+    </span>
   </button>
 );
 
@@ -227,16 +283,20 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onFilterOpenChange,
 }) => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const setFilterOpen = useCallback((open: boolean) => {
-    setIsFilterOpen(open);
-    onFilterOpenChange?.(open);
-  }, [onFilterOpenChange]);
+  const setFilterOpen = useCallback(
+    (open: boolean) => {
+      setIsFilterOpen(open);
+      onFilterOpenChange?.(open);
+    },
+    [onFilterOpenChange]
+  );
   const advancedFilterCount = countAdvancedFilters(filters);
 
   return (
-    <header className={`app-drag h-10 shrink-0 bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] shadow-[var(--shadow-toolbar)] z-20 sticky top-0 ${isLeftPaneOpen ? 'px-3' : 'pl-[78px] pr-3'}`}>
+    <header
+      className={`app-drag h-10 shrink-0 bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] shadow-[var(--shadow-toolbar)] z-20 sticky top-0 ${isLeftPaneOpen ? 'px-3' : 'pl-[78px] pr-3'}`}
+    >
       <div className="app-no-drag flex items-center gap-2 h-full">
-
         {/* ===== 左：主要导航与常用操作 ===== */}
         <div className="flex items-center gap-1.5 shrink-0 min-w-0">
           {/* 侧边栏开关：常驻浅色圆角底（参照系统照片应用），收起后紧邻红绿灯。
@@ -301,7 +361,19 @@ const Toolbar: React.FC<ToolbarProps> = ({
                 title="清除搜索"
                 aria-label="清除搜索"
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <svg
+                  className="w-3 h-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2.5"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  ></path>
+                </svg>
               </button>
             ) : (
               <span className="absolute right-2 top-1/2 -translate-y-1/2 hidden xl:flex items-center pointer-events-none">

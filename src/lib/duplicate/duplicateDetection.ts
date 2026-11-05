@@ -135,7 +135,7 @@ export const clusterBySize = (entries: HashedEntry[]): HashedEntry[][] => {
 export const markRecommended = (group: Photo[]): Photo[] => {
   const sorted = [...group].sort(compareByOriginalTime);
   const recommended = sorted[0];
-  return sorted.map(photo => ({ ...photo, isRecommended: photo.id === recommended.id }));
+  return sorted.map((photo) => ({ ...photo, isRecommended: photo.id === recommended.id }));
 };
 
 /**
@@ -168,11 +168,13 @@ async function precomputeHashes(
   await mapWithConcurrency(
     pending,
     HASH_CONCURRENCY,
-    async photo => {
+    async (photo) => {
       // 已有磁盘缩略图时优先用它做源：解码 320px 小图远比把整张原图拉进内存划算，
       // 也顺带复用了网格已经解析过的那份缓存（不产生额外 IPC）
       const source =
-        photo.thumbnail || (photo.path ? cachedThumbUrl(photo.path, BASE_THUMB_SIZE) : '') || photo.url;
+        photo.thumbnail ||
+        (photo.path ? cachedThumbUrl(photo.path, BASE_THUMB_SIZE) : '') ||
+        photo.url;
       if (fastHashAvailable === false || !source) {
         unresolved.push(photo);
         return;
@@ -199,7 +201,7 @@ async function precomputeHashes(
   if (unresolved.length === 0 || shouldCancel()) return;
 
   // 2) 主进程兜底（分批，可复用磁盘缩略图）
-  const withPath = unresolved.filter(photo => photo.path);
+  const withPath = unresolved.filter((photo) => photo.path);
   const attempted = new Set<string>();
 
   if (window.electronAPI && withPath.length > 0) {
@@ -208,7 +210,9 @@ async function precomputeHashes(
       const slice = withPath.slice(start, start + HASH_IPC_BATCH);
       let hashes: Array<string | null> | null = null;
       try {
-        const response = await window.electronAPI.getImageHashes(slice.map(photo => photo.path as string));
+        const response = await window.electronAPI.getImageHashes(
+          slice.map((photo) => photo.path as string)
+        );
         hashes = response.ok ? response.data : null;
       } catch {
         hashes = null;
@@ -226,13 +230,13 @@ async function precomputeHashes(
   }
 
   // 3) 渲染进程 <img> + canvas 兜底（SVG 等）
-  const lastResort = unresolved.filter(photo => !attempted.has(photo.id));
+  const lastResort = unresolved.filter((photo) => !attempted.has(photo.id));
   if (lastResort.length === 0) return;
 
   await mapWithConcurrency(
     lastResort,
     HASH_CONCURRENCY,
-    async photo => {
+    async (photo) => {
       await getHashWithCache(photo);
       onProgressDelta(1);
     },
@@ -296,7 +300,9 @@ export class DuplicateScanAbortError extends Error {
 /** 判断异常是否为「检测被取消」——取消是预期行为，不应弹错误提示 */
 export const isDuplicateScanAbort = (error: unknown): boolean =>
   error instanceof DuplicateScanAbortError ||
-  (typeof error === 'object' && error !== null && (error as { name?: string }).name === 'AbortError');
+  (typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: string }).name === 'AbortError');
 
 /** 重复检测可调参数 */
 export interface DuplicateDetectOptions {
@@ -331,7 +337,7 @@ const splitGroupByFolder = (group: Photo[]): Photo[][] => {
     if (bucket) bucket.push(photo);
     else buckets.set(dir, [photo]);
   }
-  return [...buckets.values()].filter(bucket => bucket.length > 1).map(markRecommended);
+  return [...buckets.values()].filter((bucket) => bucket.length > 1).map(markRecommended);
 };
 
 /**
@@ -349,11 +355,16 @@ export const findDuplicatePhotos = async (
   onProgress?: DuplicateProgressHandler
 ): Promise<Photo[][]> => {
   // 视频不参与重复检测：逐帧比对既慢又无意义
-  photos = photos.filter(photo => !isVideoPhoto(photo));
+  photos = photos.filter((photo) => !isVideoPhoto(photo));
   if (photos.length < 2) return [];
 
-  const { threshold = 10, sameFolderOnly = false, signal } =
-    typeof options === 'number' ? { threshold: options, sameFolderOnly: false, signal: undefined } : options;
+  const {
+    threshold = 10,
+    sameFolderOnly = false,
+    signal,
+  } = typeof options === 'number'
+    ? { threshold: options, sameFolderOnly: false, signal: undefined }
+    : options;
 
   const shouldCancel = () => signal?.aborted === true;
   const assertLive = () => {
@@ -404,7 +415,7 @@ export const findDuplicatePhotos = async (
   // 1) 并行计算哈希（每完成一批上报一次进度）
   await precomputeHashes(
     candidates,
-    delta => {
+    (delta) => {
       computed += delta;
       report('hashing');
     },
@@ -439,13 +450,13 @@ export const findDuplicatePhotos = async (
 
   for (const bucket of exactBuckets.values()) {
     if (bucket.length < 2) continue;
-    const group = bucket.map(entry => ({ ...entry.photo, hash: entry.hash }));
-    group.forEach(photo => consumed.add(photo.id));
+    const group = bucket.map((entry) => ({ ...entry.photo, hash: entry.hash }));
+    group.forEach((photo) => consumed.add(photo.id));
     duplicates.push(markRecommended(group));
   }
 
   // 3) 近似相似聚类（仅在体积相近的簇内）
-  const remaining = entries.filter(entry => !consumed.has(entry.photo.id));
+  const remaining = entries.filter((entry) => !consumed.has(entry.photo.id));
 
   let handledClusters = 0;
   for (const cluster of clusterBySize(remaining)) {
@@ -471,7 +482,9 @@ export const findDuplicatePhotos = async (
 
     for (const bucket of groups.values()) {
       if (bucket.length < 2) continue;
-      duplicates.push(markRecommended(bucket.map(entry => ({ ...entry.photo, hash: entry.hash }))));
+      duplicates.push(
+        markRecommended(bucket.map((entry) => ({ ...entry.photo, hash: entry.hash })))
+      );
     }
 
     // 大库下「逐簇两两比对」是一长串同步任务，定期让出主线程，避免列表滚动被卡住

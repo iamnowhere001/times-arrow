@@ -44,7 +44,9 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 80));
   await settleStartup();
 
   section('1. 损坏文件被备份留证');
-  const configBackups = fs.readdirSync(userData).filter((f) => f.startsWith('config.json.corrupt-'));
+  const configBackups = fs
+    .readdirSync(userData)
+    .filter((f) => f.startsWith('config.json.corrupt-'));
   const aiBackups = fs.readdirSync(userData).filter((f) => f.startsWith('ai-config.json.corrupt-'));
 
   check('config.json 被改名备份', configBackups.length === 1, fs.readdirSync(userData).join(', '));
@@ -53,7 +55,10 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 80));
 
   if (configBackups.length === 1) {
     const backup = path.join(userData, configBackups[0]);
-    check('备份内容与原始损坏内容一致（没有丢证）', fs.readFileSync(backup, 'utf8') === CORRUPT_CONFIG);
+    check(
+      '备份内容与原始损坏内容一致（没有丢证）',
+      fs.readFileSync(backup, 'utf8') === CORRUPT_CONFIG
+    );
   }
   if (aiBackups.length === 1) {
     const backup = path.join(userData, aiBackups[0]);
@@ -63,7 +68,11 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 80));
   section('2. 从空配置继续启动，不阻塞');
   const configRes = await call('load-config');
   check('load-config 返回成功而不是抛错', configRes.ok === true, JSON.stringify(configRes));
-  check('返回的是空配置', configRes.ok && Object.keys(configRes.data).length === 0, JSON.stringify(configRes));
+  check(
+    '返回的是空配置',
+    configRes.ok && Object.keys(configRes.data).length === 0,
+    JSON.stringify(configRes)
+  );
 
   const cacheRes = await call('load-ai-cache');
   check('load-ai-cache 同样返回成功', cacheRes.ok === true, JSON.stringify(cacheRes));
@@ -76,8 +85,14 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 80));
   check('两个损坏文件都被报告', files.join(',') === 'ai-config.json,config.json', files.join(','));
 
   const configNotice = notices.ok ? notices.data.find((n) => n.file === 'config.json') : null;
-  check('通知里带备份路径', typeof configNotice?.backupPath === 'string' && configNotice.backupPath.length > 0);
-  check('通知里的备份路径确实存在', Boolean(configNotice) && fs.existsSync(configNotice.backupPath));
+  check(
+    '通知里带备份路径',
+    typeof configNotice?.backupPath === 'string' && configNotice.backupPath.length > 0
+  );
+  check(
+    '通知里的备份路径确实存在',
+    Boolean(configNotice) && fs.existsSync(configNotice.backupPath)
+  );
   check('通知里带发生时间', typeof configNotice?.at === 'number' && configNotice.at > 0);
 
   section('4. 取走即清空（一次性事件不该反复提示）');
@@ -88,14 +103,22 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 80));
   const saveRes = await call('save-config', { version: 1, favorites: ['/tmp/x.jpg'] });
   check('写入成功', saveRes.ok === true, JSON.stringify(saveRes));
   const reload = await call('load-config');
-  check('读回的内容包含刚写入的数据', reload.ok && reload.data.favorites?.[0] === '/tmp/x.jpg', JSON.stringify(reload));
+  check(
+    '读回的内容包含刚写入的数据',
+    reload.ok && reload.data.favorites?.[0] === '/tmp/x.jpg',
+    JSON.stringify(reload)
+  );
 
   section('6. 没有产生多余的备份');
   // 「文件不存在（首次运行）不该被当成损坏」这一条无法在本进程里验证 ——
   // Node 会缓存已 require 的模块，同一个进程里二次 loadMainProcess 拿不到新 handler。
   // 该场景由 ipc-security.test.cjs 的「正常启动时不产生损坏通知」覆盖（那边是干净目录）。
   const allBackups = fs.readdirSync(userData).filter((f) => f.includes('.corrupt-'));
-  check('备份文件数量恰好等于损坏文件数（没有误伤别的存储）', allBackups.length === 2, allBackups.join(', '));
+  check(
+    '备份文件数量恰好等于损坏文件数（没有误伤别的存储）',
+    allBackups.length === 2,
+    allBackups.join(', ')
+  );
   check(
     'ai-cache.json 未被误报为损坏（它本来就不存在）',
     !allBackups.some((f) => f.startsWith('ai-cache.json')),

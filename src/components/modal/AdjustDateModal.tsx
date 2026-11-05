@@ -120,20 +120,20 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
 
     if (mode === 'shift') {
       if (offsetMs === 0) return [];
-      return photos.map(photo => ({ photo, timestamp: photoOriginalTime(photo) + offsetMs }));
+      return photos.map((photo) => ({ photo, timestamp: photoOriginalTime(photo) + offsetMs }));
     }
 
     const target = fromLocalInputValue(targetValue);
     if (target === null) return [];
     if (!keepRelative) {
-      return photos.map(photo => ({ photo, timestamp: target }));
+      return photos.map((photo) => ({ photo, timestamp: target }));
     }
     // 保持间隔：以最早一张为锚点整体平移
     const anchor = earliest || target;
     const delta = target - anchor;
     // 位移为 0 说明用户没改动基准时间，此时不应产生任何「已修正」记录
     if (delta === 0) return [];
-    return photos.map(photo => ({ photo, timestamp: photoOriginalTime(photo) + delta }));
+    return photos.map((photo) => ({ photo, timestamp: photoOriginalTime(photo) + delta }));
   }, [photos, mode, offsetMs, targetValue, keepRelative, earliest]);
 
   if (!isOpen) return null;
@@ -155,12 +155,14 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
     step: number
   ) => (
     <div>
-      <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">{label}</label>
+      <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">
+        {label}
+      </label>
       <input
         type="number"
         value={value}
         step={step}
-        onChange={e => {
+        onChange={(e) => {
           const next = parseInt(e.target.value, 10);
           setValue(Number.isFinite(next) ? next : 0);
         }}
@@ -175,7 +177,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
         className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[460px] max-w-[90vw] max-h-[90vh] overflow-hidden border border-[var(--border-default)] animate-scaleIn flex flex-col"
         role="dialog"
         aria-modal="true"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-[var(--border-subtle)]">
           <h3 className="text-lg font-semibold text-[var(--text-primary)]">调整日期与时间</h3>
@@ -186,10 +188,12 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
 
         <div className="p-6 space-y-5 overflow-y-auto">
           <div className="grid grid-cols-2 gap-1 bg-[var(--bg-input)] p-1 rounded-xl">
-            {([
-              ['shift', '平移'],
-              ['set', '设为指定时间'],
-            ] as const).map(([value, label]) => (
+            {(
+              [
+                ['shift', '平移'],
+                ['set', '设为指定时间'],
+              ] as const
+            ).map(([value, label]) => (
               <button
                 key={value}
                 type="button"
@@ -223,7 +227,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
                   type="datetime-local"
                   step={1}
                   value={targetValue}
-                  onChange={e => setTargetValue(e.target.value)}
+                  onChange={(e) => setTargetValue(e.target.value)}
                   className="w-full px-3 py-2 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
                 />
               </div>
@@ -232,7 +236,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
                 <input
                   type="checkbox"
                   checked={keepRelative}
-                  onChange={e => setKeepRelative(e.target.checked)}
+                  onChange={(e) => setKeepRelative(e.target.checked)}
                   className="rounded-sm border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] accent-[var(--accent-blue)] cursor-pointer"
                 />
                 <span className="text-sm text-[var(--text-secondary)]">保持原有时间间隔</span>
@@ -253,15 +257,23 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
                 <p className="text-xs font-medium mb-2.5 text-[var(--accent-cyan)]">预览</p>
                 <div className="space-y-2">
                   {preview.map(({ photo, timestamp }) => (
-                    <div key={photo.id} className="flex items-center gap-2 text-xs font-mono min-w-0">
-                      <span className="text-[var(--text-tertiary)] truncate flex-1" title={photo.name}>
+                    <div
+                      key={photo.id}
+                      className="flex items-center gap-2 text-xs font-mono min-w-0"
+                    >
+                      <span
+                        className="text-[var(--text-tertiary)] truncate flex-1"
+                        title={photo.name}
+                      >
                         {photo.name}
                       </span>
                       <span className="text-[var(--text-quaternary)] shrink-0">
                         {formatPreviewTime(photoOriginalTime(photo))}
                       </span>
                       <span className="text-[var(--text-quaternary)] shrink-0">→</span>
-                      <span className="text-[var(--text-primary)] shrink-0">{formatPreviewTime(timestamp)}</span>
+                      <span className="text-[var(--text-primary)] shrink-0">
+                        {formatPreviewTime(timestamp)}
+                      </span>
                     </div>
                   ))}
                   {adjustments.length > preview.length && (

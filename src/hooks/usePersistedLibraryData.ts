@@ -76,73 +76,88 @@ export function usePersistedLibraryData({
     if (importedPathsRef.current.delete(from)) importedPathsRef.current.add(to);
   }, []);
 
-  const setFavorite = useCallback((ids: string[], value: boolean) => {
-    if (ids.length === 0) return;
-    const idSet = new Set(ids);
-    for (const photo of photosRef.current) {
-      if (!idSet.has(photo.id)) continue;
-      const key = assetKeyOf(photo);
-      if (value) favoritesRef.current.add(key);
-      else favoritesRef.current.delete(key);
-    }
-    setPhotos(prev => prev.map(p => (idSet.has(p.id) ? { ...p, isFavorite: value } : p)));
-    void savePersistedConfig({ favorites: [...favoritesRef.current] });
-  }, [photosRef, setPhotos]);
+  const setFavorite = useCallback(
+    (ids: string[], value: boolean) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      for (const photo of photosRef.current) {
+        if (!idSet.has(photo.id)) continue;
+        const key = assetKeyOf(photo);
+        if (value) favoritesRef.current.add(key);
+        else favoritesRef.current.delete(key);
+      }
+      setPhotos((prev) => prev.map((p) => (idSet.has(p.id) ? { ...p, isFavorite: value } : p)));
+      void savePersistedConfig({ favorites: [...favoritesRef.current] });
+    },
+    [photosRef, setPhotos]
+  );
 
-  const toggleFavorite = useCallback((id: string) => {
-    const photo = photosRef.current.find(p => p.id === id);
-    if (!photo) return;
-    setFavorite([id], !photo.isFavorite);
-  }, [photosRef, setFavorite]);
+  const toggleFavorite = useCallback(
+    (id: string) => {
+      const photo = photosRef.current.find((p) => p.id === id);
+      if (!photo) return;
+      setFavorite([id], !photo.isFavorite);
+    },
+    [photosRef, setFavorite]
+  );
 
-  const setHidden = useCallback((ids: string[], value: boolean) => {
-    if (ids.length === 0) return;
-    const idSet = new Set(ids);
-    for (const photo of photosRef.current) {
-      if (!idSet.has(photo.id)) continue;
-      const key = assetKeyOf(photo);
-      if (value) hiddenRef.current.add(key);
-      else hiddenRef.current.delete(key);
-    }
-    setPhotos(prev => prev.map(p => (idSet.has(p.id) ? { ...p, isHidden: value || undefined } : p)));
-    void savePersistedConfig({ hidden: [...hiddenRef.current] });
+  const setHidden = useCallback(
+    (ids: string[], value: boolean) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      for (const photo of photosRef.current) {
+        if (!idSet.has(photo.id)) continue;
+        const key = assetKeyOf(photo);
+        if (value) hiddenRef.current.add(key);
+        else hiddenRef.current.delete(key);
+      }
+      setPhotos((prev) =>
+        prev.map((p) => (idSet.has(p.id) ? { ...p, isHidden: value || undefined } : p))
+      );
+      void savePersistedConfig({ hidden: [...hiddenRef.current] });
 
-    // 隐藏是唯一「静默消失」的整理动作（收藏有提示、删除有塌陷动画）。
-    // 不说明去向的话，用户分不清是被隐藏还是被删除。
-    showToast(
-      value ? `已隐藏 ${ids.length} 项，可在「已隐藏」中找回` : `已取消隐藏 ${ids.length} 项`,
-      'info',
-      value
-        ? {
-            label: '查看',
-            onClick: () => setFilters(prev => ({ ...prev, hiddenOnly: true, favoritesOnly: false })),
-          }
-        : undefined
-    );
-  }, [photosRef, setPhotos, setFilters, showToast]);
+      // 隐藏是唯一「静默消失」的整理动作（收藏有提示、删除有塌陷动画）。
+      // 不说明去向的话，用户分不清是被隐藏还是被删除。
+      showToast(
+        value ? `已隐藏 ${ids.length} 项，可在「已隐藏」中找回` : `已取消隐藏 ${ids.length} 项`,
+        'info',
+        value
+          ? {
+              label: '查看',
+              onClick: () =>
+                setFilters((prev) => ({ ...prev, hiddenOnly: true, favoritesOnly: false })),
+            }
+          : undefined
+      );
+    },
+    [photosRef, setPhotos, setFilters, showToast]
+  );
 
-  const handleUpdatePhoto = useCallback((id: string, data: Partial<Photo>) => {
-    setPhotos(prev => prev.map(p => (p.id === id ? { ...p, ...data } : p)));
+  const handleUpdatePhoto = useCallback(
+    (id: string, data: Partial<Photo>) => {
+      setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
 
-    const target = photosRef.current.find(p => p.id === id);
-    if (!target) return;
-    const key = assetKeyOf(target);
+      const target = photosRef.current.find((p) => p.id === id);
+      if (!target) return;
+      const key = assetKeyOf(target);
 
-    if (data.tags !== undefined) {
-      if (data.tags.length > 0) tagsRef.current.set(key, data.tags);
-      else tagsRef.current.delete(key);
-      void savePersistedConfig({ tags: Object.fromEntries(tagsRef.current) });
-    }
+      if (data.tags !== undefined) {
+        if (data.tags.length > 0) tagsRef.current.set(key, data.tags);
+        else tagsRef.current.delete(key);
+        void savePersistedConfig({ tags: Object.fromEntries(tagsRef.current) });
+      }
 
-    // AI 结果存独立的 ai-cache.json：重算代价高但可丢，单独限量
-    if (data.aiDescription !== undefined || data.aiTags !== undefined) {
-      aiCacheRef.current.set(key, {
-        description: data.aiDescription ?? target.aiDescription,
-        tags: data.aiTags ?? target.aiTags,
-      });
-      void saveAiCache(aiCacheRef.current);
-    }
-  }, [photosRef, setPhotos]);
+      // AI 结果存独立的 ai-cache.json：重算代价高但可丢，单独限量
+      if (data.aiDescription !== undefined || data.aiTags !== undefined) {
+        aiCacheRef.current.set(key, {
+          description: data.aiDescription ?? target.aiDescription,
+          tags: data.aiTags ?? target.aiTags,
+        });
+        void saveAiCache(aiCacheRef.current);
+      }
+    },
+    [photosRef, setPhotos]
+  );
 
   return {
     favoritesRef,

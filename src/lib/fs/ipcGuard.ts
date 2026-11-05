@@ -48,7 +48,13 @@ export interface FsGuardDeps {
 }
 
 export const createFsErrorReporter = (deps: FsGuardDeps): FsErrorReporter => {
-  const { showToast, removeWithCollapse, removeIdsFromSelection, forgetImportedPaths, pruneDuplicateGroups } = deps;
+  const {
+    showToast,
+    removeWithCollapse,
+    removeIdsFromSelection,
+    forgetImportedPaths,
+    pruneDuplicateGroups,
+  } = deps;
 
   const reportFailure = (scope: string, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error ?? '');
@@ -58,10 +64,8 @@ export const createFsErrorReporter = (deps: FsGuardDeps): FsErrorReporter => {
 
   const reportGone = (photos: Photo[], options?: { silent?: boolean }): Photo[] => {
     if (photos.length === 0) return [];
-    const ids = new Set(photos.map(p => p.id));
-    forgetImportedPaths(
-      photos.map(p => p.path).filter((p): p is string => Boolean(p))
-    );
+    const ids = new Set(photos.map((p) => p.id));
+    forgetImportedPaths(photos.map((p) => p.path).filter((p): p is string => Boolean(p)));
     removeWithCollapse(ids);
     removeIdsFromSelection(ids);
     pruneDuplicateGroups(ids);

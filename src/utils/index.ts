@@ -41,7 +41,12 @@ export {
 } from '@/lib/media/mediaTypes';
 
 // 展示格式化
-export { formatBytes, formatDate, formatVideoDuration, formatDateForNaming } from '@/lib/format/format';
+export {
+  formatBytes,
+  formatDate,
+  formatVideoDuration,
+  formatDateForNaming,
+} from '@/lib/format/format';
 
 // 照片时间语义
 export { photoOriginalTime, photoTakenTime, compareByOriginalTime } from '@/lib/media/photoTime';

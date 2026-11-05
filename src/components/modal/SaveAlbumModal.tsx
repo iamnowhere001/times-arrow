@@ -57,7 +57,7 @@ const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({ isOpen, filters, onClos
         className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[440px] max-w-[90vw] overflow-hidden border border-[var(--border-default)] animate-scaleIn flex flex-col"
         role="dialog"
         aria-modal="true"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-[var(--border-subtle)]">
           <h3 className="text-lg font-semibold text-[var(--text-primary)]">存为智能相簿</h3>
@@ -68,13 +68,15 @@ const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({ isOpen, filters, onClos
 
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">相簿名称</label>
+            <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">
+              相簿名称
+            </label>
             <input
               ref={inputRef}
               type="text"
               value={name}
-              onChange={e => setName(e.target.value)}
-              onKeyDown={e => {
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   submit();
@@ -87,7 +89,7 @@ const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({ isOpen, filters, onClos
 
           {!trimmed && (
             <div className="flex flex-wrap gap-1.5">
-              {SUGGESTED_NAMES.map(suggestion => (
+              {SUGGESTED_NAMES.map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
@@ -104,7 +106,7 @@ const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({ isOpen, filters, onClos
             <p className="text-xs font-medium text-[var(--text-quaternary)] mb-2.5">包含以下条件</p>
             {hasConditions ? (
               <div className="flex flex-wrap gap-1.5">
-                {chips.map(chip => (
+                {chips.map((chip) => (
                   <span
                     key={chip.key}
                     className="px-2 py-0.5 rounded-full text-xs text-[var(--text-secondary)] bg-[var(--bg-input)] border border-[var(--border-subtle)]"

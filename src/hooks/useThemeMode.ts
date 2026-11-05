@@ -28,7 +28,8 @@ export function useThemeMode(): UseThemeModeResult {
       : false
   );
   // 解析出的实际主题：跟随系统时取系统偏好，否则取用户显式选择
-  const resolvedTheme: 'dark' | 'light' = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
+  const resolvedTheme: 'dark' | 'light' =
+    theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
   const isLight = resolvedTheme === 'light';
   // 主题切换过渡的卸载计时器：连续切换时只保留最后一次
   const themeTransitionTimerRef = useRef<number | null>(null);

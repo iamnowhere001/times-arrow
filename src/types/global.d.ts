@@ -11,9 +11,7 @@ declare global {
   //
   // 注意：IpcResult 表达的是「这次调用有没有成功」，不是「业务结果好坏」。
   // 例如用户在选择对话框里点了取消，那是 ok(true) + data: null，不是 fail。
-  type IpcResult<T = null> =
-    | { ok: true; data: T }
-    | { ok: false; error: string; code?: string };
+  type IpcResult<T = null> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 
   /** 扫描 / stat 返回的单个文件信息 */
   interface FileInfo {
@@ -231,7 +229,9 @@ declare global {
       /** 读取用户配置（收藏 / 隐藏 / 标签 / 拍摄时间修正 / 智能相簿） */
       loadConfig: () => Promise<IpcResult<import('@/types').PersistedConfig>>;
       /** 合并写入配置片段 */
-      saveConfig: (patch: Partial<import('@/types').PersistedConfig>) => Promise<IpcResult<boolean>>;
+      saveConfig: (
+        patch: Partial<import('@/types').PersistedConfig>
+      ) => Promise<IpcResult<boolean>>;
       /** 读取 AI 分析结果缓存 */
       loadAiCache: () => Promise<IpcResult<import('@/types').PersistedAiCache>>;
       /** 整体写入 AI 分析结果缓存（由渲染进程维护条数上限） */
@@ -249,17 +249,28 @@ declare global {
       exportConfig: () => Promise<IpcResult<{ path: string } | null>>;
       importConfig: () => Promise<IpcResult<{ path: string; needReload: boolean } | null>>;
       /** 路径重连候选 */
-      getRelinkCandidates: () => Promise<IpcResult<{
-        sources: { path: string; kind: 'directory' | 'file'; available: boolean }[];
-        orphanCount: number;
-      }>>;
-      relinkSource: (oldRoot: string, newRoot: string) => Promise<IpcResult<{
-        count: number; conflicts: number; unresolved: number;
-      }>>;
-      /** 操作日志与撤销 */
-      getOperationLog: (query?: { offset?: number; limit?: number; type?: string }) => Promise<
-        IpcResult<{ entries: OperationEntry[]; total: number }>
+      getRelinkCandidates: () => Promise<
+        IpcResult<{
+          sources: { path: string; kind: 'directory' | 'file'; available: boolean }[];
+          orphanCount: number;
+        }>
       >;
+      relinkSource: (
+        oldRoot: string,
+        newRoot: string
+      ) => Promise<
+        IpcResult<{
+          count: number;
+          conflicts: number;
+          unresolved: number;
+        }>
+      >;
+      /** 操作日志与撤销 */
+      getOperationLog: (query?: {
+        offset?: number;
+        limit?: number;
+        type?: string;
+      }) => Promise<IpcResult<{ entries: OperationEntry[]; total: number }>>;
       undoOperation: (id: string) => Promise<IpcResult<{ path: string }>>;
       /** F10 按原目录增量备份 */
       startBackup: (targetDir: string) => Promise<IpcResult<BackupSummary>>;
@@ -267,9 +278,10 @@ declare global {
       onOpenDataAssets: (callback: () => void) => () => void;
       onBackupProgress: (callback: (progress: BackupProgress) => void) => () => void;
       /** AI 图片分析（主进程代理 DeepSeek，API Key 不出主进程） */
-      analyzeImage: (payload: { base64: string; mimeType: string }) => Promise<
-        IpcResult<{ description?: string; tags?: string[] } | null>
-      >;
+      analyzeImage: (payload: {
+        base64: string;
+        mimeType: string;
+      }) => Promise<IpcResult<{ description?: string; tags?: string[] } | null>>;
       /** 读取当前生效的 AI 配置；密钥只回 hasApiKey + 尾号掩码，不回明文 */
       getAiConfig: () => Promise<IpcResult<import('@/types').AiConfigSnapshot>>;
       /** 保存 AI 配置；apiKey 空串表示清除该覆盖项，不传该字段表示保持现有值 */

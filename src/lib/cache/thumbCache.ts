@@ -47,7 +47,7 @@ function acquireSlot(): Promise<void> {
     activeRequests += 1;
     return Promise.resolve();
   }
-  return new Promise<void>(resolve => {
+  return new Promise<void>((resolve) => {
     waiters.push(() => {
       activeRequests += 1;
       resolve();

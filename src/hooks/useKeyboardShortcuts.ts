@@ -101,46 +101,55 @@ export function useKeyboardShortcuts({
   }, []);
 
   // 方向键导航：移动单个选中项并让视口跟随（网格上下键按真实行几何找落点）
-  const handleArrowNavigation = useCallback((key: string) => {
-    if (visiblePhotos.length === 0) return;
-    const ids = visiblePhotos.map(p => p.id);
-    const currentIndex = selectionAnchorRef.current ? ids.indexOf(selectionAnchorRef.current) : -1;
+  const handleArrowNavigation = useCallback(
+    (key: string) => {
+      if (visiblePhotos.length === 0) return;
+      const ids = visiblePhotos.map((p) => p.id);
+      const currentIndex = selectionAnchorRef.current
+        ? ids.indexOf(selectionAnchorRef.current)
+        : -1;
 
-    // 还没有任何选中项时，任意方向键都先选中第一项并停住。
-    // 若照常叠加步长，会变成「按 → 从第 2 张开始、按 ↓ 跳掉一整行」，左右上下不对称。
-    if (currentIndex < 0) {
-      const firstId = ids[0];
-      setSelectedIds(new Set([firstId]));
-      selectionAnchorRef.current = firstId;
-      gridRef.current?.scrollToPhoto(firstId);
-      return;
-    }
+      // 还没有任何选中项时，任意方向键都先选中第一项并停住。
+      // 若照常叠加步长，会变成「按 → 从第 2 张开始、按 ↓ 跳掉一整行」，左右上下不对称。
+      if (currentIndex < 0) {
+        const firstId = ids[0];
+        setSelectedIds(new Set([firstId]));
+        selectionAnchorRef.current = firstId;
+        gridRef.current?.scrollToPhoto(firstId);
+        return;
+      }
 
-    // 左右键在任意视图里都是顺序步进。
-    // 上下键：列表视图一次一行；网格视图交给布局按真实行几何找目标 ——
-    // justified 布局每行张数随照片宽高比变化，固定列数硬跳会跳错列。
-    let nextIndex = currentIndex;
-    if (key === 'ArrowLeft') {
-      nextIndex = Math.max(0, currentIndex - 1);
-    } else if (key === 'ArrowRight') {
-      nextIndex = Math.min(ids.length - 1, currentIndex + 1);
-    } else if (viewMode === 'list') {
-      nextIndex = key === 'ArrowUp'
-        ? Math.max(0, currentIndex - 1)
-        : Math.min(ids.length - 1, currentIndex + 1);
-    } else {
-      const neighbor = gridRef.current?.getVerticalNeighbor(ids[currentIndex], key === 'ArrowUp' ? 'up' : 'down');
-      const neighborIndex = neighbor ? ids.indexOf(neighbor) : -1;
-      // 已在首 / 末行（没有相邻行）时保持原位，不再用固定列数硬跳
-      if (neighborIndex >= 0) nextIndex = neighborIndex;
-    }
+      // 左右键在任意视图里都是顺序步进。
+      // 上下键：列表视图一次一行；网格视图交给布局按真实行几何找目标 ——
+      // justified 布局每行张数随照片宽高比变化，固定列数硬跳会跳错列。
+      let nextIndex = currentIndex;
+      if (key === 'ArrowLeft') {
+        nextIndex = Math.max(0, currentIndex - 1);
+      } else if (key === 'ArrowRight') {
+        nextIndex = Math.min(ids.length - 1, currentIndex + 1);
+      } else if (viewMode === 'list') {
+        nextIndex =
+          key === 'ArrowUp'
+            ? Math.max(0, currentIndex - 1)
+            : Math.min(ids.length - 1, currentIndex + 1);
+      } else {
+        const neighbor = gridRef.current?.getVerticalNeighbor(
+          ids[currentIndex],
+          key === 'ArrowUp' ? 'up' : 'down'
+        );
+        const neighborIndex = neighbor ? ids.indexOf(neighbor) : -1;
+        // 已在首 / 末行（没有相邻行）时保持原位，不再用固定列数硬跳
+        if (neighborIndex >= 0) nextIndex = neighborIndex;
+      }
 
-    if (nextIndex === currentIndex && selectedIds.size === 1) return;
-    const nextId = ids[nextIndex];
-    setSelectedIds(new Set([nextId]));
-    selectionAnchorRef.current = nextId;
-    gridRef.current?.scrollToPhoto(nextId);
-  }, [gridRef, selectedIds.size, selectionAnchorRef, setSelectedIds, viewMode, visiblePhotos]);
+      if (nextIndex === currentIndex && selectedIds.size === 1) return;
+      const nextId = ids[nextIndex];
+      setSelectedIds(new Set([nextId]));
+      selectionAnchorRef.current = nextId;
+      gridRef.current?.scrollToPhoto(nextId);
+    },
+    [gridRef, selectedIds.size, selectionAnchorRef, setSelectedIds, viewMode, visiblePhotos]
+  );
 
   // 主视图键盘闭环：
   // 空格 / Enter → QuickLook；⌘A → 全选当前视图；⌘⇧F → 批量收藏；⌘F → 聚焦搜索；
@@ -192,10 +201,13 @@ export function useKeyboardShortcuts({
         isSaveAlbumModalOpen ||
         isFilterPanelOpen ||
         isClearListConfirmOpen
-      ) return;
+      )
+        return;
 
       const target = e.target as HTMLElement | null;
-      const isTextInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      const isTextInput =
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
 
       const cmd = e.metaKey || e.ctrlKey;
 
@@ -238,7 +250,7 @@ export function useKeyboardShortcuts({
         if (contextMenu) return;
         if (visiblePhotos.length === 0) return;
         e.preventDefault();
-        const targetPhoto = visiblePhotos.find(p => selectedIds.has(p.id)) ?? visiblePhotos[0];
+        const targetPhoto = visiblePhotos.find((p) => selectedIds.has(p.id)) ?? visiblePhotos[0];
         setQuickLookPhoto(targetPhoto);
         return;
       }
@@ -247,13 +259,19 @@ export function useKeyboardShortcuts({
         if (contextMenu) return;
         if (visiblePhotos.length === 0) return;
         e.preventDefault();
-        const target = e.key === 'Home' ? visiblePhotos[0] : visiblePhotos[visiblePhotos.length - 1];
+        const target =
+          e.key === 'Home' ? visiblePhotos[0] : visiblePhotos[visiblePhotos.length - 1];
         setSelectedIds(new Set([target.id]));
         selectionAnchorRef.current = target.id;
         gridRef.current?.scrollToPhoto(target.id);
         return;
       }
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      if (
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight' ||
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown'
+      ) {
         if (contextMenu) return;
         e.preventDefault();
         handleArrowNavigation(e.key);
@@ -272,13 +290,34 @@ export function useKeyboardShortcuts({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
-    quickLookPhoto, isRenameModalOpen, isDeleteModalOpen, isDuplicateDetectorOpen, isTimelineOpen, isMapOpen,
+    quickLookPhoto,
+    isRenameModalOpen,
+    isDeleteModalOpen,
+    isDuplicateDetectorOpen,
+    isTimelineOpen,
+    isMapOpen,
     isExportModalOpen,
-    isShortcutsOpen, isAiSettingsOpen, isAdjustDateModalOpen, isSaveAlbumModalOpen, isFilterPanelOpen,
+    isShortcutsOpen,
+    isAiSettingsOpen,
+    isAdjustDateModalOpen,
+    isSaveAlbumModalOpen,
+    isFilterPanelOpen,
     isClearListConfirmOpen,
-    contextMenu, visiblePhotos, selectedIds,
-    gridRef, handleArrowNavigation, handleExitDuplicates, handleFavoriteSelected, handleSelectAllVisible,
-    onExitToLibrary, searchInputRef, selectionAnchorRef, setContextMenu, setIsDeleteModalOpen,
-    setIsShortcutsOpen, setQuickLookPhoto, setSelectedIds,
+    contextMenu,
+    visiblePhotos,
+    selectedIds,
+    gridRef,
+    handleArrowNavigation,
+    handleExitDuplicates,
+    handleFavoriteSelected,
+    handleSelectAllVisible,
+    onExitToLibrary,
+    searchInputRef,
+    selectionAnchorRef,
+    setContextMenu,
+    setIsDeleteModalOpen,
+    setIsShortcutsOpen,
+    setQuickLookPhoto,
+    setSelectedIds,
   ]);
 }

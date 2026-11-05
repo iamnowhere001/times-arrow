@@ -10,7 +10,11 @@
 import { createLruCache } from '@/lib/cache/cacheManager';
 import { logger } from '@/lib/logger';
 
-const dragThumbCache = createLruCache<string, Map<number, string>>('dragThumbnail', 120, 'volatile');
+const dragThumbCache = createLruCache<string, Map<number, string>>(
+  'dragThumbnail',
+  120,
+  'volatile'
+);
 
 /** 清空拖放缩略图缓存（列表重置时调用，释放 blob/base64 常驻内存） */
 export const clearDragThumbnailCache = (): void => dragThumbCache.clear();
@@ -19,7 +23,10 @@ export const clearDragThumbnailCache = (): void => dragThumbCache.clear();
  * 用 canvas 生成较小尺寸的缩略图（带按尺寸缓存）。
  * 输入可以是 File（拖放）或已经是 base64 / 图片地址的字符串。
  */
-export const createThumbnail = async (input: File | string, maxSize: number = 200): Promise<string> => {
+export const createThumbnail = async (
+  input: File | string,
+  maxSize: number = 200
+): Promise<string> => {
   // Convert File object to base64 first if needed
   let base64Data: string;
   let cacheKey: string;
@@ -98,7 +105,8 @@ export const createThumbnail = async (input: File | string, maxSize: number = 20
       ctx.imageSmoothingQuality = 'low';
       ctx.drawImage(img, 0, 0, width, height);
 
-      const isJPEG = base64Data.startsWith('data:image/jpeg') || base64Data.startsWith('data:image/jpg');
+      const isJPEG =
+        base64Data.startsWith('data:image/jpeg') || base64Data.startsWith('data:image/jpg');
       const thumbnail = canvas.toDataURL(isJPEG ? 'image/jpeg' : 'image/png', isJPEG ? 0.7 : 0.75);
 
       remember(thumbnail);

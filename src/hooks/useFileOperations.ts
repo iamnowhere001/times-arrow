@@ -13,7 +13,12 @@ import { type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { Photo, RenameOptions } from '@/types';
 import { formatDateForNaming, folderOfPath, pmFileUrl, repairFileName } from '@/utils';
 import { logger } from '@/lib/logger';
-import { humanizeFsError, isFileGoneError, movePhotosToTrash, type TrashResult } from '@/lib/fs/fileOperations';
+import {
+  humanizeFsError,
+  isFileGoneError,
+  movePhotosToTrash,
+  type TrashResult,
+} from '@/lib/fs/fileOperations';
 import { joinPath, sanitizeFilename } from '@/lib/fs/pathUtils';
 import { photoTakenTime } from '@/lib/media/photoTime';
 import type { FsErrorReporter } from '@/lib/fs/ipcGuard';
@@ -91,7 +96,7 @@ export function useFileOperations({
         return;
       }
 
-      const photo = photos.find(p => p.id === id);
+      const photo = photos.find((p) => p.id === id);
       if (!photo) {
         showToast('找不到要重命名的照片', 'error');
         return;
@@ -106,8 +111,10 @@ export function useFileOperations({
       const sanitizedName = sanitizeFilename(newName);
 
       // Get original file extension to preserve it
-      const originalExt = photo.name.includes('.') ? photo.name.substring(photo.name.lastIndexOf('.')) : '';
-      const finalName = sanitizedName.includes('.') ? sanitizedName : (sanitizedName + originalExt);
+      const originalExt = photo.name.includes('.')
+        ? photo.name.substring(photo.name.lastIndexOf('.'))
+        : '';
+      const finalName = sanitizedName.includes('.') ? sanitizedName : sanitizedName + originalExt;
 
       // Rename the file using Electron API
       const oldPath = photo.path;
@@ -158,18 +165,20 @@ export function useFileOperations({
       const actualName = finalPath.split(/[\\/]/).pop() || finalName;
 
       // 更新条目：pm:// 原图地址要跟着新路径走，缩略图按新路径重新生成
-      setPhotos(prev => prev.map(p => {
-        if (p.id === id) {
-          return {
-            ...p,
-            name: actualName,
-            path: finalPath,
-            url: pmFileUrl(finalPath),
-            thumbnail: undefined,
-          };
-        }
-        return p;
-      }));
+      setPhotos((prev) =>
+        prev.map((p) => {
+          if (p.id === id) {
+            return {
+              ...p,
+              name: actualName,
+              path: finalPath,
+              url: pmFileUrl(finalPath),
+              thumbnail: undefined,
+            };
+          }
+          return p;
+        })
+      );
 
       // 标注资产按内容指纹关联，改名后自动跟随；只需同步会话级去重集合
       rekeyImportedPaths(oldPath, finalPath);
@@ -204,7 +213,9 @@ export function useFileOperations({
         return;
       }
 
-      const selectedPhotos = Array.from(selectedIds).map(id => photos.find(p => p.id === id)).filter(Boolean);
+      const selectedPhotos = Array.from(selectedIds)
+        .map((id) => photos.find((p) => p.id === id))
+        .filter(Boolean);
       if (selectedPhotos.length === 0) {
         showToast('没有选择要重命名的照片', 'info');
         return;
@@ -255,7 +266,8 @@ export function useFileOperations({
 
         if (options.mode === 'sequence') {
           // Generate sequential name with prefix and number
-          const padding = options.numberPadding && options.numberPadding > 0 ? options.numberPadding : 3;
+          const padding =
+            options.numberPadding && options.numberPadding > 0 ? options.numberPadding : 3;
           newName = `${options.prefix}${(options.startNumber + i).toString().padStart(padding, '0')}.${fileExt}`;
         } else if (options.mode === 'replace') {
           // Replace text in filename
@@ -298,11 +310,7 @@ export function useFileOperations({
             dateFormat: options.dateFormat,
             datePrefix: options.datePrefix,
           };
-          newName = repairFileName(
-            photo.name,
-            repairOptions,
-            photoTakenTime(photo)
-          ).name;
+          newName = repairFileName(photo.name, repairOptions, photoTakenTime(photo)).name;
         }
 
         // 批内重名统一处理：在扩展名前追加 _1、_2…（磁盘上同名由主进程兜底）
@@ -380,19 +388,21 @@ export function useFileOperations({
 
       // Update all renamed photos in state
       if (updates.length > 0) {
-        setPhotos(prev => prev.map(p => {
-          const update = updates.find(u => u.id === p.id);
-          if (update) {
-            return {
-              ...p,
-              name: update.newName,
-              path: update.newPath,
-              url: pmFileUrl(update.newPath),
-              thumbnail: undefined,
-            };
-          }
-          return p;
-        }));
+        setPhotos((prev) =>
+          prev.map((p) => {
+            const update = updates.find((u) => u.id === p.id);
+            if (update) {
+              return {
+                ...p,
+                name: update.newName,
+                path: update.newPath,
+                url: pmFileUrl(update.newPath),
+                thumbnail: undefined,
+              };
+            }
+            return p;
+          })
+        );
 
         // 标注资产按内容指纹关联，改名后自动跟随；只需同步会话级去重集合
         for (const update of updates) {
@@ -440,7 +450,7 @@ export function useFileOperations({
     }
 
     // 回环防护：删除会让 watcher 看到一波 removed，登记后由双保险过滤掉
-    markPathsTouched(targets.map(p => p.path));
+    markPathsTouched(targets.map((p) => p.path));
 
     // K19：逐项回收站操作有真实进度可报，大库批量删除不再像卡死
     beginFileOp('正在移至回收站', '个项目', targets.length);
@@ -456,7 +466,7 @@ export function useFileOperations({
     if (deletedIds.size > 0) {
       // 只摘会话级去重集合：标注资产按内容指纹保留，文件重新导入时会自动续上
       forgetImportedPaths(
-        targets.filter(p => deletedIds.has(p.id) && p.path).map(p => p.path as string)
+        targets.filter((p) => deletedIds.has(p.id) && p.path).map((p) => p.path as string)
       );
 
       // 卡片先淡出再摘除：磁盘上的文件已经没了，但界面上要让人看见它离开
@@ -467,9 +477,8 @@ export function useFileOperations({
     }
 
     // 无磁盘路径的条目（拖放降级预览）不会进回收站，必须说明，否则会给人「还能找回」的错觉
-    const pathlessNote = pathlessRemoved > 0
-      ? `，另有 ${pathlessRemoved} 项无磁盘文件，仅从列表移除`
-      : '';
+    const pathlessNote =
+      pathlessRemoved > 0 ? `，另有 ${pathlessRemoved} 项无磁盘文件，仅从列表移除` : '';
 
     // ENOENT 的失败项说明文件早已不在磁盘（外部删除 / 移动）：剔除条目，
     // 不进「重试」（重试只会再失败一次）；其余失败项维持原有重试入口
@@ -487,13 +496,21 @@ export function useFileOperations({
     if (gonePhotos.length > 0) fsGuard.reportGone(gonePhotos);
 
     if (retryPhotos.length === 0) {
-      showToast(`已将 ${deletedIds.size - pathlessRemoved} 张照片移至回收站${pathlessNote}`, 'success');
+      showToast(
+        `已将 ${deletedIds.size - pathlessRemoved} 张照片移至回收站${pathlessNote}`,
+        'success'
+      );
       return;
     }
 
-    retryErrors.forEach(error => logger.error('删除失败：', error));
+    retryErrors.forEach((error) => logger.error('删除失败：', error));
     const detail = retryErrors[0] + (retryErrors.length > 1 ? ` 等 ${retryErrors.length} 项` : '');
-    const retryAction = { label: '重试', onClick: () => { void runDelete(retryPhotos); } };
+    const retryAction = {
+      label: '重试',
+      onClick: () => {
+        void runDelete(retryPhotos);
+      },
+    };
 
     if (deletedIds.size > 0) {
       showToast(
@@ -515,7 +532,7 @@ export function useFileOperations({
     }
 
     const targets = Array.from(selectedIds)
-      .map(id => photos.find(p => p.id === id))
+      .map((id) => photos.find((p) => p.id === id))
       .filter((p): p is Photo => Boolean(p));
     if (targets.length === 0) {
       showToast('没有选择要删除的照片', 'info');
@@ -560,10 +577,10 @@ export function useFileOperations({
     }
 
     // 回环防护：源路径的移出会被 watcher 看到，先登记（目标路径在拿到结果后登记）
-    markPathsTouched(movable.map(p => p.path));
+    markPathsTouched(movable.map((p) => p.path));
 
     const response = await window.electronAPI.moveFiles(
-      movable.map(p => p.path as string),
+      movable.map((p) => p.path as string),
       targetDir,
       priorTargets
     );
@@ -573,15 +590,15 @@ export function useFileOperations({
     }
 
     const result = response.data;
-    const moved = result.results.filter(r => r.success && r.to);
-    const skipped = result.results.filter(r => r.skipped);
+    const moved = result.results.filter((r) => r.success && r.to);
+    const skipped = result.results.filter((r) => r.skipped);
     // K2 中间态：副本已落盘但源文件删除失败 —— 源仍在原位，列表条目保持不动，
     // 单独汇总并允许「重试」只补删源（回传 priorTargets，绝不重复复制）
     const partialPhotos: Photo[] = [];
     const partialRetryTargets: Record<string, string> = {};
     for (const r of result.results) {
       if (!r.partial) continue;
-      const photo = movable.find(p => p.path === r.from);
+      const photo = movable.find((p) => p.path === r.from);
       if (photo && r.to) {
         partialPhotos.push(photo);
         partialRetryTargets[r.from] = r.to;
@@ -592,7 +609,7 @@ export function useFileOperations({
     const failedResults: MoveFileResult[] = [];
     for (const r of result.results) {
       if (r.success || r.skipped || r.partial) continue;
-      const photo = movable.find(p => p.path === r.from);
+      const photo = movable.find((p) => p.path === r.from);
       if (isFileGoneError(r.error) && photo) {
         gonePhotos.push(photo);
       } else {
@@ -601,7 +618,7 @@ export function useFileOperations({
     }
     if (gonePhotos.length > 0) fsGuard.reportGone(gonePhotos);
     // 目标路径也登记：跨卷复制落盘同样会被 watcher 看到
-    markPathsTouched([...moved.map(r => r.to), ...Object.values(partialRetryTargets)]);
+    markPathsTouched([...moved.map((r) => r.to), ...Object.values(partialRetryTargets)]);
     let conflictCount = 0;
 
     if (moved.length > 0) {
@@ -612,7 +629,7 @@ export function useFileOperations({
         if (!r.to) continue;
         pathMap.set(r.from, r.to);
         if (r.conflicted) conflictCount += 1;
-        const photo = movable.find(p => p.path === r.from);
+        const photo = movable.find((p) => p.path === r.from);
         if (photo) {
           updates.set(photo.id, {
             path: r.to,
@@ -622,12 +639,20 @@ export function useFileOperations({
       }
 
       // 1) 列表条目跟随到新路径：pm:// 原图地址同步替换，缩略图按新路径重新生成
-      setPhotos(prev => prev.map(p => {
-        const next = updates.get(p.id);
-        return next
-          ? { ...p, path: next.path, name: next.name, url: pmFileUrl(next.path), thumbnail: undefined }
-          : p;
-      }));
+      setPhotos((prev) =>
+        prev.map((p) => {
+          const next = updates.get(p.id);
+          return next
+            ? {
+                ...p,
+                path: next.path,
+                name: next.name,
+                url: pmFileUrl(next.path),
+                thumbnail: undefined,
+              }
+            : p;
+        })
+      );
 
       // 2) 标注资产按内容指纹关联，移动后自动跟随；只需同步会话级去重集合
       for (const [from, to] of pathMap) {
@@ -637,9 +662,9 @@ export function useFileOperations({
 
     // 失败项映射回条目，供 Toast「重试」继续移动到同一目标
     const failedPhotos: Photo[] = failedResults
-      .map(r => movable.find(p => p.path === r.from))
+      .map((r) => movable.find((p) => p.path === r.from))
       .filter((p): p is Photo => Boolean(p));
-    failedResults.forEach(r => logger.error('移动失败：', r.from, r.error));
+    failedResults.forEach((r) => logger.error('移动失败：', r.from, r.error));
 
     const dirName = targetDir.split(/[\\/]/).filter(Boolean).pop() || targetDir;
     const notes: string[] = [];
@@ -652,22 +677,31 @@ export function useFileOperations({
     // 同一批里两类并存时，priorTargets 只作用于 partial 项，互不干扰
     const retryPhotos = [...failedPhotos, ...partialPhotos];
     const retryPriors = partialPhotos.length > 0 ? partialRetryTargets : undefined;
-    const retryAction = retryPhotos.length > 0
-      ? { label: '重试', onClick: () => { void runMove(retryPhotos, targetDir, retryPriors); } }
-      : undefined;
+    const retryAction =
+      retryPhotos.length > 0
+        ? {
+            label: '重试',
+            onClick: () => {
+              void runMove(retryPhotos, targetDir, retryPriors);
+            },
+          }
+        : undefined;
 
     if (moved.length > 0 && retryPhotos.length === 0) {
       showToast(`已移动 ${moved.length} 项到「${dirName}」${noteText}`, 'success');
     } else if (moved.length > 0 || partialPhotos.length > 0) {
-      const head = moved.length > 0
-        ? `已移动 ${moved.length} 项到「${dirName}」`
-        : `已复制 ${partialPhotos.length} 项到「${dirName}」`;
-      const partialText = moved.length > 0 && partialPhotos.length > 0
-        ? `，另有 ${partialPhotos.length} 项已复制到目标位置，但原文件删除失败`
-        : '';
-      const failText = failedPhotos.length > 0
-        ? `，${failedPhotos.length} 项失败：${humanizeFsError(failedResults[0]?.error)}`
-        : '';
+      const head =
+        moved.length > 0
+          ? `已移动 ${moved.length} 项到「${dirName}」`
+          : `已复制 ${partialPhotos.length} 项到「${dirName}」`;
+      const partialText =
+        moved.length > 0 && partialPhotos.length > 0
+          ? `，另有 ${partialPhotos.length} 项已复制到目标位置，但原文件删除失败`
+          : '';
+      const failText =
+        failedPhotos.length > 0
+          ? `，${failedPhotos.length} 项失败：${humanizeFsError(failedResults[0]?.error)}`
+          : '';
       showToast(`${head}${failText}${partialText}${noteText}`, 'warning', retryAction);
     } else if (skipped.length > 0 && retryPhotos.length === 0) {
       showToast(`所选项目都已在「${dirName}」中，无需移动`, 'info');
@@ -703,9 +737,10 @@ export function useFileOperations({
       showToast('电子 API 不可用，无法执行移动操作', 'error');
       return;
     }
-    const chosen = targets
-      ?? Array.from(selectedIds)
-        .map(id => photos.find(p => p.id === id))
+    const chosen =
+      targets ??
+      Array.from(selectedIds)
+        .map((id) => photos.find((p) => p.id === id))
         .filter((p): p is Photo => Boolean(p));
     if (chosen.length === 0) {
       showToast('没有选择要移动的照片', 'info');

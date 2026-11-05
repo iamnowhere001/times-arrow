@@ -46,7 +46,9 @@ describe('photoTakenTime（2 级：拍摄 → 修改）', () => {
 
 describe('photoOriginalTime（3 级：拍摄 → 创建 → 修改）', () => {
   it('按优先级依次回退', () => {
-    expect(photoOriginalTime(makePhoto({ id: 'a', dateTaken: 1, dateCreated: 2, lastModified: 3 }))).toBe(1);
+    expect(
+      photoOriginalTime(makePhoto({ id: 'a', dateTaken: 1, dateCreated: 2, lastModified: 3 }))
+    ).toBe(1);
     expect(photoOriginalTime(makePhoto({ id: 'a', dateCreated: 2, lastModified: 3 }))).toBe(2);
     expect(photoOriginalTime(makePhoto({ id: 'a', lastModified: 3 }))).toBe(3);
     expect(photoOriginalTime(makePhoto({ id: 'a' }))).toBe(0);
@@ -103,11 +105,15 @@ describe('两种语义的差异是刻意且可枚举的', () => {
 
 describe('calendarDayKey（本地日历日）', () => {
   it('同一天的不同时刻得到同一个 key', () => {
-    expect(calendarDayKey(localTime(2024, 5, 20, 0, 0, 1))).toBe(calendarDayKey(localTime(2024, 5, 20, 23, 59, 59)));
+    expect(calendarDayKey(localTime(2024, 5, 20, 0, 0, 1))).toBe(
+      calendarDayKey(localTime(2024, 5, 20, 23, 59, 59))
+    );
   });
 
   it('相邻两天得到不同 key', () => {
-    expect(calendarDayKey(localTime(2024, 5, 20, 23))).not.toBe(calendarDayKey(localTime(2024, 5, 21, 1)));
+    expect(calendarDayKey(localTime(2024, 5, 20, 23))).not.toBe(
+      calendarDayKey(localTime(2024, 5, 21, 1))
+    );
   });
 
   it('用本地日界而不是 UTC 日界（东八区的经典陷阱）', () => {
@@ -122,7 +128,9 @@ describe('calendarDayKey（本地日历日）', () => {
     expect(calendarDayKey(localTime(2024, 3, 5))).toBe(20240305);
     expect(calendarDayKey(localTime(2024, 12, 31))).toBe(20241231);
     // 时间上更晚 → key 更大，可直接比较
-    expect(calendarDayKey(localTime(2024, 3, 5))).toBeLessThan(calendarDayKey(localTime(2024, 3, 6)));
+    expect(calendarDayKey(localTime(2024, 3, 5))).toBeLessThan(
+      calendarDayKey(localTime(2024, 3, 6))
+    );
   });
 });
 

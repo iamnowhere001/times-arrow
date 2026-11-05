@@ -41,16 +41,16 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 | 命令 | 说明 |
 | --- | --- |
-| `npm run typecheck` | `tsc --noEmit`（渲染进程 + 构建配置两个 project） |
+| `npm run typecheck` | `tsc --noEmit`（渲染进程 + 构建配置 + tests 三个 project） |
 | `npm run lint` / `lint:fix` | ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware；当前均为 0 problems） |
-| `npm run format` / `format:check` | Prettier（仓库尚未全量格式化，见下） |
+| `npm run format` / `format:check` | Prettier（已全量格式化，`format:check` 通过） |
 | `npm run test` | `test:main` + `test:unit` |
 | `npm run test:unit` | Vitest 纯函数单测（266 项） |
 | `npm run test:main` | 打桩 electron 的主进程集成测试（166 项 = 22 + 18 + 48 + 16 + 47 + 分层依赖 6 + IPC 契约 9） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
 
 > **两个环境注意事项**
-> 1. **lint 分两层**：`lint:js` 用 ESLint 检查 JS/CJS（主进程、构建脚本），`lint:ts` 用 oxlint（type-aware）检查 TS/TSX。这样绕开了 `typescript-eslint` 对 TypeScript 7 的 peer 限制，同时让 TS 侧重新获得静态检查。
+> 1. **lint 分两层**：`lint:js` 用 ESLint 检查 JS/CJS（主进程、构建脚本），`lint:ts` 用 oxlint（type-aware）检查 TS/TSX。这样绕开了 `typescript-eslint` 对 TypeScript 7 的 peer 限制（该包已从 devDependencies 移除），同时让 TS 侧重新获得静态检查。
 > 2. **本机无法初始化 Chromium 沙箱**，直接跑 `test:smoke` 会 `FATAL: GPU process isn't usable` 崩溃（退出码 133）。本环境请用 `npm run test:smoke:no-sandbox`。默认脚本保持不带逃生口，以免在正常机器上白白跳过沙箱路径。
 
 ---
@@ -378,7 +378,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 **实现约束（不影响使用，但改代码时须知）**
 
 - **lint 分两层**：ESLint 只检查 JS/CJS（主进程与构建脚本），TS/TSX 由 oxlint（type-aware）检查；两层都要求 0 problems，规则清单见 `.oxlintrc.json`。
-- **仓库尚未全量 Prettier 格式化**：既有文件格式化一次会产生数千行 diff，需独立提交。
+- **仓库已全量 Prettier 格式化**（2026-11-05，95 个文件 / 约 1.5 万行 diff，按约定单独提交）；新增文件须保持 `format:check` 通过。
 - **本机无法初始化 Chromium 沙箱**：开发需用 `PHOTOMINDER_DISABLE_SANDBOX=1`（或 `test:smoke:no-sandbox`）；打包产物不受影响。
 - **`movePhotosToTrash` 仍串行**：批量删除数百张时是逐次 IPC 往返（见 CODE_REVIEW P2-23）。
 - **通用图标已收敛到 `src/components/icons/`**（返回箭头 3 份、刷新 / 重置、漏斗、加号各 2 份 → 各 1 份）；仍有若干同形但坐标或线宽不同的图标留在各自组件内，未强行合并（见 CODE_REVIEW 附录 E.2）。`ImageGrid` 内仍有两套虚拟化实现（`VirtualGrid` / `VirtualList`）。

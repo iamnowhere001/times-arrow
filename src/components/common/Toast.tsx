@@ -1,4 +1,3 @@
-
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { ToastAction, ToastType } from '@/types/toast';
 
@@ -38,12 +37,15 @@ const Toast: React.FC<ToastProps> = ({ message, type = 'info', onClose, duration
     leaveTimerRef.current = window.setTimeout(onClose, 260);
   }, [clearCloseTimer, onClose]);
 
-  const startCloseTimer = useCallback((delay: number) => {
-    clearCloseTimer();
-    if (delay <= 0) return;
-    startedAtRef.current = Date.now();
-    closeTimerRef.current = window.setTimeout(dismiss, delay);
-  }, [clearCloseTimer, dismiss]);
+  const startCloseTimer = useCallback(
+    (delay: number) => {
+      clearCloseTimer();
+      if (delay <= 0) return;
+      startedAtRef.current = Date.now();
+      closeTimerRef.current = window.setTimeout(dismiss, delay);
+    },
+    [clearCloseTimer, dismiss]
+  );
 
   useEffect(() => {
     const enterTimer = window.setTimeout(() => setIsVisible(true), 10);
@@ -60,7 +62,10 @@ const Toast: React.FC<ToastProps> = ({ message, type = 'info', onClose, duration
   const handleMouseEnter = () => {
     if (autoDismiss <= 0 || closeTimerRef.current === null) return;
     clearCloseTimer();
-    remainingRef.current = Math.max(200, remainingRef.current - (Date.now() - startedAtRef.current));
+    remainingRef.current = Math.max(
+      200,
+      remainingRef.current - (Date.now() - startedAtRef.current)
+    );
   };
 
   /** 移开：从剩余时间接着倒计时 */
@@ -97,26 +102,80 @@ const Toast: React.FC<ToastProps> = ({ message, type = 'info', onClose, duration
       role={type === 'error' || type === 'warning' ? 'alert' : 'status'}
     >
       {type === 'success' && (
-        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${iconColors.success}`}>
-          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${iconColors.success}`}
+        >
+          <svg
+            className="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth="2.5"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path>
+          </svg>
         </span>
       )}
       {type === 'info' && (
-        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${iconColors.info}`}>
-          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${iconColors.info}`}
+        >
+          <svg
+            className="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            ></path>
+          </svg>
         </span>
       )}
       {type === 'error' && (
-        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${iconColors.error}`}>
-          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${iconColors.error}`}
+        >
+          <svg
+            className="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            ></path>
+          </svg>
         </span>
       )}
       {type === 'warning' && (
-        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${iconColors.warning}`}>
-          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${iconColors.warning}`}
+        >
+          <svg
+            className="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            ></path>
+          </svg>
         </span>
       )}
-      <span className="min-w-0 flex-1 text-sm font-medium text-[var(--text-primary)]">{message}</span>
+      <span className="min-w-0 flex-1 text-sm font-medium text-[var(--text-primary)]">
+        {message}
+      </span>
       {action && (
         <button
           onClick={() => {
@@ -133,7 +192,15 @@ const Toast: React.FC<ToastProps> = ({ message, type = 'info', onClose, duration
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-colors hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]"
         aria-label="关闭通知"
       >
-        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+        <svg
+          className="h-3.5 w-3.5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          strokeWidth="2.5"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
       </button>
     </div>
   );

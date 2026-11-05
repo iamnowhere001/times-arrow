@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Photo } from '@/types';
 import { logger } from '@/lib/logger';
@@ -100,9 +99,7 @@ const exportOne = async (
   }
   ctx.drawImage(img, 0, 0);
 
-  const blob = await new Promise<Blob | null>(resolve =>
-    canvas.toBlob(resolve, format, quality)
-  );
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, format, quality));
   canvas.width = 0;
   canvas.height = 0;
   if (!blob) throw new Error('格式转换失败');
@@ -215,21 +212,25 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
         className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[440px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] flex flex-col max-h-[90vh]"
         role="dialog"
         aria-modal="true"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-[var(--border-subtle)]">
           <h3 className="text-lg font-semibold text-[var(--text-primary)]">导出照片</h3>
           <p className="text-sm text-[var(--text-tertiary)] mt-1">
-            {isExporting ? `正在导出 ${progress} / ${photos.length}` : `已选择 ${photos.length} 张照片`}
+            {isExporting
+              ? `正在导出 ${progress} / ${photos.length}`
+              : `已选择 ${photos.length} 张照片`}
           </p>
         </div>
 
         <div className="p-6 space-y-5 overflow-y-auto">
           {/* 格式选择 */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-2.5">输出格式</label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-2.5">
+              输出格式
+            </label>
             <div className="grid grid-cols-2 gap-2">
-              {formatOptions.map(opt => (
+              {formatOptions.map((opt) => (
                 <button
                   key={opt.value}
                   onClick={() => setFormat(opt.value)}
@@ -240,10 +241,14 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
                       : 'border-[var(--border-subtle)] hover:border-[var(--border-hover)] bg-[var(--bg-input)]'
                   }`}
                 >
-                  <span className={`block text-sm font-medium ${format === opt.value ? 'text-[var(--accent-blue)]' : 'text-[var(--text-primary)]'}`}>
+                  <span
+                    className={`block text-sm font-medium ${format === opt.value ? 'text-[var(--accent-blue)]' : 'text-[var(--text-primary)]'}`}
+                  >
                     {opt.label}
                   </span>
-                  <span className="block text-xs text-[var(--text-quaternary)] mt-0.5">{opt.hint}</span>
+                  <span className="block text-xs text-[var(--text-quaternary)] mt-0.5">
+                    {opt.hint}
+                  </span>
                 </button>
               ))}
             </div>
@@ -253,8 +258,12 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
           {qualityFormats && (
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">质量</label>
-                <span className="text-xs font-mono text-[var(--accent-cyan)]">{Math.round(quality * 100)}%</span>
+                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+                  质量
+                </label>
+                <span className="text-xs font-mono text-[var(--accent-cyan)]">
+                  {Math.round(quality * 100)}%
+                </span>
               </div>
               <input
                 type="range"
@@ -262,7 +271,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
                 max={1}
                 step={0.05}
                 value={quality}
-                onChange={e => setQuality(parseFloat(e.target.value))}
+                onChange={(e) => setQuality(parseFloat(e.target.value))}
                 disabled={isExporting}
                 className="w-full accent-[var(--accent-blue)]"
               />
@@ -271,21 +280,35 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
 
           {/* 目标目录 */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-2.5">保存到</label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-2.5">
+              保存到
+            </label>
             <button
               onClick={pickDirectory}
               disabled={isExporting}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] hover:border-[var(--border-hover)] transition-all text-left disabled:opacity-60"
             >
-              <svg className="w-5 h-5 shrink-0 text-[var(--accent-blue)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.8">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" strokeLinecap="round" strokeLinejoin="round"></path>
+              <svg
+                className="w-5 h-5 shrink-0 text-[var(--accent-blue)]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                strokeWidth="1.8"
+              >
+                <path
+                  d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                ></path>
               </svg>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm text-[var(--text-primary)] truncate">
                   {targetDir ? targetDir.split('/').pop() : '选择导出文件夹…'}
                 </span>
                 {targetDir && (
-                  <span className="block text-xs text-[var(--text-quaternary)] truncate">{targetDir}</span>
+                  <span className="block text-xs text-[var(--text-quaternary)] truncate">
+                    {targetDir}
+                  </span>
                 )}
               </span>
             </button>
@@ -312,7 +335,9 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
         <div className="px-6 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-3">
           {isExporting ? (
             <button
-              onClick={() => { cancelRef.current = true; }}
+              onClick={() => {
+                cancelRef.current = true;
+              }}
               className="px-4 py-2 text-sm font-medium rounded-xl text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] transition-colors"
             >
               取消导出

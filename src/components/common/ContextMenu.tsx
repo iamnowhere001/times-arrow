@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from 'react';
 import type { ContextMenuItem } from '@/types/contextMenu';
 
@@ -78,7 +77,8 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, actions }) => 
               }}
               disabled={action.disabled}
               className={`mx-1 flex w-[calc(100%-8px)] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] font-medium transition-colors duration-150
-                ${action.disabled
+                ${
+                  action.disabled
                     ? 'cursor-default text-[var(--text-quaternary)]'
                     : action.danger
                       ? 'text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.12)]'
@@ -86,13 +86,17 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, actions }) => 
                 }`}
             >
               {action.icon && (
-                <span className={`flex h-4 w-4 shrink-0 items-center justify-center ${!action.disabled && !action.danger ? 'text-[var(--text-tertiary)]' : ''}`}>
+                <span
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center ${!action.disabled && !action.danger ? 'text-[var(--text-tertiary)]' : ''}`}
+                >
                   {action.icon}
                 </span>
               )}
               <span className="flex-1 truncate">{action.label}</span>
               {action.shortcut && (
-                <span className="shrink-0 font-mono text-[11px] tracking-tight text-[var(--text-quaternary)]">{action.shortcut}</span>
+                <span className="shrink-0 font-mono text-[11px] tracking-tight text-[var(--text-quaternary)]">
+                  {action.shortcut}
+                </span>
               )}
             </button>
           )}

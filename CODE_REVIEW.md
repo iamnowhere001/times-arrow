@@ -629,6 +629,11 @@ if (SANDBOX_DISABLED) { /* no-sandbox / disable-setuid-sandbox / disable-gpu-san
 
 ### B.7 ESLint + Prettier（对应 B2）
 
+> **（2026-09-16 当时口径）** 本节记录 P1 批次的实现状态，判断与取舍保留原文。
+> 其中「TS 侧降级」「`eslint.config.mjs` 能力探测」已被后续 B5 取代：TS/TSX 现由
+> oxlint（type-aware）检查，ESLint 只保留 JS/CJS（见 README「质量护栏」与 `.oxlintrc.json`）。
+> Prettier 已于 2026-11-05 全量格式化，下文「未对既有文件执行格式化」同样属于当时口径。
+
 已落地，但 **TypeScript 侧处于降级状态**，原因值得记录：
 
 - 本项目的 TypeScript 是 **7.x（原生移植版）**，而 `typescript-eslint` 的 peer 范围是

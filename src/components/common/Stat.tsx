@@ -87,8 +87,7 @@ interface StatPillProps {
 }
 
 const PILL_TONE = {
-  neutral:
-    'bg-[var(--bg-glass)] border-[var(--border-subtle)] text-[var(--text-secondary)]',
+  neutral: 'bg-[var(--bg-glass)] border-[var(--border-subtle)] text-[var(--text-secondary)]',
   accent:
     'bg-[rgba(var(--accent-pink-rgb),0.16)] border-[rgba(var(--accent-pink-rgb),0.35)] text-[var(--accent-pink)]',
 } as const;

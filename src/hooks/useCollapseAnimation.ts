@@ -9,7 +9,15 @@
  * 同一套计时器，卸载时由本 Hook 统一清理。
  */
 
-import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
 import { Photo } from '@/types';
 
 /** 卡片塌陷动画时长：与 ImageGrid 中卡片淡出的 duration 保持一致 */
@@ -37,47 +45,53 @@ export function useCollapseAnimation({
   const [exitingIds, setExitingIds] = useState<Set<string>>(new Set());
   const exitTimersRef = useRef<number[]>([]);
 
-  const removeWithCollapse = useCallback((ids: Set<string>) => {
-    if (ids.size === 0) return;
-    setExitingIds(prev => new Set([...prev, ...ids]));
+  const removeWithCollapse = useCallback(
+    (ids: Set<string>) => {
+      if (ids.size === 0) return;
+      setExitingIds((prev) => new Set([...prev, ...ids]));
 
-    const timer = window.setTimeout(() => {
-      exitTimersRef.current = exitTimersRef.current.filter(t => t !== timer);
+      const timer = window.setTimeout(() => {
+        exitTimersRef.current = exitTimersRef.current.filter((t) => t !== timer);
 
-      // 释放降级路径（拖放无磁盘路径）产生的 blob: URL。
-      // 这些条目在磁盘上没有对应文件，若不在这里回收，ObjectURL 会一直常驻内存，
-      // 直到「清空照片列表」才被清掉 —— 长时间增删就是典型的内存只增不减。
-      const blobUrls: string[] = [];
-      photosRef.current.forEach(photo => {
-        if (ids.has(photo.id) && photo.url.startsWith('blob:')) blobUrls.push(photo.url);
-      });
-
-      setPhotos(prev => prev.filter(p => !ids.has(p.id)));
-      setExitingIds(prev => {
-        const next = new Set(prev);
-        ids.forEach(id => next.delete(id));
-        return next;
-      });
-
-      // 等卡片卸载后再释放，避免淡出动画过程中图片变成破图
-      if (blobUrls.length > 0) {
-        window.requestAnimationFrame(() => {
-          blobUrls.forEach(url => URL.revokeObjectURL(url));
+        // 释放降级路径（拖放无磁盘路径）产生的 blob: URL。
+        // 这些条目在磁盘上没有对应文件，若不在这里回收，ObjectURL 会一直常驻内存，
+        // 直到「清空照片列表」才被清掉 —— 长时间增删就是典型的内存只增不减。
+        const blobUrls: string[] = [];
+        photosRef.current.forEach((photo) => {
+          if (ids.has(photo.id) && photo.url.startsWith('blob:')) blobUrls.push(photo.url);
         });
-      }
-    }, EXIT_DURATION);
-    exitTimersRef.current.push(timer);
-  }, [photosRef, setPhotos]);
+
+        setPhotos((prev) => prev.filter((p) => !ids.has(p.id)));
+        setExitingIds((prev) => {
+          const next = new Set(prev);
+          ids.forEach((id) => next.delete(id));
+          return next;
+        });
+
+        // 等卡片卸载后再释放，避免淡出动画过程中图片变成破图
+        if (blobUrls.length > 0) {
+          window.requestAnimationFrame(() => {
+            blobUrls.forEach((url) => URL.revokeObjectURL(url));
+          });
+        }
+      }, EXIT_DURATION);
+      exitTimersRef.current.push(timer);
+    },
+    [photosRef, setPhotos]
+  );
 
   // 卸载时清掉尚未播完的塌陷计时器
-  useEffect(() => () => {
-    exitTimersRef.current.forEach(t => window.clearTimeout(t));
-    exitTimersRef.current = [];
-  }, []);
+  useEffect(
+    () => () => {
+      exitTimersRef.current.forEach((t) => window.clearTimeout(t));
+      exitTimersRef.current = [];
+    },
+    []
+  );
 
   const scheduleAfterExit = useCallback((callback: () => void) => {
     const timer = window.setTimeout(() => {
-      exitTimersRef.current = exitTimersRef.current.filter(t => t !== timer);
+      exitTimersRef.current = exitTimersRef.current.filter((t) => t !== timer);
       callback();
     }, EXIT_DURATION);
     exitTimersRef.current.push(timer);

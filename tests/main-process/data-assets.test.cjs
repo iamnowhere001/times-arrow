@@ -69,7 +69,10 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 250));
   section('2. v1 → v2 结构迁移');
   const cfg = JSON.parse(fs.readFileSync(path.join(userData, 'config.json'), 'utf8'));
   check('config version 升到 2', cfg.version === 2);
-  check('收藏改成内容指纹', cfg.favorites.every((x) => /^[0-9a-f]{32}$/.test(x)));
+  check(
+    '收藏改成内容指纹',
+    cfg.favorites.every((x) => /^[0-9a-f]{32}$/.test(x))
+  );
   check('同内容的两份收藏合并成一条', cfg.favorites.length === 1, JSON.stringify(cfg.favorites));
   check('收藏指纹与内容一致', cfg.favorites[0] === idA1);
   check('隐藏项也换成指纹', cfg.hidden.length === 1 && cfg.hidden[0] === idB1);
@@ -101,7 +104,6 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 250));
   check('未授权 / 不存在的路径被跳过', !res.data[missing]);
   const badArgs = await call('compute-file-ids', 'not-an-array');
   check('参数不是数组时返回 fail', badArgs.ok === false);
-
 
   // -------------------------------------------------------------------------
   // 5. 操作日志与撤销
@@ -135,7 +137,10 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 250));
 
   const logDel = await call('get-operation-log', { offset: 0, limit: 20, type: 'delete' });
   const delEntry = logDel.data.entries[0];
-  check('删除日志带体积与修改时间', delEntry.size === Buffer.byteLength('delete-me') && typeof delEntry.mtime === 'number');
+  check(
+    '删除日志带体积与修改时间',
+    delEntry.size === Buffer.byteLength('delete-me') && typeof delEntry.mtime === 'number'
+  );
   const undoDel = await call('undo-operation', delEntry.id);
   check(
     '回收站找不到时明确失败，不假装成功',
@@ -167,12 +172,22 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 250));
 
   const relink = await call('relink-source', oldRoot, newRoot);
   check('重连返回成功', relink.ok === true, relink.ok ? '' : relink.error);
-  check('续接 2 条记录（收藏 + 标签）', relink.ok && relink.data.count === 2, relink.ok ? String(relink.data.count) : '');
+  check(
+    '续接 2 条记录（收藏 + 标签）',
+    relink.ok && relink.data.count === 2,
+    relink.ok ? String(relink.data.count) : ''
+  );
   const cfgRelink = await call('load-config');
   check('收藏按新内容指纹续接', cfgRelink.data.favorites.includes(relocatedId));
   check('标签续接到新指纹', (cfgRelink.data.tags[relocatedId] ?? [])[0] === '旧标签');
-  check('orphans 已清空该项', !(cfgRelink.data.orphans.favorites ?? []).includes(path.join(oldRoot, 'photo.jpg')));
-  check('来源路径已改写', cfgRelink.data.sources.some((s) => s.path === newRoot));
+  check(
+    'orphans 已清空该项',
+    !(cfgRelink.data.orphans.favorites ?? []).includes(path.join(oldRoot, 'photo.jpg'))
+  );
+  check(
+    '来源路径已改写',
+    cfgRelink.data.sources.some((s) => s.path === newRoot)
+  );
 
   // -------------------------------------------------------------------------
   // 8. F10 增量备份：按原目录结构 + 二次全跳过
@@ -197,7 +212,10 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 250));
       fs.existsSync(path.join(backupDst, rootName, 'sub', 'b.jpg'))
   );
   const backup2 = await call('start-backup', backupDst);
-  check('二次备份全部跳过（增量）', backup2.ok && backup2.data.copied === 0 && backup2.data.skipped === 2);
+  check(
+    '二次备份全部跳过（增量）',
+    backup2.ok && backup2.data.copied === 0 && backup2.data.skipped === 2
+  );
 
   // -------------------------------------------------------------------------
   // 9. 配置导出 / 导入（dialog 桩可替换）

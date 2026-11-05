@@ -88,10 +88,15 @@ export function buildContextMenuActions(deps: ContextMenuActionsDeps): ContextMe
         disabled: photoCount === 0,
         onClick: () => onCheckDuplicates(),
       },
-      ...(photoCount > 0 ? [{ separator: true } as ContextMenuItem, {
-        label: '清空照片列表',
-        onClick: () => onClearList(),
-      }] : []),
+      ...(photoCount > 0
+        ? [
+            { separator: true } as ContextMenuItem,
+            {
+              label: '清空照片列表',
+              onClick: () => onClearList(),
+            },
+          ]
+        : []),
     ];
   }
 
@@ -100,8 +105,9 @@ export function buildContextMenuActions(deps: ContextMenuActionsDeps): ContextMe
   const isVideo = isVideoPhoto(photo);
 
   // 右键的条目若在选中集内，则对整组生效（与重命名 / 删除一致）
-  const targetIds = selectedIds.has(photo.id) && selectedIds.size > 1 ? [...selectedIds] : [photo.id];
-  const allHidden = targetIds.every(id => getPhotoById(id)?.isHidden);
+  const targetIds =
+    selectedIds.has(photo.id) && selectedIds.size > 1 ? [...selectedIds] : [photo.id];
+  const allHidden = targetIds.every((id) => getPhotoById(id)?.isHidden);
   const hideLabel =
     targetIds.length > 1
       ? `${allHidden ? '取消隐藏' : '隐藏'} ${targetIds.length} 项`
@@ -126,10 +132,14 @@ export function buildContextMenuActions(deps: ContextMenuActionsDeps): ContextMe
     },
     { separator: true },
     // 视频无法写入图片剪贴板
-    ...(isVideo ? [] : [{
-      label: '复制图片',
-      onClick: () => onCopyImage(photo),
-    } as ContextMenuItem]),
+    ...(isVideo
+      ? []
+      : [
+          {
+            label: '复制图片',
+            onClick: () => onCopyImage(photo),
+          } as ContextMenuItem,
+        ]),
     {
       label: '在访达中显示',
       onClick: () => onShowInFolder(photo),
@@ -143,17 +153,18 @@ export function buildContextMenuActions(deps: ContextMenuActionsDeps): ContextMe
       onClick: () => onOpenInEditor(photo),
     },
     // 导出走 canvas 重编码，仅图片可用
-    ...(isVideo ? [] : [{
-      label: `导出${selectedIds.size > 1 ? ` ${selectedIds.size} 张` : '…'}`,
-      onClick: () => onExportSelected(),
-    } as ContextMenuItem]),
+    ...(isVideo
+      ? []
+      : [
+          {
+            label: `导出${selectedIds.size > 1 ? ` ${selectedIds.size} 张` : '…'}`,
+            onClick: () => onExportSelected(),
+          } as ContextMenuItem,
+        ]),
     {
       label: targetIds.length > 1 ? `移动 ${targetIds.length} 项到…` : '移动到…',
-      onClick: () => onMovePhotos(
-        targetIds
-          .map(id => getPhotoById(id))
-          .filter((p): p is Photo => Boolean(p))
-      ),
+      onClick: () =>
+        onMovePhotos(targetIds.map((id) => getPhotoById(id)).filter((p): p is Photo => Boolean(p))),
     },
     { separator: true },
     {

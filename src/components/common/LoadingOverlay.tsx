@@ -42,11 +42,27 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
             <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)] opacity-20 animate-ping"></div>
             <div className="absolute inset-2 rounded-full bg-[var(--bg-modal)]"></div>
             <div className="absolute inset-0 rounded-full border-2 border-[var(--border-default)]"></div>
-            <div className="absolute inset-0 rounded-full border-t-2 border-r-2 border-[var(--accent-blue)] animate-spin" style={{ animationDuration: '1.5s' }}></div>
-            <div className="absolute inset-1 rounded-full border-b-2 border-l-2 border-[var(--accent-purple)] animate-spin" style={{ animationDuration: '2s', animationDirection: 'reverse' }}></div>
+            <div
+              className="absolute inset-0 rounded-full border-t-2 border-r-2 border-[var(--accent-blue)] animate-spin"
+              style={{ animationDuration: '1.5s' }}
+            ></div>
+            <div
+              className="absolute inset-1 rounded-full border-b-2 border-l-2 border-[var(--accent-purple)] animate-spin"
+              style={{ animationDuration: '2s', animationDirection: 'reverse' }}
+            ></div>
             <div className="absolute inset-0 flex items-center justify-center">
-              <svg className="w-8 h-8 text-[var(--accent-cyan)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              <svg
+                className="w-8 h-8 text-[var(--accent-cyan)]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                strokeWidth="1.5"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
               </svg>
             </div>
           </div>
@@ -65,9 +81,10 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
 
             <div className="relative h-2.5 bg-[var(--bg-glass-hover)] rounded-full overflow-hidden">
               {total > 0 ? (
-                <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-[var(--accent-blue)] via-[var(--accent-cyan)] to-[var(--accent-purple)] rounded-full transition-all duration-500 ease-out shadow-lg"
-                  style={{ width: `${Math.max(5, (progress / total) * 100)}%` }}>
-                </div>
+                <div
+                  className="absolute inset-y-0 left-0 bg-gradient-to-r from-[var(--accent-blue)] via-[var(--accent-cyan)] to-[var(--accent-purple)] rounded-full transition-all duration-500 ease-out shadow-lg"
+                  style={{ width: `${Math.max(5, (progress / total) * 100)}%` }}
+                ></div>
               ) : (
                 // 扫描阶段无法预知总数：用不确定态动画，避免误导性的百分比
                 <div
@@ -81,7 +98,9 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
               <span className="text-xs text-[var(--text-quaternary)] font-mono">
                 {total > 0 ? `${progress} / ${total}` : '—'}
               </span>
-              <span className="text-xs text-[var(--text-quaternary)]">{hint ?? (total > 0 ? '个项目' : '请稍候')}</span>
+              <span className="text-xs text-[var(--text-quaternary)]">
+                {hint ?? (total > 0 ? '个项目' : '请稍候')}
+              </span>
             </div>
 
             <div className="h-8 mt-2 px-3 py-1.5 bg-[var(--bg-glass)] rounded-xl border border-[var(--border-subtle)] flex items-center justify-center overflow-hidden">

@@ -28,7 +28,8 @@ const TONE_CLASS: Record<Tone, string> = {
   cold: 'bg-[rgba(var(--accent-blue-rgb),0.07)] text-[var(--text-tertiary)] border-[rgba(var(--accent-blue-rgb),0.14)]',
   neutral: 'bg-[var(--bg-glass)] text-[var(--text-tertiary)] border-[var(--border-subtle)]',
   warm: 'bg-[rgba(var(--accent-blue-rgb),0.12)] text-[var(--accent-blue)] border-[rgba(var(--accent-blue-rgb),0.28)]',
-  heart: 'bg-[rgba(var(--accent-pink-rgb),0.12)] text-[var(--accent-pink)] border-[rgba(var(--accent-pink-rgb),0.28)]',
+  heart:
+    'bg-[rgba(var(--accent-pink-rgb),0.12)] text-[var(--accent-pink)] border-[rgba(var(--accent-pink-rgb),0.28)]',
 };
 
 /** 每种空状态一个图形：不用同一张「空照片」，否则六种状态又变回一张脸 */
@@ -102,7 +103,15 @@ const KIND_TONE: Record<Exclude<EmptyKind, 'library'>, Tone> = {
 const WELCOME_POINTS = [
   {
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      >
         <rect x="3" y="11" width="18" height="11" rx="2" />
         <path d="M7 11V7a5 5 0 0 1 10 0v4" />
       </svg>
@@ -111,7 +120,16 @@ const WELCOME_POINTS = [
   },
   {
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
       </svg>
     ),
@@ -119,7 +137,16 @@ const WELCOME_POINTS = [
   },
   {
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <rect x="2" y="3" width="20" height="18" rx="2" />
         <path d="M9 17L4 12l5-5m6 10l5-5-5-5" />
       </svg>
@@ -161,7 +188,10 @@ export const WelcomeEmptyState: React.FC<WelcomeEmptyStateProps> = ({
       />
     </div>
 
-    <h1 className="mb-2.5 text-[26px] font-semibold tracking-[-0.01em] text-[var(--text-primary)] animate-fadeInUp" style={{ animationDelay: '60ms' }}>
+    <h1
+      className="mb-2.5 text-[26px] font-semibold tracking-[-0.01em] text-[var(--text-primary)] animate-fadeInUp"
+      style={{ animationDelay: '60ms' }}
+    >
       {title}
     </h1>
     <p
@@ -171,7 +201,10 @@ export const WelcomeEmptyState: React.FC<WelcomeEmptyStateProps> = ({
       {description}
     </p>
 
-    <div className="mb-8 flex flex-wrap items-center justify-center gap-2.5 animate-fadeInUp" style={{ animationDelay: '180ms' }}>
+    <div
+      className="mb-8 flex flex-wrap items-center justify-center gap-2.5 animate-fadeInUp"
+      style={{ animationDelay: '180ms' }}
+    >
       {WELCOME_POINTS.map((p) => (
         <div
           key={p.label}
@@ -256,7 +289,10 @@ export const QuietEmptyState: React.FC<QuietEmptyStateProps> = ({
       )}
 
       {(onShowAll || onClearSearch) && (
-        <div className="flex items-center gap-3 animate-fadeInUp" style={{ animationDelay: '180ms' }}>
+        <div
+          className="flex items-center gap-3 animate-fadeInUp"
+          style={{ animationDelay: '180ms' }}
+        >
           {onShowAll && (
             <button
               type="button"
@@ -282,8 +318,9 @@ export const QuietEmptyState: React.FC<QuietEmptyStateProps> = ({
 };
 
 /** 空状态里最常见的旁注数字：让「是不是条件太窄」有个参照 */
-export const EmptyStateHint: React.FC<{ value: React.ReactNode; unit: string }> = ({ value, unit }) => (
-  <Stat value={value} unit={unit} label="库中" emphasis="micro" />
-);
+export const EmptyStateHint: React.FC<{ value: React.ReactNode; unit: string }> = ({
+  value,
+  unit,
+}) => <Stat value={value} unit={unit} label="库中" emphasis="micro" />;
 
 export default WelcomeEmptyState;

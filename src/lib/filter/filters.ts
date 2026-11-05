@@ -62,7 +62,7 @@ export const normalizeFilters = (input?: Partial<PhotoFilters> | null): PhotoFil
 const sameList = (a: string[], b: string[]): boolean => {
   if (a.length !== b.length) return false;
   const set = new Set(b);
-  return a.every(item => set.has(item));
+  return a.every((item) => set.has(item));
 };
 
 /** 两组筛选是否等价：用于判断「当前视图是否就是某个智能相簿」 */
@@ -156,7 +156,8 @@ export const countAdvancedFilters = (filters: PhotoFilters): number => {
   return count;
 };
 
-export const hasAdvancedFilters = (filters: PhotoFilters): boolean => countAdvancedFilters(filters) > 0;
+export const hasAdvancedFilters = (filters: PhotoFilters): boolean =>
+  countAdvancedFilters(filters) > 0;
 
 /** 是否存在任何会改变结果集的筛选（不含关键词搜索） */
 export const isFilterActive = (filters: PhotoFilters): boolean =>
@@ -169,7 +170,7 @@ export const isFilterActive = (filters: PhotoFilters): boolean =>
 export const buildTagOptions = (photos: Photo[]): string[] => {
   const tags = new Set<string>();
   for (const photo of photos) {
-    photo.tags?.forEach(tag => tags.add(tag));
+    photo.tags?.forEach((tag) => tags.add(tag));
   }
   return [...tags].sort((a, b) => a.localeCompare(b));
 };
@@ -273,7 +274,7 @@ export const matchesFilters = (
   if (filters.tags.length > 0) {
     const tags = photo.tags;
     if (!tags || tags.length === 0) return false;
-    if (!tags.some(tag => filters.tags.includes(tag))) return false;
+    if (!tags.some((tag) => filters.tags.includes(tag))) return false;
   }
 
   if (filters.mediaFilter !== 'all') {
@@ -335,7 +336,7 @@ export const applyPhotoFilters = (
   query: string,
   context: FilterContext = EMPTY_CONTEXT
 ): Photo[] =>
-  photos.filter(photo => matchesFilters(photo, filters, context) && matchesSearch(photo, query));
+  photos.filter((photo) => matchesFilters(photo, filters, context) && matchesSearch(photo, query));
 
 // ---------------------------------------------------------------------------
 // 日期范围：预设 + 输入框 <-> 时间戳
@@ -353,8 +354,24 @@ export const DATE_PRESET_OPTIONS: Array<{ value: DatePreset; label: string }> = 
 /** 预设对应的起止时间戳（结束取当天 23:59:59.999，保证「今天」能被包含） */
 export const datePresetRange = (preset: DatePreset): { from: number; to: number } => {
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
-  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0,
+    0,
+    0,
+    0
+  ).getTime();
+  const endOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59,
+    999
+  ).getTime();
 
   switch (preset) {
     case 'today':
@@ -456,11 +473,11 @@ export const buildFilterChips = (filters: PhotoFilters): FilterChip[] => {
     chips.push({ key: 'date', label, patch: { dateFrom: null, dateTo: null } });
   }
 
-  filters.cameras.forEach(camera =>
+  filters.cameras.forEach((camera) =>
     chips.push({
       key: `camera:${camera}`,
       label: camera,
-      patch: { cameras: filters.cameras.filter(item => item !== camera) },
+      patch: { cameras: filters.cameras.filter((item) => item !== camera) },
     })
   );
 
@@ -468,30 +485,34 @@ export const buildFilterChips = (filters: PhotoFilters): FilterChip[] => {
     chips.push({ key: 'hidden', label: '已隐藏', patch: { hiddenOnly: false } });
   }
 
-  filters.tags.forEach(tag =>
+  filters.tags.forEach((tag) =>
     chips.push({
       key: `tag:${tag}`,
       label: `#${tag}`,
-      patch: { tags: filters.tags.filter(item => item !== tag) },
+      patch: { tags: filters.tags.filter((item) => item !== tag) },
     })
   );
 
-  filters.formats.forEach(format =>
+  filters.formats.forEach((format) =>
     chips.push({
       key: `format:${format}`,
       label: format.toUpperCase(),
-      patch: { formats: filters.formats.filter(item => item !== format) },
+      patch: { formats: filters.formats.filter((item) => item !== format) },
     })
   );
 
   if (filters.sizeFilter !== 'any') {
-    const option = SIZE_FILTER_OPTIONS.find(item => item.value === filters.sizeFilter);
+    const option = SIZE_FILTER_OPTIONS.find((item) => item.value === filters.sizeFilter);
     chips.push({ key: 'size', label: `大小 ${option?.label ?? ''}`, patch: { sizeFilter: 'any' } });
   }
 
   if (filters.durationFilter !== 'any') {
-    const option = DURATION_FILTER_OPTIONS.find(item => item.value === filters.durationFilter);
-    chips.push({ key: 'duration', label: `时长 ${option?.label ?? ''}`, patch: { durationFilter: 'any' } });
+    const option = DURATION_FILTER_OPTIONS.find((item) => item.value === filters.durationFilter);
+    chips.push({
+      key: 'duration',
+      label: `时长 ${option?.label ?? ''}`,
+      patch: { durationFilter: 'any' },
+    });
   }
 
   return chips;
@@ -499,4 +520,4 @@ export const buildFilterChips = (filters: PhotoFilters): FilterChip[] => {
 
 /** 在数组里追加 / 移除一个值（多选 chip 用） */
 export const toggleInList = (list: string[], value: string): string[] =>
-  list.includes(value) ? list.filter(item => item !== value) : [...list, value];
+  list.includes(value) ? list.filter((item) => item !== value) : [...list, value];

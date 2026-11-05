@@ -79,8 +79,12 @@ const ShortcutsOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => (
     >
       <div className="flex items-center justify-between mb-2">
         <div>
-          <h2 className="text-lg font-semibold text-[var(--text-primary)] tracking-tight">键盘快捷键</h2>
-          <p className="text-xs text-[var(--text-tertiary)] mt-0.5">按 <kbd className="kbd">⇧/</kbd> 随时唤出，<kbd className="kbd">Esc</kbd> 关闭</p>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)] tracking-tight">
+            键盘快捷键
+          </h2>
+          <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
+            按 <kbd className="kbd">⇧/</kbd> 随时唤出，<kbd className="kbd">Esc</kbd> 关闭
+          </p>
         </div>
         <button
           type="button"
@@ -88,17 +92,31 @@ const ShortcutsOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => (
           aria-label="关闭"
           className="flex items-center justify-center w-8 h-8 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)] transition-colors"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" d="M18 6L6 18M6 6l12 12"/></svg>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path strokeLinecap="round" d="M18 6L6 18M6 6l12 12" />
+          </svg>
         </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 mt-4">
         {GROUPS.map((g) => (
           <section key={g.title} className="min-w-0">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-1.5">{g.title}</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-1.5">
+              {g.title}
+            </h3>
             <div>
               {g.rows.map((r, i) => (
-                <div key={i} className="flex items-center justify-between gap-6 py-2.5 border-b border-[var(--border-subtle)] last:border-0">
+                <div
+                  key={i}
+                  className="flex items-center justify-between gap-6 py-2.5 border-b border-[var(--border-subtle)] last:border-0"
+                >
                   <span className="text-[13px] text-[var(--text-secondary)]">{r.desc}</span>
                   <span className="flex items-center gap-1 shrink-0">
                     {r.keys.map((k, n) => (

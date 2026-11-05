@@ -27,7 +27,10 @@ const HAS_ILLEGAL_CHAR_RE = /[<>:"/\\|?*\u0000-\u001f\u007f]/;
 
 /** Windows 保留设备名（大小写不敏感，且带扩展名也仍然保留） */
 const RESERVED_NAMES = new Set<string>([
-  'con', 'prn', 'aux', 'nul',
+  'con',
+  'prn',
+  'aux',
+  'nul',
   ...Array.from({ length: 9 }, (_, i) => `com${i + 1}`),
   ...Array.from({ length: 9 }, (_, i) => `lpt${i + 1}`),
 ]);

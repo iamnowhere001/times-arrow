@@ -23,8 +23,18 @@ interface TimelineGalleryProps {
 
 /** 月份中文名 */
 const MONTH_LABELS = [
-  '一月', '二月', '三月', '四月', '五月', '六月',
-  '七月', '八月', '九月', '十月', '十一月', '十二月',
+  '一月',
+  '二月',
+  '三月',
+  '四月',
+  '五月',
+  '六月',
+  '七月',
+  '八月',
+  '九月',
+  '十月',
+  '十一月',
+  '十二月',
 ];
 
 /** 卡片密度：紧凑 / 适中 / 沉浸（与图库的网格缩放同一心智） */
@@ -123,9 +133,8 @@ function groupByTime(photos: Photo[]): { years: YearGroup[]; unknown: Photo[] } 
 /** 卡片宽度：由原始比例推得，并夹在可读区间内（避免极端长条 / 细条） */
 function cardWidth(photo: Photo, height: number): number {
   const dim = photo.dimensions;
-  const aspect = dim?.width && dim?.height
-    ? Math.min(2.1, Math.max(0.66, dim.width / dim.height))
-    : 1;
+  const aspect =
+    dim?.width && dim?.height ? Math.min(2.1, Math.max(0.66, dim.width / dim.height)) : 1;
   return Math.round(height * aspect);
 }
 
@@ -155,13 +164,31 @@ function monthRangeLabel(photos: Photo[]): string {
 // ---------------------------------------------------------------------------
 
 const ChevronRightSmallIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <polyline points="9 6 15 12 9 18"></polyline>
   </svg>
 );
 
 const ChevronLeftSmallIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <polyline points="15 6 9 12 15 18"></polyline>
   </svg>
 );
@@ -174,14 +201,32 @@ const Dot = () => (
 );
 
 const ArrowUpIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <line x1="12" y1="19" x2="12" y2="5"></line>
     <polyline points="5 12 12 5 19 12"></polyline>
   </svg>
 );
 
 const ClockIcon = ({ size = 22 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <circle cx="12" cy="12" r="9"></circle>
     <polyline points="12 7 12 12 15.5 14"></polyline>
   </svg>
@@ -193,9 +238,14 @@ const ClockIcon = ({ size = 22 }: { size?: number }) => (
 
 /** 视频：画面中央一个克制的播放标识，保证「这是视频」一眼可辨 */
 const PlayOverlay = () => (
-  <span aria-hidden className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+  <span
+    aria-hidden
+    className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center"
+  >
     <span className="flex items-center justify-center w-9 h-9 rounded-full bg-black/45 text-white/95 ring-1 ring-white/20 backdrop-blur-[1px] transition-transform duration-300 ease-entrance group-hover:scale-110">
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+        <polygon points="6 3 20 12 6 21 6 3"></polygon>
+      </svg>
     </span>
   </span>
 );
@@ -553,7 +603,11 @@ const MonthBlockBase: React.FC<MonthBlockProps> = ({
       ) : (
         /* 未挂载时用一排「卡片形状」的骨架占位：高度与真实胶片条一致（滚动条长度不漂移），
            同时一眼就能看出是「内容待加载」，而不是一块空白的板子 */
-        <div aria-hidden className="flex gap-3 overflow-hidden pb-3" style={{ height: height + 12 }}>
+        <div
+          aria-hidden
+          className="flex gap-3 overflow-hidden pb-3"
+          style={{ height: height + 12 }}
+        >
           {[1.4, 1, 1.6, 1.05, 1.35, 0.9].map((aspect, i) => (
             <div
               key={i}
@@ -629,8 +683,7 @@ const YearSectionBase: React.FC<YearSectionProps> = ({
             {monthSpan}
           </span>
           <span className="font-numeric text-[11px] tabular-nums text-[var(--text-quaternary)]">
-            {group.total} 项
-            {group.videos > 0 ? ` · 视频 ${group.videos}` : ''}
+            {group.total} 项{group.videos > 0 ? ` · 视频 ${group.videos}` : ''}
           </span>
         </div>
         <span
@@ -758,7 +811,9 @@ const YearRailBase: React.FC<YearRailProps> = ({
                         type="button"
                         disabled={!hasContent}
                         onClick={() => onJumpMonth(`${year}-${m}`)}
-                        title={hasContent ? `跳转到 ${m + 1} 月 · ${count} 项` : `${m + 1} 月暂无内容`}
+                        title={
+                          hasContent ? `跳转到 ${m + 1} 月 · ${count} 项` : `${m + 1} 月暂无内容`
+                        }
                         aria-label={`跳转到 ${year} 年 ${m + 1} 月${hasContent ? `，共 ${count} 项` : '，暂无内容'}`}
                         className={`h-3 rounded-[3px] transition-all duration-200 ${
                           isCurrent
@@ -937,14 +992,20 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
     try {
       const saved = localStorage.getItem(DENSITY_STORAGE_KEY);
       if (saved && DENSITY_OPTIONS.some((o) => o.key === saved)) return saved as DensityKey;
-    } catch { /* 忽略 */ }
+    } catch {
+      /* 忽略 */
+    }
     return 'comfortable';
   });
   const cardHeight = DENSITY_OPTIONS.find((o) => o.key === density)?.height ?? 164;
 
   const handleDensityChange = useCallback((key: DensityKey) => {
     setDensity(key);
-    try { localStorage.setItem(DENSITY_STORAGE_KEY, key); } catch { /* 忽略 */ }
+    try {
+      localStorage.setItem(DENSITY_STORAGE_KEY, key);
+    } catch {
+      /* 忽略 */
+    }
   }, []);
 
   // 时间范围文案（首张 — 末张，均取有效拍摄时间）
@@ -972,7 +1033,7 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
     return map;
   }, [years]);
 
-  /** 按时间顺序（新 → 旧、月升序）展开的月份 key，键盘导航与「当前月份」判定据此 */ 
+  /** 按时间顺序（新 → 旧、月升序）展开的月份 key，键盘导航与「当前月份」判定据此 */
   const orderedMonthKeys = useMemo(
     () => years.flatMap((yearGroup) => yearGroup.months.map((month) => month.key)),
     [years]
@@ -1115,13 +1176,18 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      )
+        return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (orderedMonthKeys.length === 0) return;
 
       // 焦点已落在某个可交互元素（如卡片按钮）上时，Enter / 空格交还给原生的激活行为
       const onInteractive = Boolean(
-        target && typeof target.closest === 'function' &&
+        target &&
+        typeof target.closest === 'function' &&
         target.closest('button, a, [role="button"], input, textarea, select')
       );
 
@@ -1155,7 +1221,14 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeMonthKey, orderedMonthKeys, monthByKey, jumpToMonthIndex, handleDensityChange, onQuickLook]);
+  }, [
+    activeMonthKey,
+    orderedMonthKeys,
+    monthByKey,
+    jumpToMonthIndex,
+    handleDensityChange,
+    onQuickLook,
+  ]);
 
   // 当前所在区间的无障碍播报（不能写成 `!activeMonth`——一月是 0，会被误判为空）
   const activeLabel = useMemo(() => {
@@ -1198,7 +1271,9 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
       />
 
       {/* 屏幕阅读器播报：当前浏览到的年月，配合键盘导航成为可感知的状态 */}
-      <p className="sr-only" aria-live="polite">{activeLabel}</p>
+      <p className="sr-only" aria-live="polite">
+        {activeLabel}
+      </p>
 
       <div className="flex flex-1 overflow-hidden">
         {years.length > 0 && (
@@ -1294,7 +1369,9 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
             aria-hidden={!showBackToTop}
             tabIndex={showBackToTop ? 0 : -1}
             className={`app-no-drag absolute bottom-6 left-1/2 z-20 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-elevated)] px-3.5 text-[12px] font-medium text-[var(--text-secondary)] shadow-lg backdrop-blur-xl transition-all duration-300 hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] active:scale-[0.98] ${
-              showBackToTop ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0'
+              showBackToTop
+                ? 'translate-y-0 opacity-100'
+                : 'pointer-events-none translate-y-2 opacity-0'
             }`}
           >
             <ArrowUpIcon />

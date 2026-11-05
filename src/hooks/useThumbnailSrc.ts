@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Photo } from '@/types';
 import { isVideoPhoto } from '@/utils';
-import {
-  BASE_THUMB_SIZE,
-  quantizeThumbSize,
-  resolveThumbnail,
-} from '@/lib/cache/thumbCache';
+import { BASE_THUMB_SIZE, quantizeThumbSize, resolveThumbnail } from '@/lib/cache/thumbCache';
 
 /**
  * 磁盘缩略图的「按需解析」层。
@@ -61,7 +57,7 @@ export function useThumbnailSrc(photo: Photo, targetSize: number): string | null
       if (cancelled) return;
       if (!url) {
         // 无法生成缩略图（如 SVG）时回退原图，避免卡片一直空着
-        setSrc(prev => prev ?? photo.url);
+        setSrc((prev) => prev ?? photo.url);
         return;
       }
       // 先预加载，解码完成后再替换，避免出现空白闪烁
@@ -77,7 +73,7 @@ export function useThumbnailSrc(photo: Photo, targetSize: number): string | null
       // 而且因为失败不入缓存，每次滚回视口都会再请求一次，没有上限。
       pre.onerror = () => {
         if (cancelled) return;
-        setSrc(prev => prev ?? photo.url);
+        setSrc((prev) => prev ?? photo.url);
       };
       pre.src = url;
     };

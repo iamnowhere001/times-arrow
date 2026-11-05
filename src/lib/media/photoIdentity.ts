@@ -10,6 +10,5 @@ import type { Photo } from '@/types';
  *
  * 不要在调用点另写一份 `photo.path || photo.id` —— 那正是这套主键要消灭的东西。
  */
-export const assetKeyOf = (
-  photo: Pick<Photo, 'id' | 'path' | 'fileId'>
-): string => photo.fileId || photo.path || photo.id;
+export const assetKeyOf = (photo: Pick<Photo, 'id' | 'path' | 'fileId'>): string =>
+  photo.fileId || photo.path || photo.id;

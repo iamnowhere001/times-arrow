@@ -32,7 +32,11 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    logger.error(`[ErrorBoundary${this.props.label ? ` · ${this.props.label}` : ''}] 渲染异常：`, error, info.componentStack);
+    logger.error(
+      `[ErrorBoundary${this.props.label ? ` · ${this.props.label}` : ''}] 渲染异常：`,
+      error,
+      info.componentStack
+    );
   }
 
   private handleRetry = () => {
@@ -55,13 +59,27 @@ class ErrorBoundary extends React.Component {
       <div className="h-screen w-screen flex items-center justify-center bg-[var(--bg-primary)] p-6">
         <div className="max-w-md w-full bg-[var(--bg-modal)] border border-[var(--border-default)] rounded-2xl shadow-2xl p-8 text-center">
           <div className="w-14 h-14 mx-auto mb-5 rounded-2xl bg-[rgba(var(--accent-pink-rgb),0.15)] flex items-center justify-center">
-            <svg className="w-7 h-7 text-[var(--accent-pink)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.8">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m0 3.75h.008M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            <svg
+              className="w-7 h-7 text-[var(--accent-pink)]"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth="1.8"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v3.75m0 3.75h.008M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+              />
             </svg>
           </div>
           <h1 className="text-lg font-semibold text-[var(--text-primary)] mb-2">界面出了点问题</h1>
-          <p className="text-sm text-[var(--text-secondary)] mb-1">应用的一部分意外崩溃，其余功能可能仍然可用。</p>
-          <p className="text-xs text-[var(--text-quaternary)] font-mono break-all mb-6">{error.message}</p>
+          <p className="text-sm text-[var(--text-secondary)] mb-1">
+            应用的一部分意外崩溃，其余功能可能仍然可用。
+          </p>
+          <p className="text-xs text-[var(--text-quaternary)] font-mono break-all mb-6">
+            {error.message}
+          </p>
           <div className="flex justify-center gap-3">
             <button
               onClick={this.handleRetry}

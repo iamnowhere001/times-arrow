@@ -214,7 +214,10 @@ describe('跨入口一致性：渲染层与主进程必须走同一个函数', (
     // （P2-16 拆分后从 utils/index.ts 移到了这里，本断言会跟着一起检查新位置）
     const { readFileSync } = await import('node:fs');
     const { resolve } = await import('node:path');
-    const rendererSource = readFileSync(resolve(__dirname, '../../src/lib/media/photoHash.ts'), 'utf8');
+    const rendererSource = readFileSync(
+      resolve(__dirname, '../../src/lib/media/photoHash.ts'),
+      'utf8'
+    );
 
     // 渲染层不应再出现自己的灰度权重常量
     expect(rendererSource).not.toMatch(/0\.299/);

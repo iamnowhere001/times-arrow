@@ -58,15 +58,19 @@ export function useQuickLook({
    * 图库里按可见列表翻页，重复检测页只在检测结果内翻页，
    * 时光画廊按时间排序的全部照片翻页，地图里则限定在同一点位内。
    */
-  const quickLookList = useMemo(
-    () => {
-      if (quickLookScope) return quickLookScope;
-      if (isDuplicateDetectorOpen) return duplicateGroups.flatMap(group => group);
-      if (isTimelineOpen) return timelinePhotos;
-      return visiblePhotos;
-    },
-    [quickLookScope, isDuplicateDetectorOpen, isTimelineOpen, duplicateGroups, visiblePhotos, timelinePhotos]
-  );
+  const quickLookList = useMemo(() => {
+    if (quickLookScope) return quickLookScope;
+    if (isDuplicateDetectorOpen) return duplicateGroups.flatMap((group) => group);
+    if (isTimelineOpen) return timelinePhotos;
+    return visiblePhotos;
+  }, [
+    quickLookScope,
+    isDuplicateDetectorOpen,
+    isTimelineOpen,
+    duplicateGroups,
+    visiblePhotos,
+    timelinePhotos,
+  ]);
 
   // 预览关闭即释放地点范围：否则回到图库再打开预览，翻页仍被困在上一个地点
   useEffect(() => {
@@ -75,7 +79,7 @@ export function useQuickLook({
 
   // 当前索引：缓存结果，避免每次渲染对大列表做线性查找
   const quickLookIndex = useMemo(
-    () => (quickLookPhoto ? quickLookList.findIndex(p => p.id === quickLookPhoto.id) : -1),
+    () => (quickLookPhoto ? quickLookList.findIndex((p) => p.id === quickLookPhoto.id) : -1),
     [quickLookPhoto, quickLookList]
   );
 
@@ -88,7 +92,7 @@ export function useQuickLook({
     const neighbors = [quickLookList[quickLookIndex - 1], quickLookList[quickLookIndex + 1]];
     return neighbors
       .filter((item): item is Photo => Boolean(item) && !isVideoPhoto(item))
-      .map(item => item.url);
+      .map((item) => item.url);
   }, [quickLookIndex, quickLookList]);
 
   // 翻页范围跟随「当前可见列表」（收藏夹内只翻收藏），不会跳到分类之外；

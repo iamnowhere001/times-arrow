@@ -17,11 +17,9 @@ const TYPE_LABEL: Record<string, string> = {
   export: '导出',
 };
 
-const fmtTime = (ts: number): string =>
-  new Date(ts).toLocaleString('zh-CN', { hour12: false });
+const fmtTime = (ts: number): string => new Date(ts).toLocaleString('zh-CN', { hour12: false });
 
-const card =
-  'rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] px-4 py-3';
+const card = 'rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] px-4 py-3';
 const smallBtn =
   'px-3 py-1.5 text-xs font-medium rounded-lg border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all disabled:opacity-40 disabled:cursor-not-allowed';
 const primaryBtn =
@@ -213,7 +211,7 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
         role="dialog"
         aria-modal="true"
         aria-label="数据资产"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-[var(--border-subtle)] flex items-start justify-between gap-4">
           <div>
@@ -223,13 +221,17 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
-            <button className={smallBtn} disabled={busy} onClick={() => void handleExport()}>导出配置</button>
-            <button className={smallBtn} disabled={busy} onClick={() => void handleImport()}>导入配置</button>
+            <button className={smallBtn} disabled={busy} onClick={() => void handleExport()}>
+              导出配置
+            </button>
+            <button className={smallBtn} disabled={busy} onClick={() => void handleImport()}>
+              导入配置
+            </button>
           </div>
         </div>
 
         <div className="px-6 pt-4 flex gap-2">
-          {tabs.map(t => (
+          {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
@@ -250,7 +252,10 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
               <div className="flex items-center justify-between gap-3">
                 <select
                   value={filter}
-                  onChange={e => { setFilter(e.target.value); setOffset(0); }}
+                  onChange={(e) => {
+                    setFilter(e.target.value);
+                    setOffset(0);
+                  }}
                   className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border-default)] bg-[var(--bg-input)] text-[var(--text-primary)]"
                 >
                   <option value="all">全部操作</option>
@@ -268,34 +273,56 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
                 </div>
               )}
 
-              {entries.map(e => (
+              {entries.map((e) => (
                 <div key={e.id} className={card}>
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="shrink-0 px-2 py-0.5 rounded-md text-[11px] bg-[var(--bg-glass-hover)] text-[var(--text-secondary)]">
                         {TYPE_LABEL[e.type] ?? e.type}
                       </span>
-                      <span className="text-[11px] text-[var(--text-quaternary)] shrink-0">{fmtTime(e.at)}</span>
-                      {e.undone && <span className="text-[11px] text-[var(--text-quaternary)]">已撤销</span>}
+                      <span className="text-[11px] text-[var(--text-quaternary)] shrink-0">
+                        {fmtTime(e.at)}
+                      </span>
+                      {e.undone && (
+                        <span className="text-[11px] text-[var(--text-quaternary)]">已撤销</span>
+                      )}
                     </div>
                     {(e.type === 'rename' || e.type === 'delete') && !e.undone && (
-                      <button className={smallBtn} disabled={busy} onClick={() => void handleUndo(e.id)}>
+                      <button
+                        className={smallBtn}
+                        disabled={busy}
+                        onClick={() => void handleUndo(e.id)}
+                      >
                         撤销
                       </button>
                     )}
                   </div>
                   <p className="mt-2 text-xs font-mono text-[var(--text-secondary)] break-all">
-                    {e.from ?? '—'}{e.to ? ` → ${e.to}` : ''}
+                    {e.from ?? '—'}
+                    {e.to ? ` → ${e.to}` : ''}
                   </p>
                 </div>
               ))}
 
               <div className="flex items-center justify-end gap-2 pt-1">
-                <button className={smallBtn} disabled={offset === 0 || busy} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>上一页</button>
-                <button className={smallBtn} disabled={offset + PAGE_SIZE >= total || busy} onClick={() => setOffset(offset + PAGE_SIZE)}>下一页</button>
+                <button
+                  className={smallBtn}
+                  disabled={offset === 0 || busy}
+                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                >
+                  上一页
+                </button>
+                <button
+                  className={smallBtn}
+                  disabled={offset + PAGE_SIZE >= total || busy}
+                  onClick={() => setOffset(offset + PAGE_SIZE)}
+                >
+                  下一页
+                </button>
               </div>
               <p className="text-[11px] leading-relaxed text-[var(--text-quaternary)]">
-                撤销支持最近的重命名与删除。删除的文件需仍在系统回收站中；macOS 上按文件名、体积与修改时间三重校验后取回，找不到或原位置已有同名文件时会明确提示，不会覆盖。
+                撤销支持最近的重命名与删除。删除的文件需仍在系统回收站中；macOS
+                上按文件名、体积与修改时间三重校验后取回，找不到或原位置已有同名文件时会明确提示，不会覆盖。
               </p>
             </>
           )}
@@ -305,22 +332,31 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
               <div className={card}>
                 <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
                   配置已按内容指纹保存，文件改名、移动、删后重导入都会自动续上标注。
-                  若整个目录被搬到别处，可在这里「重新定位」；待续接的旧记录还有 <b>{orphanCount}</b> 条。
+                  若整个目录被搬到别处，可在这里「重新定位」；待续接的旧记录还有{' '}
+                  <b>{orphanCount}</b> 条。
                 </p>
               </div>
               {candidates.length === 0 && (
-                <div className={card}><p className="text-xs text-[var(--text-tertiary)]">尚无常驻来源。</p></div>
+                <div className={card}>
+                  <p className="text-xs text-[var(--text-tertiary)]">尚无常驻来源。</p>
+                </div>
               )}
-              {candidates.map(s => (
+              {candidates.map((s) => (
                 <div key={s.path} className={card}>
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-xs font-mono text-[var(--text-secondary)] break-all">{s.path}</p>
+                      <p className="text-xs font-mono text-[var(--text-secondary)] break-all">
+                        {s.path}
+                      </p>
                       <p className="mt-1 text-[11px] text-[var(--text-quaternary)]">
                         {s.available ? '可用' : '不可用（目录可能已被移动或卷未挂载）'}
                       </p>
                     </div>
-                    <button className={smallBtn} disabled={busy} onClick={() => void handleRelink(s.path)}>
+                    <button
+                      className={smallBtn}
+                      disabled={busy}
+                      onClick={() => void handleRelink(s.path)}
+                    >
                       重新定位
                     </button>
                   </div>
@@ -338,7 +374,13 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                <button className={smallBtn} disabled={backupRunning} onClick={() => void handlePickTarget()}>选择备份目录…</button>
+                <button
+                  className={smallBtn}
+                  disabled={backupRunning}
+                  onClick={() => void handlePickTarget()}
+                >
+                  选择备份目录…
+                </button>
                 <span className="text-xs font-mono text-[var(--text-tertiary)] break-all flex-1">
                   {targetDir || '尚未选择'}
                 </span>
@@ -347,33 +389,50 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
               {progress && (
                 <div className={card}>
                   <div className="flex justify-between text-xs text-[var(--text-secondary)]">
-                    <span>{progress.done} / {progress.total}</span>
-                    <span>复制 {progress.copied} · 跳过 {progress.skipped} · 失败 {progress.failed}</span>
+                    <span>
+                      {progress.done} / {progress.total}
+                    </span>
+                    <span>
+                      复制 {progress.copied} · 跳过 {progress.skipped} · 失败 {progress.failed}
+                    </span>
                   </div>
                   <div className="mt-2 h-1.5 rounded-full bg-[var(--bg-glass-hover)] overflow-hidden">
                     <div
                       className="h-full bg-[var(--accent-blue)] transition-all"
-                      style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%` }}
+                      style={{
+                        width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%`,
+                      }}
                     />
                   </div>
-                  <p className="mt-2 text-[11px] font-mono text-[var(--text-quaternary)] truncate">{progress.current}</p>
+                  <p className="mt-2 text-[11px] font-mono text-[var(--text-quaternary)] truncate">
+                    {progress.current}
+                  </p>
                 </div>
               )}
 
               {summary && (
                 <div className={card}>
                   <p className="text-xs text-[var(--text-secondary)]">
-                    结果：共 {summary.total} 个，复制 {summary.copied}，跳过 {summary.skipped}，失败 {summary.failed}
+                    结果：共 {summary.total} 个，复制 {summary.copied}，跳过 {summary.skipped}，失败{' '}
+                    {summary.failed}
                     {summary.cancelled ? '（已取消）' : ''}
                   </p>
                 </div>
               )}
 
               <div className="flex gap-2">
-                <button className={primaryBtn} disabled={!targetDir || backupRunning} onClick={() => void handleStartBackup()}>
+                <button
+                  className={primaryBtn}
+                  disabled={!targetDir || backupRunning}
+                  onClick={() => void handleStartBackup()}
+                >
                   {backupRunning ? '备份中…' : '开始备份'}
                 </button>
-                <button className={smallBtn} disabled={!backupRunning} onClick={() => void window.electronAPI?.cancelBackup?.()}>
+                <button
+                  className={smallBtn}
+                  disabled={!backupRunning}
+                  onClick={() => void window.electronAPI?.cancelBackup?.()}
+                >
                   取消
                 </button>
               </div>
@@ -382,8 +441,12 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
         </div>
 
         <div className="px-6 py-4 border-t border-[var(--border-subtle)] flex items-center justify-between gap-3">
-          <p className="text-[11px] text-[var(--text-quaternary)]">导出文件不含 AI 设置里的 API Key</p>
-          <button onClick={onClose} disabled={backupRunning} className={smallBtn}>关闭</button>
+          <p className="text-[11px] text-[var(--text-quaternary)]">
+            导出文件不含 AI 设置里的 API Key
+          </p>
+          <button onClick={onClose} disabled={backupRunning} className={smallBtn}>
+            关闭
+          </button>
         </div>
       </div>
     </div>

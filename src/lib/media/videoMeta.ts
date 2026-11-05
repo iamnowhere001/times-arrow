@@ -27,9 +27,8 @@ const cache = createLruCache<string, VideoMeta>('videoMeta', MAX_VIDEO_META, 'st
 const listeners = new Set<(key: string, meta: VideoMeta) => void>();
 
 /** 缓存键统一走标注资产主键（内容指纹优先，见 photoIdentity.ts） */
-export const videoMetaKeyOf = (
-  photo: Pick<Photo, 'id' | 'path' | 'fileId'>
-): string => assetKeyOf(photo);
+export const videoMetaKeyOf = (photo: Pick<Photo, 'id' | 'path' | 'fileId'>): string =>
+  assetKeyOf(photo);
 
 const isValid = (meta: VideoMeta): boolean =>
   Number.isFinite(meta.duration) &&
@@ -97,7 +96,7 @@ export const reportVideoMeta = (key: string, meta: VideoMeta): void => {
   }
 
   cache.set(key, meta);
-  listeners.forEach(listener => listener(key, meta));
+  listeners.forEach((listener) => listener(key, meta));
 };
 
 /**

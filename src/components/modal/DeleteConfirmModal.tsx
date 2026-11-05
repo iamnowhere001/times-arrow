@@ -10,11 +10,11 @@ interface DeleteConfirmModalProps {
   isBusy?: boolean;
 }
 
-const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({ 
-  isOpen, 
-  count, 
-  isDiskOperation, 
-  onClose, 
+const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
+  isOpen,
+  count,
+  isDiskOperation,
+  onClose,
   onConfirm,
   isBusy = false,
 }) => {
@@ -47,7 +47,7 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-md animate-fadeIn">
-      <div 
+      <div
         className="bg-[var(--bg-modal)] backdrop-blur-xl rounded-xl shadow-2xl w-[380px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] animate-scaleIn p-6"
         role="dialog"
         aria-modal="true"
@@ -56,8 +56,18 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
       >
         <div className="flex items-start gap-4 mb-5">
           <div className="shrink-0 w-10 h-10 rounded-full bg-[rgba(var(--accent-pink-rgb),0.15)] flex items-center justify-center">
-            <svg className="w-5 h-5 text-[var(--accent-pink)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            <svg
+              className="w-5 h-5 text-[var(--accent-pink)]"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              ></path>
             </svg>
           </div>
           <div className="min-w-0">
@@ -73,20 +83,20 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
         </div>
 
         <div className="flex justify-end gap-3">
-          <button 
+          <button
             onClick={onClose}
             disabled={isBusy}
             className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             取消
           </button>
-          <button 
+          <button
             ref={confirmRef}
             onClick={onConfirm}
             disabled={isBusy}
             className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-pink)] hover:opacity-90 rounded-lg transition-all duration-200 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {isBusy ? '处理中…' : (isDiskOperation ? '移至回收站' : '移除')}
+            {isBusy ? '处理中…' : isDiskOperation ? '移至回收站' : '移除'}
           </button>
         </div>
       </div>

@@ -408,8 +408,8 @@ describe('日期范围与预设', () => {
   });
 
   it('date input 值 <-> 当天起止时间戳', () => {
-    const start = startOfDayFromInput('2024-03-05');
-    const end = endOfDayFromInput('2024-03-05');
+    const start = startOfDayFromInput('2024-03-05')!;
+    const end = endOfDayFromInput('2024-03-05')!;
     expect(toDateInputValue(start)).toBe('2024-03-05');
     expect(toDateInputValue(end)).toBe('2024-03-05');
     expect(start).toBeLessThan(end);
