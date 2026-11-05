@@ -75,6 +75,9 @@ async function computeFileFingerprints(paths, concurrency = 8) {
       const index = cursor;
       cursor += 1;
       const filePath = queue[index];
+      // 每个 worker 内部串行领取任务、worker 之间并行；刻意不一次性铺开，
+      // 避免同时打开几千个文件句柄。
+      // eslint-disable-next-line no-await-in-loop
       const id = await computeFileFingerprint(filePath);
       if (id) result[filePath] = id;
     }

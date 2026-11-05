@@ -39,6 +39,34 @@ declare global {
     cancelled?: boolean;
   }
 
+  /** 操作日志条目（数据资产面板） */
+  interface OperationEntry {
+    id: string;
+    at: number;
+    type: 'rename' | 'delete' | 'move' | 'export';
+    from?: string;
+    to?: string;
+    size?: number;
+    mtime?: number;
+    undone?: boolean;
+  }
+  interface BackupProgress {
+    total: number;
+    done: number;
+    copied: number;
+    skipped: number;
+    failed: number;
+    cancelled: boolean;
+    current: string;
+  }
+  interface BackupSummary {
+    total: number;
+    copied: number;
+    skipped: number;
+    failed: number;
+    cancelled: boolean;
+  }
+
   /** 批量 stat 结果：失败路径显式返回，不再静默过滤（K1） */
   interface StatFilesResult {
     infos: FileInfo[];
@@ -217,6 +245,27 @@ declare global {
       storageNotices: () => Promise<IpcResult<StorageRecoveryNotice[]>>;
       /** 批量计算内容指纹；未授权路径不出现在结果里 */
       computeFileIds: (paths: string[]) => Promise<IpcResult<Record<string, string>>>;
+      /** 配置导出 / 导入（导出不含 AI 密钥） */
+      exportConfig: () => Promise<IpcResult<{ path: string } | null>>;
+      importConfig: () => Promise<IpcResult<{ path: string; needReload: boolean } | null>>;
+      /** 路径重连候选 */
+      getRelinkCandidates: () => Promise<IpcResult<{
+        sources: { path: string; kind: 'directory' | 'file'; available: boolean }[];
+        orphanCount: number;
+      }>>;
+      relinkSource: (oldRoot: string, newRoot: string) => Promise<IpcResult<{
+        count: number; conflicts: number; unresolved: number;
+      }>>;
+      /** 操作日志与撤销 */
+      getOperationLog: (query?: { offset?: number; limit?: number; type?: string }) => Promise<
+        IpcResult<{ entries: OperationEntry[]; total: number }>
+      >;
+      undoOperation: (id: string) => Promise<IpcResult<{ path: string }>>;
+      /** F10 按原目录增量备份 */
+      startBackup: (targetDir: string) => Promise<IpcResult<BackupSummary>>;
+      cancelBackup: () => Promise<IpcResult<boolean>>;
+      onOpenDataAssets: (callback: () => void) => () => void;
+      onBackupProgress: (callback: (progress: BackupProgress) => void) => () => void;
       /** AI 图片分析（主进程代理 DeepSeek，API Key 不出主进程） */
       analyzeImage: (payload: { base64: string; mimeType: string }) => Promise<
         IpcResult<{ description?: string; tags?: string[] } | null>

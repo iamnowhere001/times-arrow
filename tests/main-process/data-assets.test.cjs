@@ -49,7 +49,7 @@ const v1AiCache = {
 fs.writeFileSync(path.join(userData, 'config.json'), JSON.stringify(v1Config));
 fs.writeFileSync(path.join(userData, 'ai-cache.json'), JSON.stringify(v1AiCache));
 
-const { call } = loadMainProcess({ userData });
+const { call, fakeElectron } = loadMainProcess({ userData });
 const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 250));
 
 (async () => {
@@ -101,6 +101,128 @@ const settleStartup = () => new Promise((resolve) => setTimeout(resolve, 250));
   check('未授权 / 不存在的路径被跳过', !res.data[missing]);
   const badArgs = await call('compute-file-ids', 'not-an-array');
   check('参数不是数组时返回 fail', badArgs.ok === false);
+
+
+  // -------------------------------------------------------------------------
+  // 5. 操作日志与撤销
+  // -------------------------------------------------------------------------
+  const opsDir = tempDir('pm-ops-');
+  const before = path.join(opsDir, 'before.jpg');
+  fs.writeFileSync(before, 'ops-content');
+  await call('authorize-paths', [opsDir]);
+
+  const renamed = await call('rename-file', before, path.join(opsDir, 'after.jpg'));
+  check('重命名成功', renamed.ok === true);
+
+  const log1 = await call('get-operation-log', { offset: 0, limit: 20, type: 'rename' });
+  const renameEntry = log1.data.entries[0];
+  check('日志记录了重命名', log1.data.total >= 1 && renameEntry.from === before);
+  check('日志带新路径', renameEntry.to === path.join(opsDir, 'after.jpg'));
+
+  const undo1 = await call('undo-operation', renameEntry.id);
+  check('撤销重命名成功', undo1.ok === true);
+  check('文件回到原路径', fs.existsSync(before) && !fs.existsSync(path.join(opsDir, 'after.jpg')));
+  const again = await call('undo-operation', renameEntry.id);
+  check('重复撤销被拒绝', again.ok === false);
+
+  // -------------------------------------------------------------------------
+  // 6. 撤销删除：回收站里没有时必须明确失败
+  // -------------------------------------------------------------------------
+  const delFile = path.join(opsDir, 'to-delete-unique.jpg');
+  fs.writeFileSync(delFile, 'delete-me');
+  const deleted = await call('delete-file', delFile);
+  check('删除成功（回收站桩）', deleted.ok === true);
+
+  const logDel = await call('get-operation-log', { offset: 0, limit: 20, type: 'delete' });
+  const delEntry = logDel.data.entries[0];
+  check('删除日志带体积与修改时间', delEntry.size === Buffer.byteLength('delete-me') && typeof delEntry.mtime === 'number');
+  const undoDel = await call('undo-operation', delEntry.id);
+  check(
+    '回收站找不到时明确失败，不假装成功',
+    undoDel.ok === false && /回收站/.test(undoDel.error),
+    undoDel.ok ? 'unexpected ok' : undoDel.error
+  );
+
+  // -------------------------------------------------------------------------
+  // 7. 路径重连：orphans 按新前缀续接
+  // -------------------------------------------------------------------------
+  const oldRoot = path.join(libDir, 'moved-away');
+  const newRoot = path.join(libDir, 'relocated');
+  fs.mkdirSync(newRoot, { recursive: true });
+  const relocatedFile = path.join(newRoot, 'photo.jpg');
+  fs.writeFileSync(relocatedFile, 'relocated-content');
+  const relocatedId = await computeFileFingerprint(relocatedFile);
+
+  await call('save-config', {
+    sources: [{ path: oldRoot, kind: 'directory', addedAt: Date.now() }],
+    orphans: {
+      favorites: [path.join(oldRoot, 'photo.jpg')],
+      hidden: [],
+      tags: { [path.join(oldRoot, 'photo.jpg')]: ['旧标签'] },
+      dateOverrides: {},
+      videoMeta: {},
+    },
+  });
+  await call('authorize-paths', [newRoot]);
+
+  const relink = await call('relink-source', oldRoot, newRoot);
+  check('重连返回成功', relink.ok === true, relink.ok ? '' : relink.error);
+  check('续接 2 条记录（收藏 + 标签）', relink.ok && relink.data.count === 2, relink.ok ? String(relink.data.count) : '');
+  const cfgRelink = await call('load-config');
+  check('收藏按新内容指纹续接', cfgRelink.data.favorites.includes(relocatedId));
+  check('标签续接到新指纹', (cfgRelink.data.tags[relocatedId] ?? [])[0] === '旧标签');
+  check('orphans 已清空该项', !(cfgRelink.data.orphans.favorites ?? []).includes(path.join(oldRoot, 'photo.jpg')));
+  check('来源路径已改写', cfgRelink.data.sources.some((s) => s.path === newRoot));
+
+  // -------------------------------------------------------------------------
+  // 8. F10 增量备份：按原目录结构 + 二次全跳过
+  // -------------------------------------------------------------------------
+  const backupSrc = tempDir('pm-backup-src-');
+  const backupDst = tempDir('pm-backup-dst-');
+  fs.mkdirSync(path.join(backupSrc, 'sub'), { recursive: true });
+  fs.writeFileSync(path.join(backupSrc, 'a.jpg'), 'A-content');
+  fs.writeFileSync(path.join(backupSrc, 'sub', 'b.jpg'), 'B-content');
+  await call('save-config', {
+    sources: [{ path: backupSrc, kind: 'directory', addedAt: Date.now() }],
+  });
+  await call('authorize-paths', [backupDst]);
+
+  const backup1 = await call('start-backup', backupDst);
+  check('备份返回成功', backup1.ok === true, backup1.ok ? '' : backup1.error);
+  check('复制了 2 个文件', backup1.ok && backup1.data.copied === 2 && backup1.data.failed === 0);
+  const rootName = path.basename(backupSrc);
+  check(
+    '按原目录结构落盘',
+    fs.existsSync(path.join(backupDst, rootName, 'a.jpg')) &&
+      fs.existsSync(path.join(backupDst, rootName, 'sub', 'b.jpg'))
+  );
+  const backup2 = await call('start-backup', backupDst);
+  check('二次备份全部跳过（增量）', backup2.ok && backup2.data.copied === 0 && backup2.data.skipped === 2);
+
+  // -------------------------------------------------------------------------
+  // 9. 配置导出 / 导入（dialog 桩可替换）
+  // -------------------------------------------------------------------------
+  const exportPath = path.join(tempDir('pm-export-'), 'photominder-config.json');
+  fakeElectron.dialog.showSaveDialog = async () => ({ canceled: false, filePath: exportPath });
+  const exported = await call('export-config');
+  check('导出成功', exported.ok === true && fs.existsSync(exportPath));
+
+  const payload = JSON.parse(fs.readFileSync(exportPath, 'utf8'));
+  check('导出内容标记来源', payload.app === 'PhotoMinder');
+  check('导出不含 AI 密钥', !JSON.stringify(payload).includes('apiKey'));
+
+  payload.config.tags = { [relocatedId]: ['导入的标签'] };
+  fs.writeFileSync(exportPath, JSON.stringify(payload), 'utf8');
+  fakeElectron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [exportPath] });
+  fakeElectron.dialog.showMessageBox = async () => ({ response: 1 });
+  const imported = await call('import-config');
+  check('导入成功', imported.ok === true, imported.ok ? '' : imported.error);
+  const cfgImported = await call('load-config');
+  check('导入的标签已写入', (cfgImported.data.tags[relocatedId] ?? [])[0] === '导入的标签');
+
+  fakeElectron.dialog.showSaveDialog = async () => ({ canceled: true });
+  const cancelled = await call('export-config');
+  check('用户取消返回 ok(null)', cancelled.ok === true && cancelled.data === null);
 
   process.exit(summary() ? 1 : 0);
 })();

@@ -87,6 +87,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storageNotices: () => ipcRenderer.invoke('storage-notices'),
   /** 批量计算内容指纹（标注资产的跨重启身份） */
   computeFileIds: (paths) => ipcRenderer.invoke('compute-file-ids', paths),
+  /** 数据资产：配置导出 / 导入、路径重连、操作日志、增量备份 */
+  exportConfig: () => ipcRenderer.invoke('export-config'),
+  importConfig: () => ipcRenderer.invoke('import-config'),
+  getRelinkCandidates: () => ipcRenderer.invoke('get-relink-candidates'),
+  relinkSource: (oldRoot, newRoot) => ipcRenderer.invoke('relink-source', oldRoot, newRoot),
+  getOperationLog: (query) => ipcRenderer.invoke('get-operation-log', query),
+  undoOperation: (id) => ipcRenderer.invoke('undo-operation', id),
+  startBackup: (targetDir) => ipcRenderer.invoke('start-backup', targetDir),
+  cancelBackup: () => ipcRenderer.invoke('cancel-backup'),
+  /** 菜单「数据资产…」与备份进度广播；返回取消订阅函数 */
+  onOpenDataAssets: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('open-data-assets', listener);
+    return () => ipcRenderer.removeListener('open-data-assets', listener);
+  },
+  onBackupProgress: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('backup-progress', listener);
+    return () => ipcRenderer.removeListener('backup-progress', listener);
+  },
 
   /** AI 图片分析：主进程代理 DeepSeek，密钥不出主进程 */
   analyzeImage: (payload) => ipcRenderer.invoke('ai-analyze', payload),

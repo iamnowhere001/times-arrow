@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import DataAssetsModal from '@/components/modal/DataAssetsModal';
 import { assetKeyOf } from '@/lib/media/photoIdentity';
 import { MediaFilter, Photo, PhotoFilters, SortConfig, ViewMode, SortKey } from '@/types';
 import { isVideoPhoto, clearImageHashCache } from '@/utils';
@@ -97,6 +98,8 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const handleFilterOpenChange = useCallback((open: boolean) => setIsFilterPanelOpen(open), []);
   /** AI 设置弹窗（配置 DeepSeek API Key / 接口地址 / 模型） */
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
+  /** 数据资产面板（菜单「文件 → 数据资产…」） */
+  const [isDataAssetsOpen, setIsDataAssetsOpen] = useState(false);
   // 快捷键总览层（? 唤出，Esc 关闭）
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   // 常驻来源的状态与增删（sources / unavailableSourcePaths / 恢复确认框）见 hooks/useLibrarySources
@@ -839,6 +842,11 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     return window.electronAPI?.onOpenAiSettings?.(handleOpenAiSettings);
   }, [handleOpenAiSettings]);
 
+  // 应用菜单「数据资产…」（⌘⇧D）：配置 / 路径 / 操作日志 / 备份统一入口
+  useEffect(() => {
+    return window.electronAPI?.onOpenDataAssets?.(() => setIsDataAssetsOpen(true));
+  }, []);
+
   // ---------------------------------------------------------------------------
   // 拖放导入（遮罩进出场 / 文件与文件夹分流 / 内存预览降级）见 hooks/useDragAndDrop
   // ---------------------------------------------------------------------------
@@ -1200,6 +1208,12 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
       <AiSettingsModal
         isOpen={isAiSettingsOpen}
         onClose={() => setIsAiSettingsOpen(false)}
+        onNotify={showToast}
+      />
+      {/* 数据资产：配置导出导入 / 路径重连 / 操作日志与撤销 / 增量备份 */}
+      <DataAssetsModal
+        isOpen={isDataAssetsOpen}
+        onClose={() => setIsDataAssetsOpen(false)}
         onNotify={showToast}
       />
       {/* Export Modal */}

@@ -73,7 +73,11 @@ function loadMainProcess(options = {}) {
       },
       on() {},
     },
-    dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) },
+    dialog: {
+      showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+      showSaveDialog: async () => ({ canceled: true, filePath: undefined }),
+      showMessageBox: async () => ({ response: 0 }),
+    },
     shell: {
       trashItem: async (p) => {
         trashCalls.push(p);
@@ -145,6 +149,8 @@ function loadMainProcess(options = {}) {
     userData,
     APP_ROOT,
     MAIN_ENTRY,
+    /** 桩对象本身：测试可替换 dialog 等方法以驱动导出 / 导入等分支 */
+    fakeElectron,
   };
 }
 

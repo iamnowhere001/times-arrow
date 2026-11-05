@@ -376,6 +376,17 @@ function createMenu() {
           type: 'separator',
         },
         {
+          label: '数据资产…',
+          accelerator: 'CmdOrCtrl+Shift+D',
+          click: () => {
+            // 配置导出 / 导入、路径重连、操作日志与撤销、增量备份共用一个入口
+            mainWindow?.webContents?.send('open-data-assets');
+          },
+        },
+        {
+          type: 'separator',
+        },
+        {
           label: '退出',
           accelerator: 'CmdOrCtrl+Q',
           click: () => app.quit(),
@@ -572,6 +583,7 @@ handle('rename-file', async (event, oldPath, newPath) => {
     logger.debug(`Rename conflict: ${newPath} exists, using ${reservedPath}`);
   }
   logger.debug(`Renamed file: ${oldPath} -> ${reservedPath}`);
+  await recordOperation({ type: 'rename', from: oldPath, to: reservedPath });
   return ok({ path: reservedPath, conflicted });
 });
 
@@ -583,8 +595,16 @@ handle('delete-file', async (event, filePath) => {
     return fail(UNAUTHORIZED_ERROR);
   }
 
+  // 先记下体积与修改时间：撤销时要靠它们从 ~/.Trash 里认出同一份文件
+  const stat = await fs.promises.stat(filePath).catch(() => null);
   // Electron 官方回收站 API：跨平台、无 shell 注入风险
   await shell.trashItem(filePath);
+  await recordOperation({
+    type: 'delete',
+    from: filePath,
+    size: stat?.size,
+    mtime: stat?.mtimeMs,
+  });
   return ok(true);
 });
 
@@ -693,6 +713,11 @@ handle('move-files', async (event, filePaths, targetDir, priorTargets) => {
   }
   /* eslint-enable no-await-in-loop */
 
+  await Promise.all(
+    results
+      .filter((r) => r.success && r.to)
+      .map((r) => recordOperation({ type: 'move', from: r.from, to: r.to }))
+  );
   return ok({ results });
 });
 
@@ -777,6 +802,7 @@ handle('write-file-unique', async (event, targetDir, fileName, base64) => {
     await discardReservedPath(finalPath);
     throw error;
   }
+  await recordOperation({ type: 'export', to: finalPath });
   return ok({ path: finalPath });
 });
 
@@ -1140,7 +1166,17 @@ handle('storage-notices', async () => ok(drainStorageNotices()));
 
 // AI 配置 / 分析 / 测试连接通道由 ./main/ai.cjs 提供
 registerAiIpc({ handle, ok, fail });
-createDataAssets({ handle, ok, fail, isPathAuthorized });
+const { recordOperation } = createDataAssets({
+  handle,
+  ok,
+  fail,
+  isPathAuthorized,
+  logger,
+  dialog,
+  store,
+  userDataDir: app.getPath('userData'),
+  send: (channel, payload) => mainWindow?.webContents?.send(channel, payload),
+});
 
 // ---------------------------------------------------------------------------
 // 窗口尺寸记忆：下次启动回到上次的位置与大小
