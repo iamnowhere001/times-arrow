@@ -21,7 +21,7 @@ export interface Photo {
   /** 内容指纹：跨重启的身份；收藏 / 标签 / 时间修正 / AI 结果全部以它为键 */
   fileId?: string;
   file?: File;
-  fileHandle?: any; // FileSystemFileHandle
+  fileHandle?: FileSystemFileHandle;
   name: string; // Mutable name for renaming
   url: string;
   thumbnail?: string; // Thumbnail URL for memory optimization

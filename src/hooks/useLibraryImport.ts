@@ -14,7 +14,7 @@ import { LibrarySource } from '@/types';
 import { logger } from '@/lib/logger';
 import { humanizeFsError } from '@/lib/fs/fileOperations';
 import { basenameOfPath } from '@/lib/persistence/sources';
-import { ToastAction, type ToastType } from '@/components/common/Toast';
+import { ToastAction, type ToastType } from '@/types/toast';
 
 export interface UseLibraryImportParams {
   // ---- 低层导入管线（useIngestPipeline）----

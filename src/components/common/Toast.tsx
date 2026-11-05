@@ -1,20 +1,6 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-
-export type ToastType = 'success' | 'info' | 'error' | 'warning';
-
-/** Toast 上的可选操作按钮（如「重试」） */
-export interface ToastAction {
-  label: string;
-  onClick: () => void;
-}
-
-export interface ToastData {
-  id: number;
-  message: string;
-  type: ToastType;
-  action?: ToastAction;
-}
+import type { ToastAction, ToastType } from '@/types/toast';
 
 interface ToastProps {
   message: string;

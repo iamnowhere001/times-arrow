@@ -7,8 +7,8 @@
  */
 
 import { DurationFilter, MediaFilter, Photo, PhotoFilters, SizeFilter } from '@/types';
-import { extOfName, isVideoPhoto } from '@/utils';
-import { isSelfiePhoto, isScreenshotPhoto } from '@/lib/media/mediaTypes';
+import { extOfName } from '@/lib/fs/pathUtils';
+import { isSelfiePhoto, isScreenshotPhoto, isVideoPhoto } from '@/lib/media/mediaTypes';
 // 时间语义统一入口：本文件原先内联了 `dateTaken || lastModified`
 import { photoTakenTime } from '@/lib/media/photoTime';
 

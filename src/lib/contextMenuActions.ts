@@ -9,9 +9,9 @@
  * 便于独立阅读与测试。菜单文案与快捷键与重构前逐字保持一致。
  */
 
-import { ContextMenuItem } from '@/components/common/ContextMenu';
+import type { ContextMenuItem } from '@/types/contextMenu';
 import { Photo } from '@/types';
-import { isVideoPhoto } from '@/utils';
+import { isVideoPhoto } from '@/lib/media/mediaTypes';
 
 export interface ContextMenuActionsDeps {
   /** 当前右键目标；为 null 表示空白区右键 */

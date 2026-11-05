@@ -15,7 +15,7 @@ import { LibrarySource, Photo } from '@/types';
 import { logger } from '@/lib/logger';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
 import { basenameOfPath, upsertSources } from '@/lib/persistence/sources';
-import { ToastAction, type ToastType } from '@/components/common/Toast';
+import { ToastAction, type ToastType } from '@/types/toast';
 
 export interface UseLibrarySourcesParams {
   /** 照片列表镜像：移除来源时要移出属于该来源的条目 */

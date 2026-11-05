@@ -15,7 +15,7 @@ import { AiCacheEntry, Photo, PhotoFilters } from '@/types';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
 import { saveAiCache } from '@/lib/persistence/aiCache';
 import { assetKeyOf } from '@/lib/media/photoIdentity';
-import { ToastAction, type ToastType } from '@/components/common/Toast';
+import { ToastAction, type ToastType } from '@/types/toast';
 
 export interface UsePersistedLibraryDataParams {
   setPhotos: Dispatch<SetStateAction<Photo[]>>;

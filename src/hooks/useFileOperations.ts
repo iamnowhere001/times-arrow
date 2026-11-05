@@ -17,11 +17,10 @@ import { humanizeFsError, isFileGoneError, movePhotosToTrash, type TrashResult }
 import { joinPath, sanitizeFilename } from '@/lib/fs/pathUtils';
 import { photoTakenTime } from '@/lib/media/photoTime';
 import type { FsErrorReporter } from '@/lib/fs/ipcGuard';
-import { ToastAction, type ToastType } from '@/components/common/Toast';
+import { ToastAction, type ToastType } from '@/types/toast';
 
 export interface UseFileOperationsParams {
   photos: Photo[];
-  photosRef: RefObject<Photo[]>;
   selectedIds: Set<string>;
   setSelectedIds: Dispatch<SetStateAction<Set<string>>>;
   setPhotos: Dispatch<SetStateAction<Photo[]>>;
@@ -60,7 +59,6 @@ export interface FileOperationsResult {
 
 export function useFileOperations({
   photos,
-  photosRef,
   selectedIds,
   setSelectedIds,
   setPhotos,

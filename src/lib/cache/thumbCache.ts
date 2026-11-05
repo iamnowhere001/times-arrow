@@ -135,6 +135,29 @@ export async function resolveThumbnail(filePath: string, size: number): Promise<
   return task;
 }
 
+/**
+ * 只查主进程磁盘缓存 / 生成缩略图，但**不**写入渲染进程的地址缓存。
+ * 供视频首帧等需要自定义 key 的调用方复用，避免它们直接接触 `window.electronAPI`。
+ */
+export async function fetchDiskThumbnail(filePath: string, size: number): Promise<string | null> {
+  const api = window.electronAPI;
+  if (!api?.getThumbnail) return null;
+  const res = await api.getThumbnail(filePath, quantizeThumbSize(size));
+  return res.ok ? res.data.url : null;
+}
+
+/** 把渲染进程抓到的帧写回主进程磁盘缓存，返回落盘后的地址（失败返回 null） */
+export async function storeThumbnail(
+  filePath: string,
+  size: number,
+  base64: string
+): Promise<string | null> {
+  const api = window.electronAPI;
+  if (!api?.cacheThumbnail) return null;
+  const res = await api.cacheThumbnail(filePath, quantizeThumbSize(size), base64);
+  return res.ok ? res.data.url : null;
+}
+
 /** 仅查询本地缓存中的缩略图地址，不发请求（感知哈希优先用小图做源） */
 export function cachedThumbUrl(filePath: string, size: number): string | undefined {
   return touchThumbUrl(`${filePath}|${quantizeThumbSize(size)}`);

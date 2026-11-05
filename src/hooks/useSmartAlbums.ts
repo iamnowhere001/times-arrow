@@ -11,7 +11,7 @@ import { useCallback, useState, type Dispatch, type SetStateAction } from 'react
 import { PhotoFilters, SmartAlbum } from '@/types';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
 import { createEmptyFilters, filtersEqual, normalizeFilters } from '@/lib/filter/filters';
-import { ToastAction, type ToastType } from '@/components/common/Toast';
+import { ToastAction, type ToastType } from '@/types/toast';
 
 export interface UseSmartAlbumsParams {
   filters: PhotoFilters;

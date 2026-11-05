@@ -9,7 +9,8 @@ import React, {
 import { Photo } from '@/types';
 import { isVideoPlaybackUncertain } from '@/utils';
 import { reportVideoMetaFromElement, videoMetaKeyOf } from '@/lib/media/videoMeta';
-import { BASE_THUMB_SIZE, useVideoPoster } from '@/components/grid/ThumbnailImage';
+import { BASE_THUMB_SIZE } from '@/lib/cache/thumbCache';
+import { useVideoPoster } from '@/hooks/useVideoPoster';
 
 /**
  * 预览层的自定义视频播放器。
@@ -301,9 +302,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
   }, []);
 
   const togglePiP = useCallback(async () => {
-    const video = videoRef.current as
-      | (HTMLVideoElement & { requestPictureInPicture?: () => Promise<unknown> })
-      | null;
+    const video = videoRef.current;
     if (!video?.requestPictureInPicture) return;
     try {
       if (document.pictureInPictureElement) {

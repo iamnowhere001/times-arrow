@@ -20,12 +20,12 @@ import {
 import {
   DUPLICATE_SIMILARITY_DEFAULT,
   similarityToDistance,
-} from '@/components/duplicate/DuplicateDetector';
+} from '@/lib/duplicate/constants';
 import { releaseMemory } from '@/lib/cache/cacheManager';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
 import { logger } from '@/lib/logger';
 import { movePhotosToTrash } from '@/lib/fs/fileOperations';
-import { ToastAction, type ToastType } from '@/components/common/Toast';
+import { ToastAction, type ToastType } from '@/types/toast';
 
 export interface UseDuplicateDetectionParams {
   photos: Photo[];

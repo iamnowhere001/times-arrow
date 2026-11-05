@@ -1027,7 +1027,7 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
       });
     }
     return () => {
-      if (scrollRef.current) savedScrollTop = scrollRef.current.scrollTop;
+      if (el) savedScrollTop = el.scrollTop;
     };
   }, []);
 

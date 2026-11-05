@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
-import { ToastAction, ToastData, type ToastType } from '@/components/common/Toast';
+import { ToastAction, ToastData, type ToastType } from '@/types/toast';
 
 /** 同时最多展示几条：超出的按「优先淘汰无操作按钮的旧条目」策略移除 */
 const MAX_TOASTS = 4;

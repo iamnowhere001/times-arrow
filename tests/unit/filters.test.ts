@@ -58,6 +58,7 @@ describe('createEmptyFilters / normalizeFilters', () => {
   });
 
   it('非法类型的数组字段退化为空数组，不抛错', () => {
+    // oxlint-disable-next-line no-unnecessary-type-assertion — 故意传入非法类型，验证运行时兜底；去掉断言则无法通过类型检查
     const out = normalizeFilters({ tags: 'not-an-array', cameras: 123 } as never);
     expect(out.tags).toEqual([]);
     expect(out.cameras).toEqual([]);
@@ -409,11 +410,11 @@ describe('日期范围与预设', () => {
   it('date input 值 <-> 当天起止时间戳', () => {
     const start = startOfDayFromInput('2024-03-05');
     const end = endOfDayFromInput('2024-03-05');
-    expect(toDateInputValue(start!)).toBe('2024-03-05');
-    expect(toDateInputValue(end!)).toBe('2024-03-05');
-    expect(start!).toBeLessThan(end!);
-    expect(new Date(start!).getHours()).toBe(0);
-    expect(new Date(end!).getHours()).toBe(23);
+    expect(toDateInputValue(start)).toBe('2024-03-05');
+    expect(toDateInputValue(end)).toBe('2024-03-05');
+    expect(start).toBeLessThan(end);
+    expect(new Date(start).getHours()).toBe(0);
+    expect(new Date(end).getHours()).toBe(23);
   });
 
   it('非法日期字符串返回 null 而不是 NaN 时间戳', () => {

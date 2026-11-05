@@ -227,7 +227,7 @@
 | X4 | 地图视图（EXIF GPS 展示） | ✅ 已随 F3 落地轻量版：离线点阵底图 + 点位聚合，未引入地图 SDK；需街道级细节再议 |
 | X5 | 跨平台打包（Win/Linux）+ 自动更新 | 暂缓。只在 macOS 自用 |
 | X7 | `App.tsx` 大拆分 + 开启 `strict` + 引入 `@types/react` | 🔶 **部分完成**（2026-09-16）：`App.tsx` 3707 → 1279 行，拆出 15 个功能域 hook；`@types/react` 已在依赖里。**仍未做**：`strict: true` —— 打开会暴露大量隐式 `any`，需专项处理，暂缓 |
-| X8 | 测试 / ESLint / CI | 🔶 **部分完成**（2026-09-16）：三层测试（单测 266 项 / 主进程集成 104 项，落地时 88 项 / Electron 冒烟）与 ESLint + Prettier 均已落地且纳入 `npm run test` / `lint`。**仍未做**：CI —— 本机 `npm install` 与 Electron 沙箱都有环境限制，先不接 |
+| X8 | 测试 / lint / CI | 🔶 **部分完成**（2026-09-16）：三层测试（单测 266 项 / 主进程集成以 `npm run test:main` 实测为准，当前 166 项 / Electron 冒烟）与 Prettier 已落地；lint 现在分两层（ESLint 管 JS/CJS、oxlint 管 TS/TSX），均纳入 `npm run test` / `lint`。**仍未做**：CI —— 本机 `npm install` 与 Electron 沙箱都有环境限制，先不接 |
 | X9 | 十万级库 Worker 化压测与调优 | 暂缓。除非库规模真的到十万级 |
 | X10 | 云同步 / Google Photos 等外部集成 | 暂缓。与「纯本地」定位冲突 |
 | X11 | 视频重编码导出 / 转码预览 | 暂缓。依赖 ffmpeg，体积与复杂度陡增；原文件可直接复制 |
@@ -256,7 +256,7 @@
 
 - **2026-09-16 · 冗余清理批次（CODE_REVIEW P2-21 部分 / P2-32）**：抽公共图标库 `src/components/icons/`，收敛 5 组重复定义（返回箭头 3 份 → 1 份、刷新/重置、漏斗、加号各 2 份 → 1 份），尺寸与线宽差异在调用点参数化还原，**行为零变化**；清理 `RenameModal` 的失效 `eslint-disable`；修掉 `useFileOperations` 重命名 replace 分支里模板字符串吞掉 `\.` 的真实瑕疵（改用 `lastIndexOf + slice`）；全量「未使用 import」扫描为 0。详见 `CODE_REVIEW.md` 附录 E。
 
-- **2026-11-05 · 主进程模块化与 AI 密钥边界（CODE_REVIEW 附录 F）**：确认产品定位为**个人自用**，据此不引入 `safeStorage`、签名公证与自动更新等分发向成本。① `electron/main.js` 2,746 → 1,292 行，拆出 `electron/main/` 4 个 .cjs（ai / authorization / media-pipeline / store），31 个 IPC channel 与 preload 双向差集为空、行为零变化，补齐了此前文档滞后 7 周且未提交的重构；② `ai-config-get` 从回传明文 `apiKey` 改为 `hasApiKey` + 尾号掩码，设置弹窗改为「留空 = 保持现有值、清除需显式勾选」，`DetailsPane` 的未配置判断同步改字段；新增 `ai-config-privacy.test.cjs` 16 项钉住读取不泄露、轮换与清除后的状态。三层验证：typecheck / lint / 主进程 104 项 / 单测 266 项 / build 全过。三份文档快照与措辞同步至当前代码。
+- **2026-11-05 · 主进程模块化与 AI 密钥边界（CODE_REVIEW 附录 F）**：确认产品定位为**个人自用**，据此不引入 `safeStorage`、签名公证与自动更新等分发向成本。① `electron/main.js` 2,746 → 1,292 行，拆出 `electron/main/` 4 个 .cjs（ai / authorization / media-pipeline / store），31 个 IPC channel（该批次当时口径；现为 40 个 invoke + `pm` 协议）与 preload 双向差集为空、行为零变化，补齐了此前文档滞后 7 周且未提交的重构；② `ai-config-get` 从回传明文 `apiKey` 改为 `hasApiKey` + 尾号掩码，设置弹窗改为「留空 = 保持现有值、清除需显式勾选」，`DetailsPane` 的未配置判断同步改字段；新增 `ai-config-privacy.test.cjs` 16 项钉住读取不泄露、轮换与清除后的状态。三层验证：typecheck / lint / 主进程 104 项（当时口径；现以 `npm run test:main` 实测为准） / 单测 266 项 / build 全过。三份文档快照与措辞同步至当前代码。
 
 - **2026-11-05 · P1 数据资产专项（CODE_REVIEW 附录 G）**：标注资产的键从**磁盘路径**换成**内容指纹**，`Photo.fileId` 承载身份、`Photo.id` 保持会话内唯一；删除 `rekeyPathData` / `dropPathData` / `persistPathData` 整条补丁链，改名 / 移动 / 删后重导入自动续上标注。启动迁移器把 v1 路径键换算成指纹，不可达记录进 `orphans` 供重连续接；写盘前轮转 `config.json.bak` / `.bak.1`。新增「数据资产」面板（⌘⇧D）：配置导出导入（不含 AI 密钥）、路径重连、操作日志与撤销、按原目录增量备份（F10）。主进程 4 个写操作 handler 埋点；删除撤销在 macOS 上按文件名 + 体积 + mtime 从 `~/.Trash` 三重校验取回，失败明确报错。主进程测试 151 项（新增 data-assets 47 项），单测 266 项，typecheck / lint / build 全过。
 

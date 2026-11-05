@@ -115,7 +115,7 @@ export function createLruCache<K, V>(
     },
   };
 
-  registerCache(cache as LruCache<unknown, unknown>);
+  registerCache(cache);
   return cache;
 }
 

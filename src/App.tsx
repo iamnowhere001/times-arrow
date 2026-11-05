@@ -19,7 +19,8 @@ import { savePersistedConfig } from '@/lib/persistence/persistence';
 import { basenameOfPath } from '@/lib/persistence/sources';
 import Sidebar from '@/components/layout/Sidebar';
 import Toolbar from '@/components/layout/Toolbar';
-import ImageGrid, { ImageGridHandle } from '@/components/grid/ImageGrid';
+import ImageGrid from '@/components/grid/ImageGrid';
+import type { ImageGridHandle } from '@/types/grid';
 import DetailsPane from '@/components/detail/DetailsPane';
 import RenameModal from '@/components/modal/RenameModal';
 import DeleteConfirmModal from '@/components/modal/DeleteConfirmModal';
@@ -27,12 +28,13 @@ import ClearListConfirmModal from '@/components/modal/ClearListConfirmModal';
 import QuickLook from '@/components/detail/QuickLook';
 import ToastStack from '@/components/layout/ToastStack';
 import ViewErrorFallback from '@/components/common/ViewErrorFallback';
-import ContextMenu, { ContextMenuItem } from '@/components/common/ContextMenu';
+import ContextMenu from '@/components/common/ContextMenu';
+import type { ContextMenuItem } from '@/types/contextMenu';
 import DuplicateDetector from '@/components/duplicate/DuplicateDetector';
 import ExportModal from '@/components/modal/ExportModal';
 import TimelineGallery from '@/components/timeline/TimelineGallery';
 import LocationMap from '@/components/map/LocationMap';
-import { clearThumbnailCache } from '@/components/grid/ThumbnailImage';
+import { clearThumbnailCache } from '@/lib/cache/thumbCache';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import DragOverlay from '@/components/common/DragOverlay';
 import LoadingOverlay from '@/components/common/LoadingOverlay';
@@ -220,7 +222,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     beginDropWork,
     endDropWork,
     handleCancelLoading,
-    loadMetadata,
     ingestFiles,
   } = useIngestPipeline({
     setPhotos,
@@ -446,6 +447,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     } else {
       showToast(`已调整 ${applied} 项的日期与时间`, 'success');
     }
+    // oxlint-disable-next-line react-hooks/exhaustive-deps — dateOverridesRef 是稳定 ref，只在提交时读取 .current
   }, [showToast]);
 
   /** 保存相簿：关闭弹层后交给 hooks/useSmartAlbums 的 handleSaveAlbum */
@@ -492,6 +494,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     // 列表已清空：停掉目录监听，避免外部变动事件打到空列表上产生噪音提示
     unwatchCurrentDir();
     showToast('已清空照片列表', 'info');
+    // oxlint-disable-next-line react-hooks/exhaustive-deps — 其余调用均为稳定 setter / ref，读取 .current 不构成 stale 风险
   }, [photos, showToast, unwatchCurrentDir]);
 
   // 卸载兜底（停掉主进程 watcher）已随 hooks/useWatcherSync 一并迁出
@@ -516,12 +519,9 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   // （点来源重扫、移除来源）统一收口在 hooks/useLibraryImport
   // ---------------------------------------------------------------------------
   const {
-    loadDirectory,
     restoreLibrary,
-    importFilePaths,
     importPickedPaths,
     handleImport,
-    handleSelectSource,
     handleSelectDirectorySource,
     handleRemoveDirectorySource,
     handleSelectFileSources,
@@ -686,7 +686,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   // ---------------------------------------------------------------------------
   const { handleRenamePhoto, handleBatchRename, handleConfirmDelete, handleMoveSelected   } = useFileOperations({
     photos,
-    photosRef,
     selectedIds,
     setSelectedIds,
     setPhotos,
@@ -737,6 +736,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
     onOpenAdjustDate: () => setIsAdjustDateModalOpen(true),
     onOpenRename: () => setIsRenameModalOpen(true),
     onOpenDelete: () => setIsDeleteModalOpen(true),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps — setQuickLookPhoto 是稳定 setter，不会因子组件重渲染而变化
   }), [contextMenu, visiblePhotos.length, photos.length, selectedIds, toggleFavorite, setHidden, handleCopyImage, handleShowInFolder, handleCopyPath, handleOpenInEditor, handleExportSelected, handleMoveSelected, handleSelectAllVisible, handleCheckDuplicates, handleRequestClearList, handleImport]);
 
   // 媒体统计 / 相簿命中数 / 侧栏高亮已并入 hooks/useLibraryDerived
@@ -774,6 +774,7 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   const handleMapQuickLook = useCallback((photo: Photo, scope: Photo[]) => {
     setQuickLookScope(scope);
     setQuickLookPhoto(photo);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps — 只调用两个稳定 setter，空依赖可保持回调身份稳定
   }, []);
   const handleOpenShortcuts = useCallback(() => setIsShortcutsOpen(true), []);
   const handleOpenAiSettings = useCallback(() => setIsAiSettingsOpen(true), []);
@@ -851,7 +852,6 @@ const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', dir
   // 拖放导入（遮罩进出场 / 文件与文件夹分流 / 内存预览降级）见 hooks/useDragAndDrop
   // ---------------------------------------------------------------------------
   const {
-    isDraggingFile,
     isDragOverlayMounted,
     isDragOverlayActive,
     handleDragOver,

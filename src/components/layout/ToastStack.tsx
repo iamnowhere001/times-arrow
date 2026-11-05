@@ -5,7 +5,8 @@
  * 底部居中堆叠的展示；无 Toast 时不渲染任何内容。
  */
 
-import Toast, { type ToastData } from '@/components/common/Toast';
+import Toast from '@/components/common/Toast';
+import type { ToastData } from '@/types/toast';
 
 export interface ToastStackProps {
   toasts: ToastData[];

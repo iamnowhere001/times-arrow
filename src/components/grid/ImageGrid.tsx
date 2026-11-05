@@ -1,10 +1,13 @@
 
 import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect, forwardRef, useImperativeHandle } from 'react';
 import { Photo, ViewMode, SortConfig, SortKey, SortDirection } from '@/types';
+import type { ImageGridHandle } from '@/types/grid';
 import { formatBytes, formatDate, formatVideoDuration, isVideoPhoto } from '@/utils';
 // 时间语义统一入口：本文件原先内联了 `dateTaken || lastModified`
 import { photoTakenTime } from '@/lib/media/photoTime';
-import { useThumbnailSrc, useVideoPoster, ThumbImage } from '@/components/grid/ThumbnailImage';
+import { useThumbnailSrc } from '@/hooks/useThumbnailSrc';
+import { useVideoPoster } from '@/hooks/useVideoPoster';
+import { ThumbImage } from '@/components/grid/ThumbnailImage';
 // 空状态：首屏单独设计，其余五种共用模板但区分语气（K27）
 import { EmptyKind, QuietEmptyState, WelcomeEmptyState } from '@/components/grid/EmptyStates';
 
@@ -397,7 +400,7 @@ const VirtualGrid = forwardRef<VirtualGridHandle, {
           {/* 不加 key：文案变化时原地更新即可，加 key 会让胶囊每换一天就重播一次入场动画 */}
           <button
             type="button"
-            onClick={() => onFilterByDate?.(topCapsule!.timestamp)}
+            onClick={() => onFilterByDate?.(topCapsule.timestamp)}
             disabled={!onFilterByDate}
             title={onFilterByDate ? '只看这一天' : undefined}
             className={`date-capsule animate-scaleIn inline-flex items-center gap-2 rounded-full bg-[var(--bg-elevated)] px-4 py-1.5 text-xs font-semibold text-[var(--text-primary)] border border-[var(--border-default)] shadow-lg shadow-[rgba(0,0,0,0.3)] ${
@@ -723,13 +726,6 @@ const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(({
 });
 
 VirtualList.displayName = 'VirtualList';
-
-/** ImageGrid 对外暴露的命令式句柄：滚动定位到某张照片（网格 / 列表通用） */
-export interface ImageGridHandle {
-  scrollToPhoto: (id: string) => void;
-  /** 网格视图上下键导航：返回目标行中最接近的项 id；列表视图返回 null（由调用方顺序步进） */
-  getVerticalNeighbor: (id: string, direction: 'up' | 'down') => string | null;
-}
 
 interface ImageGridProps {
   photos: Photo[];

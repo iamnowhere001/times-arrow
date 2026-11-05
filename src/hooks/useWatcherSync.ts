@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { Photo } from '@/types';
 import { logger } from '@/lib/logger';
 import type { FsErrorReporter } from '@/lib/fs/ipcGuard';
-import { ToastAction, type ToastType } from '@/components/common/Toast';
+import { ToastAction, type ToastType } from '@/types/toast';
 
 /** 回环登记的有效期：需覆盖塌陷动画（200ms）+ 事件防抖（主进程 500ms/3s）+ 余量 */
 const TOUCHED_TTL = 8000;

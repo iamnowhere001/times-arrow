@@ -16,7 +16,7 @@ import { assetKeyOf } from '@/lib/media/photoIdentity';
 import { AiCacheEntry, Photo } from '@/types';
 import { mapWithConcurrency, mediaKindOf, mediaMimeType, pmFileUrl } from '@/utils';
 import { getVideoMeta } from '@/lib/media/videoMeta';
-import { ToastAction, type ToastType } from '@/components/common/Toast';
+import { ToastAction, type ToastType } from '@/types/toast';
 
 export interface UseIngestPipelineParams {
   setPhotos: Dispatch<SetStateAction<Photo[]>>;
@@ -288,7 +288,7 @@ export function useIngestPipeline({
               ? { duration: video.duration, dimensions: { width: video.width, height: video.height } }
               : null),
             ...(ai ? { aiDescription: ai.description, aiTags: ai.tags } : null),
-          } as Photo);
+          });
         }
 
         // 只有真正进入列表的路径才标记为已导入，取消后可以重新添加

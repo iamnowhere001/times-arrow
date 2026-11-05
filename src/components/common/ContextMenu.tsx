@@ -1,16 +1,6 @@
 
 import React, { useEffect, useRef } from 'react';
-
-export interface ContextMenuItem {
-  label?: string;
-  icon?: React.ReactNode;
-  onClick?: () => void;
-  danger?: boolean;
-  separator?: boolean;
-  disabled?: boolean;
-  /** 右侧快捷键提示，如 "⌘⇧F" */
-  shortcut?: string;
-}
+import type { ContextMenuItem } from '@/types/contextMenu';
 
 interface ContextMenuProps {
   x: number;

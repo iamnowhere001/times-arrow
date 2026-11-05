@@ -12,7 +12,7 @@ import {
 import { reportVideoMetaFromElement, videoMetaKeyOf } from '@/lib/media/videoMeta';
 import { analyzeImage, analyzeImageFromBase64 } from '@/services/aiService';
 import { logger } from '@/lib/logger';
-import { useThumbnailSrc } from '@/components/grid/ThumbnailImage';
+import { useThumbnailSrc } from '@/hooks/useThumbnailSrc';
 
 /**
  * 详情预览图：先用磁盘缩略图把画面立刻铺出来，原图在后台解码完成后再无缝替换。
@@ -108,6 +108,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
               nameInputRef.current.select();
           }
       }
+  // oxlint-disable-next-line react-hooks/exhaustive-deps — 只在开始编辑时聚焦并选中文件名；tempName 随输入变化，加入依赖会在每次击键后重跑
   }, [isEditingName]);
 
   const startEditing = () => {

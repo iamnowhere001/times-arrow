@@ -192,8 +192,8 @@ describe('异常输入', () => {
   it('字节数不足时返回 null，而不是产出短哈希或 NaN', () => {
     expect(dHashFromRGBA(new Uint8ClampedArray(10))).toBeNull();
     expect(dHashFromBGRA(new Uint8ClampedArray(10))).toBeNull();
-    expect(dHashFromRGBA(null as never)).toBeNull();
-    expect(dHashFromRGBA(undefined as never)).toBeNull();
+    expect(dHashFromRGBA(null)).toBeNull();
+    expect(dHashFromRGBA(undefined)).toBeNull();
   });
 
   it('多给的字节被忽略（不越界读取）', () => {

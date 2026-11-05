@@ -17,7 +17,7 @@ import { humanizeFsError } from '@/lib/fs/fileOperations';
 import { EXIT_DURATION } from '@/hooks/useCollapseAnimation';
 import { isImageName, isVideoName, mediaKindOf, mediaMimeType } from '@/utils';
 import { logger } from '@/lib/logger';
-import { ToastAction, type ToastType } from '@/components/common/Toast';
+import { ToastAction, type ToastType } from '@/types/toast';
 
 export interface UseDragAndDropParams {
   setPhotos: Dispatch<SetStateAction<Photo[]>>;
@@ -116,7 +116,7 @@ export function useDragAndDrop({
     e.stopPropagation();
     setIsDraggingFile(false);
 
-    const files = Array.from(e.dataTransfer.files) as File[];
+    const files = Array.from(e.dataTransfer.files);
     if (files.length === 0) return;
 
     // 分类：媒体文件（图片 / 视频）/ 可能是文件夹（拖入目录时没有 MIME 且 size 为 0）/ 其它

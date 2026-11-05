@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { Photo } from '@/types';
-import type { ImageGridHandle } from '@/components/grid/ImageGrid';
+import type { ImageGridHandle } from '@/types/grid';
 
 export interface UseKeyboardShortcutsParams {
   /** 当前视图真正展示的照片（方向键与全选的作用域） */

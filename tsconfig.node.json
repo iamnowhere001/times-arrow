@@ -12,5 +12,10 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["electron/**/*.js", "build/**/*.js", "vite.config.mts"]
+  "include": [
+    "electron/**/*.js",
+    "electron/**/*.cjs",
+    "build/**/*.js",
+    "vite.config.mts"
+  ]
 }

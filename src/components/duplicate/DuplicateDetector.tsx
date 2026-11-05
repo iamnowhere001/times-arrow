@@ -2,9 +2,13 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
 import { Photo, type DuplicateScope } from '@/types';
 import { formatBytes, hammingDistance, photoOriginalTime, type DuplicateScanProgress } from '@/utils';
-import { useThumbnailSrc } from '@/components/grid/ThumbnailImage';
+import { useThumbnailSrc } from '@/hooks/useThumbnailSrc';
 import DeleteConfirmModal from '@/components/modal/DeleteConfirmModal';
 import { ChevronLeftIcon, RefreshIcon } from '@/components/icons';
+import {
+  DUPLICATE_SIMILARITY_MAX,
+  DUPLICATE_SIMILARITY_MIN,
+} from '@/lib/duplicate/constants';
 
 /**
  * 取末两级目录做展示标签（`…/2024/01`）。
@@ -45,17 +49,8 @@ const formatDuration = (ms: number): string => {
 
 /**
  * 阈值对外以「相似度百分比」暴露，内部再换算成汉明距离（bit）。
- * dHash 只有 64 bit，相似度低于 80%（距离 > 12 bit）时两组照片通常只是构图相近，
- * 已经不能叫「相似照片」—— 再松下去就是碰运气，所以下限收在 80%；
- * 想「只找完全相同的」把滑块拖到 100% 即可。
+ * 数值与换算函数已下沉到 `@/lib/duplicate/constants`，组件只负责展示。
  */
-export const DUPLICATE_SIMILARITY_MIN = 80;
-export const DUPLICATE_SIMILARITY_MAX = 100;
-export const DUPLICATE_SIMILARITY_DEFAULT = 90;
-
-/** 相似度下限 → 汉明距离上限。向下取整，保证界面「≥ N%」这句话是真的 */
-export const similarityToDistance = (similarity: number): number =>
-  Math.max(0, Math.floor((100 - similarity) * (64 / 100)));
 
 /** 图片与「保留项」的相似度百分比（以 64 bit dHash 的汉明距离换算） */
 const similarityVs = (photo: Photo, base: Photo): number | null => {

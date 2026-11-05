@@ -26,8 +26,8 @@ import { getVideoMeta, seedVideoMeta, snapshotVideoMeta, subscribeVideoMeta, vid
 import {
   DUPLICATE_SIMILARITY_MAX,
   DUPLICATE_SIMILARITY_MIN,
-} from '@/components/duplicate/DuplicateDetector';
-import { ToastAction, type ToastType } from '@/components/common/Toast';
+} from '@/lib/duplicate/constants';
+import { ToastAction, type ToastType } from '@/types/toast';
 import type { Theme } from '@/hooks/useThemeMode';
 
 export interface UseAppConfigParams {
@@ -232,6 +232,7 @@ export function useAppConfig({
     return () => {
       cancelled = true;
     };
+  // oxlint-disable-next-line react-hooks/exhaustive-deps — sourcesRef 是稳定 ref，只读取 .current，不参与触发条件
   }, [aiCacheRef, dateOverridesRef, favoritesRef, hiddenRef, photosRef, refreshSourceAvailability, setAlbums, setDuplicateScope, setDuplicateSimilarity, setIsConfigLoaded, setIsDetailsPaneOpen, setIsLeftPaneOpen, setPhotos, setScale, setSortConfig, setSources, setTheme, setViewMode, showToast, tagsRef, updateFilters]);
 
   // 视频元数据上报：回写到对应条目（时长 / 分辨率）。

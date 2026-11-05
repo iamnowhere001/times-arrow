@@ -44,6 +44,7 @@ export const LandDotField: React.FC<LandDotFieldProps> = ({
       viewBox: `0 0 ${grid.cols} ${grid.rows}`,
       aspect: grid.cols / grid.rows,
     };
+    // oxlint-disable-next-line react-hooks/exhaustive-deps — 实际只读取 north/south 两个字段，逐项列出可避免对象字面量重建触发重算
   }, [cols, latRange?.north, latRange?.south, dotSize]);
 
   return (

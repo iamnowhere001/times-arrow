@@ -8,7 +8,7 @@
 | 隐私 | 全部本地处理；AI 分析是唯一可选的联网功能，密钥由主进程读取并代理请求、在本机明文存储（界面只读到尾号掩码，见「已知限制」） |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
 | 当前版本 | v0.6.0（开发中）· 待办与路线图见 [`TODO.md`](./TODO.md) |
-| 质量护栏 | ESLint 0 problems · 单测 266 项 · 主进程集成测试 151 项 · Electron 冒烟 1 项 |
+| 质量护栏 | ESLint + oxlint 0 problems · 单测 266 项 · 主进程集成测试 166 项 · Electron 冒烟 1 项 |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
 
 ---
@@ -42,15 +42,15 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | 命令 | 说明 |
 | --- | --- |
 | `npm run typecheck` | `tsc --noEmit`（渲染进程 + 构建配置两个 project） |
-| `npm run lint` / `lint:fix` | ESLint（当前 0 problems，TS 侧降级见下） |
+| `npm run lint` / `lint:fix` | ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware；当前均为 0 problems） |
 | `npm run format` / `format:check` | Prettier（仓库尚未全量格式化，见下） |
 | `npm run test` | `test:main` + `test:unit` |
 | `npm run test:unit` | Vitest 纯函数单测（266 项） |
-| `npm run test:main` | 打桩 electron 的主进程集成测试（151 项，含 AI 密钥边界 16 项与数据资产端到端 47 项） |
+| `npm run test:main` | 打桩 electron 的主进程集成测试（166 项 = 22 + 18 + 48 + 16 + 47 + 分层依赖 6 + IPC 契约 9） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
 
 > **两个环境注意事项**
-> 1. **ESLint 的 TS 侧是降级状态**：本项目的 TypeScript 是 7.x，超出 `typescript-eslint` 的 peer 范围，其解析器加载不了。`eslint.config.mjs` 做能力探测后自动退化为只检查 JS/CJS —— 主进程与构建脚本都在这一侧，仍有实际价值。
+> 1. **lint 分两层**：`lint:js` 用 ESLint 检查 JS/CJS（主进程、构建脚本），`lint:ts` 用 oxlint（type-aware）检查 TS/TSX。这样绕开了 `typescript-eslint` 对 TypeScript 7 的 peer 限制，同时让 TS 侧重新获得静态检查。
 > 2. **本机无法初始化 Chromium 沙箱**，直接跑 `test:smoke` 会 `FATAL: GPU process isn't usable` 崩溃（退出码 133）。本环境请用 `npm run test:smoke:no-sandbox`。默认脚本保持不带逃生口，以免在正常机器上白白跳过沙箱路径。
 
 ---
@@ -223,7 +223,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 | 分类 | 选型 |
 | --- | --- |
-| 桌面壳 | Electron 44（主进程 `electron/main.js` 1,292 行 + `electron/main/` 4 个领域模块 + 预加载 `electron/preload.js`） |
+| 桌面壳 | Electron 44（主进程 `electron/main.js` 1,343 行 + `electron/main/` 6 个领域模块 + 预加载 `electron/preload.js`） |
 | 前端 | React 19、TypeScript 7 |
 | 构建 | Vite 8（`@vitejs/plugin-react`） |
 | 样式 | Tailwind CSS 4（CSS-first `@theme`）+ `src/styles/styles.css` 的 CSS 变量 |
@@ -279,14 +279,15 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 ```
 .
 ├── electron/             # 主进程（Node / CommonJS）
-│   ├── main.js           #   入口：窗口、菜单、IPC 注册、pm:// 协议（1,292 行）
+│   ├── main.js           #   入口：窗口、菜单、IPC 注册、pm:// 协议（1,343 行）
 │   ├── preload.js        #   contextBridge 暴露 window.electronAPI
 │   ├── main/             #   按领域拆出的主进程模块（2026-11-05，见 CODE_REVIEW 附录 F）
 │   │   ├── ai.cjs        #     DeepSeek 代理、AI 配置读写与密钥掩码
 │   │   ├── authorization.cjs #  会话级路径白名单
 │   │   ├── media-pipeline.cjs # 扫描 / EXIF / 缩略图 / HEIC / dHash
 │   │   ├── store.cjs     #     本地 JSON 存储、原子写、损坏备份与通知
-│   │   └── data-assets.cjs #   内容指纹 / 配置导出导入 / 路径重连 / 操作日志 / 增量备份
+│   │   ├── data-assets.cjs #   内容指纹 / 配置导出导入 / 路径重连 / 操作日志 / 增量备份
+│   │   └── migrations.cjs #    config.json / ai-cache.json 的 v1→v2 结构迁移（路径键 → 内容指纹）
 │   └── lib/
 │       ├── csp.cjs       #     CSP 策略唯一定义（响应头与构建期 meta 共用同一份）
 │       ├── fingerprint.cjs #   内容指纹（size + 头尾各 64KB 的 sha256，128 bit）
@@ -296,7 +297,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 ├── src/                  # 渲染进程（React / Vite）
 │   ├── main.tsx          #   挂载入口（createRoot + ErrorBoundary）
 │   ├── App.tsx           #   应用主组件：组合 hooks + 视图路由
-│   ├── hooks/            #   从 App 抽出的功能域 hook（共 18 个）
+│   ├── hooks/            #   从 App 抽出的功能域 hook（共 20 个）
 │   │                     #     编排：useAppConfig / useLibraryImport / useIngestPipeline
 │   │                     #     数据：usePersistedLibraryData / useLibraryDerived / useLibrarySources
 │   │                     #     交互：useSelection / useFileOperations / useFileOpFeedback
@@ -335,7 +336,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   └── styles/styles.css #   主题变量与基础样式（Tailwind v4 CSS-first）
 ├── tests/                # 三层验证
 │   ├── unit/             #   Vitest 纯函数单测（266 项 / 10 个文件）
-│   ├── main-process/     #   打桩 electron 的集成测试（151 项，含 ai-config-privacy / data-assets）+ harness.cjs 脚手架
+│   ├── main-process/     #   打桩 electron 的集成测试（166 项，含 ai-config-privacy / data-assets / layering / ipc-contract）+ harness.cjs 脚手架
 │   └── smoke/            #   真启动 Electron 的端到端冒烟
 ├── build/                # electron-builder 资源（图标 / afterPack / DMG 重压钩子）
 ├── index.html            # Vite 入口 HTML
@@ -376,7 +377,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 
 **实现约束（不影响使用，但改代码时须知）**
 
-- **ESLint 不检查 TypeScript**：本项目 TS 7.x 超出 `typescript-eslint` 支持范围，`lint` 实际只覆盖 JS/CJS（主进程与构建脚本）。TS 侧依赖 `typecheck` 与单测兜底。
+- **lint 分两层**：ESLint 只检查 JS/CJS（主进程与构建脚本），TS/TSX 由 oxlint（type-aware）检查；两层都要求 0 problems，规则清单见 `.oxlintrc.json`。
 - **仓库尚未全量 Prettier 格式化**：既有文件格式化一次会产生数千行 diff，需独立提交。
 - **本机无法初始化 Chromium 沙箱**：开发需用 `PHOTOMINDER_DISABLE_SANDBOX=1`（或 `test:smoke:no-sandbox`）；打包产物不受影响。
 - **`movePhotosToTrash` 仍串行**：批量删除数百张时是逐次 IPC 往返（见 CODE_REVIEW P2-23）。

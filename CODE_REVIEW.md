@@ -2,7 +2,7 @@
 
 > **审查时快照**：`electron/`（主进程 2,350 行 + preload 108 行）、`src/`（28 个 tsx / 27 个 ts，约 22,850 行）、`build/`、`index.html`、`vite.config.mts`、`tsconfig*.json`、`package.json`
 > **历史快照（2026-09-16）**：`electron/main.js` 2,746 行、`preload.js` 129 行，`electron/lib/` 4 个共享模块；`src/` 30 个 tsx（13,784 行）+ 49 个 ts（9,465 行）≈ 23,249 行，另新增 `src/hooks/` 18 个 hook（4,287 行）与 `tests/` 三层验证（11 个测试文件）
-> **当前快照（2026-11-05 第二批后）**：`electron/main.js` 1,292 行、`preload.js` 约 160 行；`electron/main/` **5 个 .cjs**（ai / authorization / media-pipeline / store / data-assets），`electron/lib/` **5 个共享模块**（新增 `fingerprint.cjs`）；`src/` 新增 `lib/media/photoIdentity.ts` 与 `components/modal/DataAssetsModal.tsx`；`tests/` **17 个文件**，主进程 **151 项**。主进程拆分与 AI 密钥边界见 **附录 F**，数据资产专项见 **附录 G**。
+> **当前快照（2026-11-05 第二批后）**：`electron/main.js` 1,343 行、`preload.js` 约 151 行；`electron/main/` **6 个 .cjs**（ai / authorization / data-assets / media-pipeline / migrations / store），`electron/lib/` **4 个 .cjs 共享模块**（另有 `dhash.d.cts` 类型声明；其中 `fingerprint.cjs` 为新增）；`src/` 新增 `lib/media/photoIdentity.ts` 与 `components/modal/DataAssetsModal.tsx`；`tests/` **20 个文件**（18 个测试文件 + harness / fixtures 两个脚手架），主进程 **166 项**（含分层依赖 6 项与 IPC 契约 9 项）；lint 为 ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware）两层。主进程拆分与 AI 密钥边界见 **附录 F**，数据资产专项见 **附录 G**。
 > 审查方式：逐模块通读源码 + 交叉验证（git 跟踪状态、配置项、IPC 契约）
 > 严重程度定义：**高** = 安全风险 / 数据损坏 / 架构级债务；**中** = 明确的性能或正确性缺陷，或显著抬高维护成本；**低** = 一致性、可读性、局部优化
 >
@@ -34,7 +34,7 @@
 >   实测改动量远小于预估 —— P0 全部落在同一个文件、以数十行计，当初「改动面大」的顾虑不成立。
 > - **架构与工程化**：`App.tsx` 3707 → 1279 行（拆出 15 个功能域 hook）、`utils/index.ts` 1019 → 86 行 barrel、
 >   dHash 与照片时间语义各自收敛为唯一实现、地名表外置为独立 chunk；
->   同时建成三层验证（单测 266 项 / 主进程集成 88 项 / Electron 冒烟）与 ESLint + Prettier 护栏。
+>   同时建成三层验证（单测 266 项 / 主进程集成 88 项 / Electron 冒烟）与 ESLint + Prettier 护栏。其中主进程项数为审查当时口径，当前以 `npm run test:main` 实测为准（见 README 质量护栏）。
 >
 > 详见 §14 与附录 A–D。§1–§13 正文按**审查当时**的表述保留，未逐条改写。
 
@@ -620,7 +620,7 @@ if (SANDBOX_DISABLED) { /* no-sandbox / disable-setuid-sandbox / disable-gpu-san
 | 层 | 位置 | 建立时规模 | **当前规模（2026-09-16）** |
 |---|---|---|---|
 | 纯函数单测（vitest） | `tests/unit/` | 174 项 | **266 项** / 10 文件，覆盖 filters / mapMath / placeIndex / photoGrouping / pathUtils / photoTime / dhash / placesData / repairFileName+clusterBySize / utilsBarrel |
-| 主进程集成测试（打桩 electron） | `tests/main-process/` | 69 项 | **88 项**（22 + 18 + 48），覆盖 IPC 协议形态、路径白名单、`pm://` 403、体积闸门、文件名穿越、原子占位、存储恢复通知、沙箱与 CSP 静态断言 |
+| 主进程集成测试（打桩 electron） | `tests/main-process/` | 69 项 | **88 项**（22 + 18 + 48；当时口径，当前以 `npm run test:main` 实测为准），覆盖 IPC 协议形态、路径白名单、`pm://` 403、体积闸门、文件名穿越、原子占位、存储恢复通知、沙箱与 CSP 静态断言 |
 | 端到端冒烟（真启动 Electron） | `tests/smoke/` | 1 项 | 校验 CSP 未误伤应用、渲染层无错误、`#root` 有产出、preload 暴露 API |
 
 脚本：`npm run test`（= `test:main` + `test:unit`）/ `test:main` / `test:unit` / `test:smoke`。
@@ -899,7 +899,7 @@ undefined (reading 'on')`，看不出该做什么。现在：
 | `npm run build` | 通过。主 bundle `663.05 kB`（gzip 184.41）+ 地名 chunk `58.80 kB`（gzip 24.42）+ CSS `101.26 kB` |
 | `npm run lint` | **0 problems**（TS 侧降级，见 B.7） |
 | `npm run test:unit` | **266 项通过** / 10 个文件 |
-| `npm run test:main` | **88 项通过** / 3 个文件（22 + 18 + 48） |
+| `npm run test:main` | **88 项通过** / 3 个文件（22 + 18 + 48；当时口径，当前以 `npm run test:main` 实测为准） |
 | `npm run test:smoke` | 本环境需用 `test:smoke:no-sandbox`（见 C.8） |
 
 ### D.1 拆 `App.tsx`（P2-13，对应 A1 / R1）—— 已完成
@@ -910,7 +910,7 @@ undefined (reading 'on')`，看不出该做什么。现在：
 
 **改造后**：`App.tsx` **1279 行**，只做两件事 —— 组合 hooks、视图路由。逻辑按功能域拆到
 `src/hooks/`，新增 15 个 hook 共 **3856 行**（目录内另含既有的 `useToasts` / `useThemeMode` /
-`useDuplicateDetection`，合计 18 个 / 4287 行）：
+`useDuplicateDetection`，合计 18 个 / 4287 行；以上为拆分当时口径，现为 20 个 / 4,536 行）：
 
 | 分组 | hook | 行数 | 职责 |
 |---|---|---|---|
@@ -1030,7 +1030,7 @@ Toast 的渲染与队列原先内联在 `App.tsx`。抽出为 `src/components/la
 | `npm run typecheck` | 通过，零错误 |
 | `npm run build` | 通过（主 bundle 668.29 kB / gzip 185.75，地名 chunk 58.80 kB） |
 | `npm run lint` | 0 problems（TS 侧仍降级，见 B.7） |
-| `npm run test:main` | 88 项通过（22 + 18 + 48） |
+| `npm run test:main` | 88 项通过（22 + 18 + 48；当时口径） |
 | `npm run test:unit` | 266 项通过 |
 
 ### E.1 失效注释与一处真实瑕疵
@@ -1120,7 +1120,7 @@ Toast 的渲染与队列原先内联在 `App.tsx`。抽出为 `src/components/la
 |---|---|
 | `npm run typecheck` | 通过 |
 | `npm run lint` | 0 problems |
-| `npm run test:main` | **151 项**通过（22 + 18 + 48 + 16 + 47） |
+| `npm run test:main` | **151 项**通过（22 + 18 + 48 + 16 + 47；该批次当时口径，现 166 项） |
 | `npm run test:unit` | 266 项通过 |
 | `npm run build` | 通过（主 bundle 约 670 kB / gzip 186 kB；>500 kB 警告仍在，属未做项） |
 
@@ -1201,7 +1201,7 @@ Toast 的渲染与队列原先内联在 `App.tsx`。抽出为 `src/components/la
 |---|---|
 | `npm run typecheck` | 通过，零错误 |
 | `npm run lint` | 0 problems（TS 侧仍降级，见 B.7） |
-| `npm run test:main` | **104 项**通过（22 + 18 + 48 + 新增 16） |
+| `npm run test:main` | **104 项**通过（22 + 18 + 48 + 新增 16；当时口径） |
 | `npm run test:unit` | 266 项通过 |
 | `npm run build` | 通过（主 bundle 669.34 kB / gzip 186.13 kB，地名 chunk 58.80 kB；>500 kB 警告仍在，属 P2 未做项） |
 
