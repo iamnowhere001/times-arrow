@@ -219,9 +219,9 @@ declare global {
       analyzeImage: (payload: { base64: string; mimeType: string }) => Promise<
         IpcResult<{ description?: string; tags?: string[] } | null>
       >;
-      /** 读取当前生效的 AI 配置（供「AI 设置」弹窗回显） */
+      /** 读取当前生效的 AI 配置；密钥只回 hasApiKey + 尾号掩码，不回明文 */
       getAiConfig: () => Promise<IpcResult<import('@/types').AiConfigSnapshot>>;
-      /** 保存 AI 配置；空字符串表示清除该覆盖项、回退到环境变量 / 默认值 */
+      /** 保存 AI 配置；apiKey 空串表示清除该覆盖项，不传该字段表示保持现有值 */
       setAiConfig: (
         patch: import('@/types').AiConfigPatch
       ) => Promise<IpcResult<{ keySource: import('@/types').AiKeySource }>>;

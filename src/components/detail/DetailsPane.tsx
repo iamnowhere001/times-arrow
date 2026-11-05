@@ -284,7 +284,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({ selectedPhotos, onUpdatePhoto
     if (window.electronAPI?.getAiConfig) {
       try {
         const configRes = await window.electronAPI.getAiConfig();
-        if (configRes.ok && !configRes.data.apiKey) {
+        if (configRes.ok && !configRes.data.hasApiKey) {
           onNotify?.('尚未配置 DeepSeek API Key，请在「AI 设置」中填写。', 'warning');
           onOpenAiSettings?.();
           return;

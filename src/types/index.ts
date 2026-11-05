@@ -180,9 +180,9 @@ export interface PersistedAiCache {
 /** 生效中的 API Key 来源：应用内设置 / 环境变量 / 未配置 */
 export type AiKeySource = 'settings' | 'env' | 'none';
 
-/** AI 服务配置（可由应用内「AI 设置」写入 `userData/ai-config.json`） */
+/** AI 服务配置（可由应用内「AI 设置」写入 `userData/ai-config.json`）—— 仅写入方向 */
 export interface AiConfigPatch {
-  /** DeepSeek API Key；留空表示清除覆盖、回退到环境变量 */
+  /** DeepSeek API Key；留空表示清除覆盖、回退到环境变量。不传该字段表示保持现有值不变 */
   apiKey?: string;
   /** 接口地址；留空使用默认值 `https://api.deepseek.com` */
   baseUrl?: string;
@@ -190,8 +190,20 @@ export interface AiConfigPatch {
   model?: string;
 }
 
-/** 「AI 设置」弹窗读取到的完整配置快照（含内置默认值供占位展示） */
-export interface AiConfigSnapshot extends AiConfigPatch {
+/**
+ * 「AI 设置」弹窗读取到的配置快照（含内置默认值供占位展示）。
+ * 刻意不继承 `AiConfigPatch`：读取方向**不含完整密钥**，界面只能拿到
+ * 「是否已配置 + 尾号掩码」，因此渲染层可以写入新值但读不回旧值。
+ */
+export interface AiConfigSnapshot {
+  /** 当前是否已配置密钥 */
+  hasApiKey: boolean;
+  /** 已生效密钥的尾号掩码，如 `••••••••abcd`；未配置时为空串 */
+  maskedApiKey: string;
+  /** 接口地址 */
+  baseUrl?: string;
+  /** 模型名 */
+  model?: string;
   /** 当前实际生效的密钥来源 */
   keySource: AiKeySource;
   defaults: { baseUrl: string; model: string };

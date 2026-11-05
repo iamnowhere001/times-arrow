@@ -99,6 +99,21 @@ function createAiService({ store, logger, appPath, userDataDir }) {
     };
   }
 
+  /**
+   * 只把密钥尾号交给界面，用于「确认当前用的是哪一把」，绝不回传完整值。
+   *
+   * 为什么改：ai-config.json 里的密钥是明文的（自用定位下可接受，见 TODO X1），
+   * 但过去「AI 设置」弹窗会直接读回整串填进输入框 —— 渲染进程因此能拿到完整密钥，
+   * 与 README 里「渲染进程不接触密钥」的声明不符。改成只回掩码后，
+   * 渲染层可以**写入**新密钥，但**读不回**已保存的旧值。
+   */
+  function maskApiKey(key) {
+    if (!key) return '';
+    // 太短时不暴露任何字符，避免掩码本身成为长度线索
+    if (key.length <= 8) return '••••••••';
+    return `••••••••${key.slice(-4)}`;
+  }
+
   /** Prompt 必须包含 "json" 字样与格式示例，否则 json_object 模式可能不生效 */
   const AI_PROMPT = [
     'Analyze this image. Provide a concise description (max 2 sentences) and a list of 5 relevant tags.',
@@ -226,10 +241,12 @@ function createAiService({ store, logger, appPath, userDataDir }) {
     });
 
     // 读取当前生效的 AI 配置（供应用内「AI 设置」回显）
+    // 密钥只回「是否已配置 + 尾号掩码」：渲染层能写入新值，但读不回旧值。
     handle('ai-config-get', async () => {
       const { apiKey, baseUrl, model, keySource } = resolveAiConfig();
       return ok({
-        apiKey,
+        hasApiKey: Boolean(apiKey),
+        maskedApiKey: maskApiKey(apiKey),
         baseUrl,
         model,
         keySource,

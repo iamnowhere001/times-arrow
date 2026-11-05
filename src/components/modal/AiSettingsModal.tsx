@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import type { AiKeySource } from '@/types';
+import type { AiConfigPatch, AiKeySource } from '@/types';
 
 interface AiSettingsModalProps {
   isOpen: boolean;
@@ -32,11 +32,20 @@ const describeIpcError = (error: unknown): string => {
 
 /**
  * AI 分析设置：在应用内配置 DeepSeek 的 API Key / 接口地址 / 模型。
- * 配置保存在 userData/ai-config.json，只有 Electron 主进程读取，前端产物里不含密钥。
- * 留空的字段会回退到环境变量（.env.local / 系统环境变量 / userData/ai.env）或内置默认值。
+ *
+ * 配置以明文保存在 userData/ai-config.json，由主进程读取并代理请求。
+ * 读取接口只返回 hasApiKey + 尾号掩码，界面回显不到完整密钥：
+ * 输入框留空 = 保持现有密钥不变，要清除请勾选下方选项。
+ * 留空的接口地址 / 模型会回退到环境变量（.env.local / 系统环境变量 / userData/ai.env）
+ * 或内置默认值。
  */
 const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNotify }) => {
+  /** 本次输入的新密钥。刻意不回显已保存的值 —— 读取方向只有掩码 */
   const [apiKey, setApiKey] = useState('');
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [maskedApiKey, setMaskedApiKey] = useState('');
+  /** 显式勾选才清除已保存的密钥，避免「打开后直接保存」误清 */
+  const [clearKeyOnSave, setClearKeyOnSave] = useState(false);
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [defaults, setDefaults] = useState({ baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' });
@@ -56,6 +65,8 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
     setTestResult(null);
     setLoadError(null);
     setShowKey(false);
+    setApiKey('');
+    setClearKeyOnSave(false);
 
     const api = window.electronAPI;
     if (!api?.getAiConfig) {
@@ -74,7 +85,8 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
           return;
         }
         const config = response.data;
-        setApiKey(config.apiKey ?? '');
+        setHasApiKey(config.hasApiKey === true);
+        setMaskedApiKey(config.maskedApiKey ?? '');
         setBaseUrl(config.baseUrl ?? '');
         setModel(config.model ?? '');
         setKeySource(config.keySource);
@@ -114,6 +126,7 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
     setIsTesting(true);
     setTestResult(null);
     try {
+      // apiKey 留空时主进程会回退到当前生效的密钥，因此不填也能测通
       const result = await api.testAiConfig({
         apiKey: apiKey.trim(),
         baseUrl: baseUrl.trim(),
@@ -136,11 +149,16 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
     if (!api?.setAiConfig) return;
     setIsSaving(true);
     try {
-      const result = await api.setAiConfig({
-        apiKey: apiKey.trim(),
+      // 不带 apiKey 字段 = 保持现有密钥不变。只有明确填了新值或勾选清除才动它，
+      // 这样「打开弹窗什么都不填直接保存」不会误把密钥清掉。
+      const patch: AiConfigPatch = {
         baseUrl: baseUrl.trim(),
         model: model.trim(),
-      });
+      };
+      if (clearKeyOnSave) patch.apiKey = '';
+      else if (apiKey.trim()) patch.apiKey = apiKey.trim();
+
+      const result = await api.setAiConfig(patch);
       if (result.ok) {
         setKeySource(result.data.keySource ?? 'none');
         onNotify?.('AI 设置已保存', 'success');
@@ -161,8 +179,8 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
     none: 'border-[rgba(var(--accent-pink-rgb),0.3)] bg-[rgba(var(--accent-pink-rgb),0.1)] text-[var(--accent-pink)]',
   };
   const statusText: Record<AiKeySource, string> = {
-    settings: '已保存到应用设置，优先于环境变量生效。',
-    env: '当前使用 .env.local / 环境变量中的密钥；保存后将以这里填写的值为准。',
+    settings: '已保存到应用设置，优先于环境变量生效。界面只显示尾号掩码，读不回完整密钥。',
+    env: '当前使用 .env.local / 环境变量中的密钥；填写新值保存后将以其为准。',
     none: '尚未配置 API Key，AI 分析不可用。',
   };
 
@@ -200,11 +218,19 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
           {!loadError && (
             <div className={`rounded-xl border px-4 py-3 ${statusStyles[keySource]}`}>
               <p className="text-xs leading-relaxed">{statusText[keySource]}</p>
+              {hasApiKey && maskedApiKey && (
+                <p className="mt-1 text-xs leading-relaxed font-mono">
+                  当前生效密钥：{maskedApiKey}
+                </p>
+              )}
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">API Key</label>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <label className="block text-xs font-medium text-[var(--text-tertiary)]">API Key</label>
+              <span className="text-[11px] text-[var(--text-quaternary)]">不修改请留空</span>
+            </div>
             <div className="relative">
               <input
                 type={showKey ? 'text' : 'password'}
@@ -214,7 +240,7 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
                   setApiKey(e.target.value);
                   setTestResult(null);
                 }}
-                placeholder={isLoading ? '读取中…' : 'sk-…'}
+                placeholder={isLoading ? '读取中…' : '填写新密钥以替换当前值'}
                 autoComplete="off"
                 spellCheck={false}
                 className="w-full pl-4 pr-11 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm font-mono text-[var(--text-primary)] placeholder-[var(--text-quaternary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all disabled:opacity-60"
@@ -230,8 +256,24 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
                 <EyeIcon off={showKey} />
               </button>
             </div>
-            <p className="mt-1.5 text-[11px] text-[var(--text-quaternary)]">
-              留空表示沿用环境变量中的密钥；密钥只保存在本机，不会写入前端产物。
+            {hasApiKey && keySource === 'settings' && (
+              <label className="mt-2 flex items-center gap-2 text-[11px] text-[var(--text-tertiary)] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={clearKeyOnSave}
+                  onChange={e => {
+                    setClearKeyOnSave(e.target.checked);
+                    setTestResult(null);
+                  }}
+                  disabled={!electronReady || isSaving}
+                  className="accent-[var(--accent-blue)]"
+                />
+                清除已保存的密钥，回退到环境变量
+              </label>
+            )}
+            <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-quaternary)]">
+              留空表示保持现有密钥不变。密钥以明文保存在本机 <code className="font-mono">userData/ai-config.json</code>，
+              仅由主进程读取并代理请求；界面只显示尾号掩码，不会读回完整密钥。
             </p>
           </div>
 
@@ -289,7 +331,7 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
           <button
             type="button"
             onClick={handleTest}
-            disabled={!electronReady || isTesting || isLoading || !apiKey.trim()}
+            disabled={!electronReady || isTesting || isLoading || (!apiKey.trim() && !hasApiKey)}
             className="px-4 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] hover:bg-[var(--bg-glass-hover)] rounded-xl transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {isTesting && <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />}
