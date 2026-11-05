@@ -8,7 +8,7 @@
 | 隐私 | 全部本地处理；AI 分析是唯一可选的联网功能，密钥由主进程读取并代理请求、在本机明文存储（界面只读到尾号掩码，见「已知限制」） |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
 | 当前版本 | v0.6.0（开发中）· 待办与路线图见 [`TODO.md`](./TODO.md) |
-| 质量护栏 | ESLint 0 problems · 单测 266 项 · 主进程集成测试 104 项 · Electron 冒烟 1 项 |
+| 质量护栏 | ESLint 0 problems · 单测 266 项 · 主进程集成测试 151 项 · Electron 冒烟 1 项 |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
 
 ---
@@ -46,7 +46,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `npm run format` / `format:check` | Prettier（仓库尚未全量格式化，见下） |
 | `npm run test` | `test:main` + `test:unit` |
 | `npm run test:unit` | Vitest 纯函数单测（266 项） |
-| `npm run test:main` | 打桩 electron 的主进程集成测试（104 项，含 AI 密钥边界 16 项） |
+| `npm run test:main` | 打桩 electron 的主进程集成测试（151 项，含 AI 密钥边界 16 项与数据资产端到端 47 项） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
 
 > **两个环境注意事项**
@@ -95,6 +95,14 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - **其他**：复制图片到剪贴板、复制文件路径、在访达 / 资源管理器中定位、用外部应用打开
 - 所有操作直接作用于磁盘真实文件；批量执行时显示进度、按钮置灰并拦截重复点击
 
+### 数据资产
+
+- **配置导出 / 导入**：导出收藏、标签、相簿、来源、时间修正与 AI 结果（**不含 AI 密钥**）；导入前二次确认，旧配置自动留底为 `config.json.bak`
+- **路径重连**：来源目录被整体搬走后，选中新位置即可把该前缀下的旧记录按新路径重算指纹续接；冲突保留现值并计数，不静默覆盖
+- **操作日志与撤销**：重命名 / 删除 / 移动 / 导出逐条记录（`operation-log.jsonl`，上限 2000 条），面板可筛选翻页；支持撤销最近一次重命名与删除，删除从系统回收站按「文件名 + 体积 + 修改时间」三重校验取回，找不到或原位同名时明确报错
+- **按原目录增量备份**：把来源目录按原结构复制到备份盘，体积与修改时间一致即跳过，中断后重跑会接着上次继续；可取消
+- **入口**：菜单「文件 → 数据资产…」（`⌘⇧D`），三个分页：最近操作 / 路径重连 / 增量备份
+
 ### 重复照片检测（整页视图）
 
 - 主进程并发计算 dHash 感知哈希，不阻塞渲染；三级解码降级：`createImageBitmap` → `nativeImage` → canvas 兜底
@@ -130,6 +138,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | 预览 | 选中后打开 QuickLook，`←/→` 翻页，滚轮缩放，双击 1x / 2x | `空格` / `Enter` |
 | 整理 | 收藏 / 隐藏 / 加标签 / 存为智能相簿 / 批量重命名 / 删除 / 导出 | `⌘⇧F`、`⌘⌫` |
 | 清理重复 | 侧栏进入「重复照片检测」，调阈值后检测，标记后一键移入回收站 | — |
+| 数据资产 | 菜单「文件 → 数据资产…」导出 / 导入配置、路径重连、撤销最近操作、增量备份 | `⌘⇧D` |
 | AI 分析 | `⌘,` 填入 DeepSeek Key，选中图片后在详情面板点「分析图片」 | `⌘,` |
 
 ---
@@ -145,6 +154,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `⌘⇧F` | 批量收藏 / 取消收藏 |
 | `⌘O` / `Ctrl+O` | 打开目录 |
 | `⌘,` / `Ctrl+,` | 打开 AI 分析设置 |
+| `⌘⇧D` | 打开数据资产面板（配置 / 重连 / 日志 / 备份） |
 | `空格` / `Enter` | 打开 QuickLook 预览 |
 | `←` `→` `↑` `↓` | 移动选择（上下键按所在行真实几何取落点） |
 | `Home` / `End` | 跳到第一张 / 最后一张 |
@@ -197,7 +207,9 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 | 文件 / 目录 | 内容 | 说明 |
 | --- | --- | --- |
-| `config.json` | 收藏、隐藏、标签、时间修正、智能相簿、视频元数据、常驻来源与视图偏好 | 临时文件 + rename 原子写入；解析失败自动备份为 `config.json.corrupt-<时间戳>`，并在启动时 Toast 告知备份位置 |
+| `config.json` | 收藏、隐藏、标签、时间修正、智能相簿、视频元数据、常驻来源与视图偏好 | 标注数据**以内容指纹为键**；临时文件 + rename 原子写入；解析失败自动备份为 `config.json.corrupt-<时间戳>`，并在启动时 Toast 告知备份位置 |
+| `config.json.bak` / `.bak.1` | 上一版 / 上两版配置 | 每次写盘前轮转；迁移或误写后可手工回退 |
+| `operation-log.jsonl` | 重命名 / 删除 / 移动 / 导出日志 | 追加式，上限 2000 条；撤销记录也写在这里 |
 | `ai-cache.json` | AI 分析结果缓存 | 上限 2000 条，超出淘汰最早 |
 | `ai-config.json` | AI 服务配置（Key / 接口 / 模型） | **明文存储**，仅主进程读取；读取接口只回 `hasApiKey` + 尾号掩码，不回完整密钥 |
 | `ai.env` | 可选的环境变量兜底文件 | 优先级低于 `.env.local` 与系统环境变量 |
@@ -216,6 +228,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | 构建 | Vite 8（`@vitejs/plugin-react`） |
 | 样式 | Tailwind CSS 4（CSS-first `@theme`）+ `src/styles/styles.css` 的 CSS 变量 |
 | 元数据 | exifreader（主进程解析） |
+| 内容指纹 | `sha256(size + 头尾各 64KB)` 截 128 bit，主进程计算；渲染层只持有 id |
 | 图片格式 | heic-convert（HEIC/HEIF → JPEG，带磁盘缓存） |
 | AI | DeepSeek 视觉模型，主进程代理，无第三方 SDK |
 
@@ -242,6 +255,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 | 体积闸门 | 设在读取之前（先 `stat` 再决定是否读）：`read-file` 64MB、`ai-analyze` 20MB base64 |
 | 写盘 | `reserveUniquePath()` 用 `open(path,'wx')` 原子占位，消除「探测存在性 → 再写」的 TOCTOU；`write-file-unique` 的 `fileName` 经 `path.basename()` 归一化 |
 | AI 密钥 | 主进程读取本机明文配置并代理请求；`ai-config-get` 只回 `hasApiKey` + 尾号掩码，渲染层读不回完整值；写入仍允许（用户在设置里填新 Key） |
+| 数据资产 IPC | 导出 / 导入 / 重连 / 备份涉及的路径全部在入口调用 `isPathAuthorized()`；备份只读来源、只写用户刚通过系统对话框选定的目标目录 |
 
 > 这层防的是**内容级攻击**（被当作图片加载的 SVG、将来的远程内容等 —— 它们能构造 `pm://` 请求但无法调用 IPC）。渲染进程若被完全攻破，攻击者天然拥有全部 IPC 能力，需要靠 CSP 与沙箱收敛。
 
@@ -271,9 +285,11 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   │   ├── ai.cjs        #     DeepSeek 代理、AI 配置读写与密钥掩码
 │   │   ├── authorization.cjs #  会话级路径白名单
 │   │   ├── media-pipeline.cjs # 扫描 / EXIF / 缩略图 / HEIC / dHash
-│   │   └── store.cjs     #     本地 JSON 存储、原子写、损坏备份与通知
+│   │   ├── store.cjs     #     本地 JSON 存储、原子写、损坏备份与通知
+│   │   └── data-assets.cjs #   内容指纹 / 配置导出导入 / 路径重连 / 操作日志 / 增量备份
 │   └── lib/
 │       ├── csp.cjs       #     CSP 策略唯一定义（响应头与构建期 meta 共用同一份）
+│       ├── fingerprint.cjs #   内容指纹（size + 头尾各 64KB 的 sha256，128 bit）
 │       ├── dhash.cjs     #     感知哈希算法本体（主进程与渲染层共用唯一实现）
 │       ├── dhash.d.cts   #     上者的类型声明，供渲染层具名导入
 │       └── logger.cjs    #     轻量日志器（开发输出 / 打包静默）
@@ -295,14 +311,15 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   │   ├── detail/       #     DetailsPane / QuickLook / VideoPlayer
 │   │   ├── duplicate/    #     DuplicateDetector
 │   │   ├── filter/       #     FilterPanel
-│   │   ├── modal/        #     Rename / Export / AdjustDate / SaveAlbum / AiSettings 等
+│   │   ├── modal/        #     Rename / Export / AdjustDate / SaveAlbum / AiSettings / DataAssets 等
 │   │   ├── common/       #     Toast / ErrorBoundary / ViewErrorFallback / ContextMenu 等
 │   │   └── icons/        #     跨文件复用的通用图标（唯一入口，N13 / D4）
 │   ├── services/         #   aiService（经 IPC 走主进程代理）
 │   ├── lib/              #   领域与基础设施逻辑
 │   │   ├── cache/        #     cacheManager / thumbCache / dragThumbnail
 │   │   ├── media/        #     mediaTypes / videoMeta / photoGrouping
-│   │   │                 #     photoTime（时间语义唯一入口）/ photoHash / filenameRepair
+│   │   │                 #     photoTime（时间语义唯一入口）/ photoIdentity（标注主键唯一入口）
+│   │   │                 #     photoHash / filenameRepair
 │   │   ├── filter/       #     filters / libraryViewState
 │   │   ├── persistence/  #     persistence / aiCache / sources
 │   │   ├── geo/          #     mapMath / landMask / places / placeIndex
@@ -318,7 +335,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   └── styles/styles.css #   主题变量与基础样式（Tailwind v4 CSS-first）
 ├── tests/                # 三层验证
 │   ├── unit/             #   Vitest 纯函数单测（266 项 / 10 个文件）
-│   ├── main-process/     #   打桩 electron 的集成测试（104 项，含 ai-config-privacy）+ harness.cjs 脚手架
+│   ├── main-process/     #   打桩 electron 的集成测试（151 项，含 ai-config-privacy / data-assets）+ harness.cjs 脚手架
 │   └── smoke/            #   真启动 Electron 的端到端冒烟
 ├── build/                # electron-builder 资源（图标 / afterPack / DMG 重压钩子）
 ├── index.html            # Vite 入口 HTML
@@ -353,8 +370,8 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 
 **功能缺口**
 
-- **无操作历史与撤销**：重命名 / 删除 / 移动直接作用于磁盘，只能事后手动改回或从回收站取回（改进见 TODO N9）。
-- **无配置备份 / 导出与路径重连**：`config.json` 坏了只能靠 `*.corrupt-<时间戳>` 备份捞回，文件挪走后按路径记录的关联会失联（见 TODO N10）。
+- **撤销范围有限**：只支持最近一次重命名 / 删除；删除需要文件仍在系统回收站，回收站已清空时只给出明确失败提示。移动与导出可查日志但不自动撤销。
+- **备份是复制不是同步**：只增量复制、不删除目标端多余文件，也不做校验和比对（用体积 + 修改时间判定相同）。
 - **尚无**：元数据写入（TODO F4）、基础图片编辑、CI。
 
 **实现约束（不影响使用，但改代码时须知）**
