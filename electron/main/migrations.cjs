@@ -74,12 +74,22 @@ async function migrateAllStores({ readStore, mergeStore, logger }) {
   const config = await readStore(STORE_CONFIG);
   const aiCache = await readStore(STORE_AI_CACHE);
 
-  // 两个文件都已是 v2 时是 no-op，不能每次启动都重算一遍指纹
-  if (Number(config?.version) >= CONFIG_VERSION && Number(aiCache?.version) >= CONFIG_VERSION) {
+  // 两个 store **各自**判断版本，不能用「都 >= v2」做整体的 no-op 条件。
+  // ai-cache.json 不存在或刚从损坏中恢复时 readStore 返回 {}（version 为 undefined），
+  // 若据此把 config 也重迁一遍，v2 的 32 位内容指纹会被当成 v1 路径：
+  // 收藏 / 标签 / 时间修正全部被清空并塞进 orphans，而 orphans 里存的是 hex 字符串，
+  // 路径重连按目录前缀匹配永远找不回来 —— 这是不可逆的数据丢失。
+  // 缺失 / 损坏的 store 视为 v0；不要靠 Number(undefined) 的 NaN 比较碰巧得出「不用迁移」
+  const versionOf = (store) =>
+    Number.isFinite(Number(store?.version)) ? Number(store.version) : 0;
+  const configNeeds = versionOf(config) < CONFIG_VERSION;
+  const aiNeeds = versionOf(aiCache) < CONFIG_VERSION;
+  if (!configNeeds && !aiNeeds) {
     return { changed: false, stats: null };
   }
 
-  const paths = collectPaths(config, aiCache);
+  // 只收集需要迁移的那一份里的路径，已是 v2 的字段一个都不碰
+  const paths = collectPaths(configNeeds ? config : null, aiNeeds ? aiCache : null);
   // 没有任何按路径存的旧数据时不必写盘：配置可能刚从损坏中恢复成空，
   // 此时顺手写一份新 config.json 只会让「原文件已改名留证」的语义变复杂。
   // 跳过是安全的 —— 之后任意一次 savePersistedConfig 都会把 version 提到 v2。
@@ -94,29 +104,45 @@ async function migrateAllStores({ readStore, mergeStore, logger }) {
     dateOverrides: {},
     videoMeta: {},
   };
-  const favorites = remapArray(config?.favorites, idByPath, configOrphans.favorites);
-  const hidden = remapArray(config?.hidden, idByPath, configOrphans.hidden);
-  const tags = remapRecord(config?.tags, idByPath, configOrphans.tags);
-  const dateOverrides = remapRecord(config?.dateOverrides, idByPath, configOrphans.dateOverrides);
-  const videoMeta = remapRecord(config?.videoMeta, idByPath, configOrphans.videoMeta);
+  const favorites = configNeeds
+    ? remapArray(config?.favorites, idByPath, configOrphans.favorites)
+    : (config?.favorites ?? []);
+  const hidden = configNeeds
+    ? remapArray(config?.hidden, idByPath, configOrphans.hidden)
+    : (config?.hidden ?? []);
+  const tags = configNeeds
+    ? remapRecord(config?.tags, idByPath, configOrphans.tags)
+    : (config?.tags ?? {});
+  const dateOverrides = configNeeds
+    ? remapRecord(config?.dateOverrides, idByPath, configOrphans.dateOverrides)
+    : (config?.dateOverrides ?? {});
+  const videoMeta = configNeeds
+    ? remapRecord(config?.videoMeta, idByPath, configOrphans.videoMeta)
+    : (config?.videoMeta ?? {});
 
   const aiOrphans = {};
-  const entries = remapRecord((aiCache ?? {}).entries, idByPath, aiOrphans);
+  const entries = aiNeeds
+    ? remapRecord((aiCache ?? {}).entries, idByPath, aiOrphans)
+    : ((aiCache ?? {}).entries ?? {});
 
-  await mergeStore(STORE_CONFIG, {
-    version: CONFIG_VERSION,
-    favorites,
-    hidden,
-    tags,
-    dateOverrides,
-    videoMeta,
-    orphans: configOrphans,
-  });
-  await mergeStore(STORE_AI_CACHE, {
-    version: CONFIG_VERSION,
-    entries,
-    orphans: aiOrphans,
-  });
+  if (configNeeds) {
+    await mergeStore(STORE_CONFIG, {
+      version: CONFIG_VERSION,
+      favorites,
+      hidden,
+      tags,
+      dateOverrides,
+      videoMeta,
+      orphans: configOrphans,
+    });
+  }
+  if (aiNeeds) {
+    await mergeStore(STORE_AI_CACHE, {
+      version: CONFIG_VERSION,
+      entries,
+      orphans: aiOrphans,
+    });
+  }
 
   const stats = {
     paths: paths.length,
