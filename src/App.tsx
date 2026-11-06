@@ -11,6 +11,7 @@ import {
 import { clearDragThumbnailCache } from '@/lib/cache/dragThumbnail';
 import { buildContextMenuActions } from '@/lib/contextMenuActions';
 import { createFsErrorReporter } from '@/lib/fs/ipcGuard';
+import { createUndoActionFactory, undoLastOperation, type UndoDeps } from '@/lib/fs/lastOperation';
 import { useToasts } from '@/hooks/useToasts';
 import { useThemeMode } from '@/hooks/useThemeMode';
 import { useDuplicateDetection } from '@/hooks/useDuplicateDetection';
@@ -120,6 +121,20 @@ const App: React.FC = () => {
 
   // Toast 队列：支持多条同时展示，错误级常驻（见 hooks/useToasts）
   const { toasts, showToast, dismissToast } = useToasts();
+
+  // v0.6.2 批次 2：现场撤销（成功 Toast 按钮与「编辑 → 撤销上次文件操作」共用同一条链路）。
+  // IPC 不回传 operation id，所以只撤日志里最近一条未撤销记录；批量场景由调用点
+  // 把按钮写成「撤销 1 项」，失败一律给「在数据资产中查看」出口。
+  const undoDeps = useMemo(
+    () => ({
+      api: (window.electronAPI ?? undefined) as unknown as UndoDeps['api'],
+      showToast,
+      openDataAssets: () => setIsDataAssetsOpen(true),
+    }),
+    [showToast]
+  );
+  const makeUndoAction = useMemo(() => createUndoActionFactory(undoDeps), [undoDeps]);
+  const undoLast = useCallback(() => undoLastOperation(undoDeps), [undoDeps]);
 
   // 按路径持久化的图库数据：收藏 / 隐藏 / 标签 / 时间修正 / AI 缓存 / 已导入路径，
   // 以及路径迁移与清理的收口（见 hooks/usePersistedLibraryData）
@@ -311,6 +326,7 @@ const App: React.FC = () => {
     removeWithCollapse,
     removeIdsFromSelection,
     scheduleAfterExit,
+    makeUndoAction,
   });
 
   // 已导入路径集合与 forgetImportedPaths 已迁至 hooks/usePersistedLibraryData
@@ -758,6 +774,7 @@ const App: React.FC = () => {
       pruneDuplicateGroups,
       rekeyImportedPaths,
       forgetImportedPaths,
+      makeUndoAction,
     });
 
   // handleBatchRename（批量重命名）已迁至 hooks/useFileOperations
@@ -929,6 +946,14 @@ const App: React.FC = () => {
   useEffect(() => {
     return window.electronAPI?.onOpenDataAssets?.(() => setIsDataAssetsOpen(true));
   }, []);
+
+  // 应用菜单「编辑 → 撤销上次文件操作」（⌥⌘Z）：⌘Z 仍归 Chromium 原生文本撤销
+  useEffect(() => {
+    if (!window.electronAPI) return;
+    return window.electronAPI.onUndoLastOperation?.(() => {
+      void undoLast();
+    });
+  }, [undoLast]);
 
   // ---------------------------------------------------------------------------
   // 拖放导入（遮罩进出场 / 文件与文件夹分流 / 内存预览降级）见 hooks/useDragAndDrop

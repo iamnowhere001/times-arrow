@@ -102,6 +102,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('open-data-assets', listener);
     return () => ipcRenderer.removeListener('open-data-assets', listener);
   },
+  /** 应用菜单「编辑 → 撤销上次文件操作」（⌥⌘Z）；返回取消订阅函数 */
+  onUndoLastOperation: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('undo-last-operation', listener);
+    return () => ipcRenderer.removeListener('undo-last-operation', listener);
+  },
   onBackupProgress: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('backup-progress', listener);

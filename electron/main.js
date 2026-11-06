@@ -419,6 +419,16 @@ function createMenu() {
         { label: '复制', accelerator: 'CmdOrCtrl+C', role: 'copy' },
         { label: '粘贴', accelerator: 'CmdOrCtrl+V', role: 'paste' },
         { label: '全选', accelerator: 'CmdOrCtrl+A', role: 'selectall' },
+        { type: 'separator' },
+        {
+          label: '撤销上次文件操作',
+          // ⌘Z 留给 Chromium 原生文本撤销、⇧⌘Z 是 role:'redo'（已确认口径），
+          // 因此现场撤销另配一个不冲突的快捷键，不劫持输入框。
+          accelerator: 'Alt+CmdOrCtrl+Z',
+          click: () => {
+            mainWindow?.webContents?.send('undo-last-operation');
+          },
+        },
       ],
     },
     {

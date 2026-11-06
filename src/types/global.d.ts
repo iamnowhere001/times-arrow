@@ -276,6 +276,8 @@ declare global {
       startBackup: (targetDir: string) => Promise<IpcResult<BackupSummary>>;
       cancelBackup: () => Promise<IpcResult<boolean>>;
       onOpenDataAssets: (callback: () => void) => () => void;
+      /** 应用菜单「编辑 → 撤销上次文件操作」（⌥⌘Z）；返回取消订阅函数 */
+      onUndoLastOperation: (callback: () => void) => () => void;
       onBackupProgress: (callback: (progress: BackupProgress) => void) => () => void;
       /** AI 图片分析（主进程代理 DeepSeek，API Key 不出主进程） */
       analyzeImage: (payload: {

@@ -182,4 +182,27 @@ check(
   `preload ${preloadArity} / d.ts ${dtsArity}；若已修复请同步更新本断言与文档`
 );
 
+section('5. 主进程 → 渲染层事件契约（v0.6.2 批次 2）');
+// 新增事件不是 invoke 通道，不进 CHANNELS，但同样要四处对齐，否则菜单点了没反应
+// 却没有任何测试会发现。这里钉住 v0.6.2 新增的「撤销上次文件操作」链路。
+const undoEvent = {
+  main: read('electron/main.js'),
+  preload: read('electron/preload.js'),
+  types: read('src/types/global.d.ts'),
+  app: read('src/App.tsx'),
+};
+check(
+  'undo-last-operation：main 发送 / preload 转发 / d.ts 声明 / App 订阅 四处齐全',
+  undoEvent.main.includes("send('undo-last-operation')") &&
+    undoEvent.preload.includes("ipcRenderer.on('undo-last-operation'") &&
+    undoEvent.types.includes('onUndoLastOperation') &&
+    undoEvent.app.includes('onUndoLastOperation'),
+  JSON.stringify({
+    main: undoEvent.main.includes("send('undo-last-operation')"),
+    preload: undoEvent.preload.includes("ipcRenderer.on('undo-last-operation'"),
+    types: undoEvent.types.includes('onUndoLastOperation'),
+    app: undoEvent.app.includes('onUndoLastOperation'),
+  })
+);
+
 process.exit(summary() === 0 ? 0 : 1);

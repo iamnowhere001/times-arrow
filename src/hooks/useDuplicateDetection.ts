@@ -48,6 +48,8 @@ export interface UseDuplicateDetectionParams {
   removeIdsFromSelection: (ids: Set<string>) => void;
   /** 延时到卡片塌陷动画结束后执行（复用 App 的 exitTimersRef，卸载时统一清理） */
   scheduleAfterExit: (callback: () => void) => void;
+  /** 成功 Toast 的「撤销」按钮；批量场景由调用方传 label 说明只撤 1 项 */
+  makeUndoAction: (label?: string) => ToastAction;
 }
 
 export interface DuplicateDetectionResult {
@@ -88,6 +90,7 @@ export function useDuplicateDetection(
     removeWithCollapse,
     removeIdsFromSelection,
     scheduleAfterExit,
+    makeUndoAction,
   } = params;
 
   const [duplicateGroups, setDuplicateGroups] = useState<Photo[][]>([]);
@@ -311,7 +314,11 @@ export function useDuplicateDetection(
     }
 
     if (failedPhotos.length === 0) {
-      showToast(`已将 ${deletedIds.size} 张相似照片移至回收站`, 'success');
+      showToast(
+        `已将 ${deletedIds.size} 张相似照片移至回收站`,
+        'success',
+        makeUndoAction(deletedIds.size > 1 ? '撤销 1 项' : '撤销')
+      );
       return;
     }
 

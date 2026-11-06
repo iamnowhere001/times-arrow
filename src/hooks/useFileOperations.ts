@@ -49,6 +49,8 @@ export interface UseFileOperationsParams {
   // 按路径存储的数据迁移 / 清理
   rekeyImportedPaths: (from: string, to: string) => void;
   forgetImportedPaths: (paths: Iterable<string>) => void;
+  /** 成功 Toast 的「撤销」按钮；批量场景由调用方传 label 说明只撤 1 项 */
+  makeUndoAction: (label?: string) => ToastAction;
 }
 
 export interface FileOperationsResult {
@@ -81,6 +83,7 @@ export function useFileOperations({
   pruneDuplicateGroups,
   rekeyImportedPaths,
   forgetImportedPaths,
+  makeUndoAction,
 }: UseFileOperationsParams): FileOperationsResult {
   // Handle single photo rename
   const handleRenamePhoto = async (id: string, newName: string) => {
@@ -184,9 +187,13 @@ export function useFileOperations({
       rekeyImportedPaths(oldPath, finalPath);
 
       if (conflicted) {
-        showToast(`「${finalName}」已存在，已自动重命名为「${actualName}」`, 'warning');
+        showToast(
+          `「${finalName}」已存在，已自动重命名为「${actualName}」`,
+          'warning',
+          makeUndoAction()
+        );
       } else {
-        showToast(`照片已重命名为 ${actualName}`, 'success');
+        showToast(`照片已重命名为 ${actualName}`, 'success', makeUndoAction());
       }
       setIsRenameModalOpen(false);
     } catch (err) {
@@ -428,7 +435,7 @@ export function useFileOperations({
         // 全部条目因文件消失被剔除：reportGone 的提示已经说明，不再补一条误导性的「无需修改」
         if (gonePhotos.length === 0) showToast('没有需要修改的名称', 'info');
       } else {
-        showToast(summaryParts.join('，'), 'success');
+        showToast(summaryParts.join('，'), 'success', makeUndoAction('撤销 1 项'));
       }
       setIsRenameModalOpen(false);
     } catch (err) {
@@ -498,7 +505,8 @@ export function useFileOperations({
     if (retryPhotos.length === 0) {
       showToast(
         `已将 ${deletedIds.size - pathlessRemoved} 张照片移至回收站${pathlessNote}`,
-        'success'
+        'success',
+        makeUndoAction(deletedIds.size > 1 ? '撤销 1 项' : '撤销')
       );
       return;
     }
