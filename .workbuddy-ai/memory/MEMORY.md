@@ -139,3 +139,20 @@ Electron 44（主进程 CJS）+ React 19 + Vite 8 + Tailwind 4 + TypeScript 7（
   `eslint`（约 100 个包）在本机装不上，`prettier`（依赖少）可以。
 - 断言 `indexOf` 顺序时必须锚定**调用点**：`function foo() {` 里也含 `foo()`，
   源码注释里也可能出现同样字符串。
+- **打包 DMG 必须用标准 Node 环境**（2026-11-06 v0.6.1 发布实测）：
+  `env -u NODE_OPTIONS -u ELECTRON_RUN_AS_NODE npm run dist:mac`。会话注入的
+  `NODE_OPTIONS=--require .../node-language-shim.cjs` 会加载 brokered-fs-shim，
+  拦截 electron-builder 批量写，报 `Brokered file token refused: modify backup failed`
+  / `[safe-delete] broker denied delete` / `Invalid package ...default_app.asar`。
+  换输出目录到 /tmp、清残留、`-c.electronDist` 都绕不过；unset NODE_OPTIONS 一次即通
+  （整链约 30s）。`npm ci` 同理，联网版 28s 成功（`--offline` 会因 npm 缓存缺
+  `yocto-queue` 报 ENOTCACHED）。
+- **冒烟**要用 Electron 二进制直跑，且不能与任何 `npm run` 串在同一条命令：
+  `env -u ELECTRON_RUN_AS_NODE PHOTOMINDER_DISABLE_SANDBOX=1 node_modules/electron/dist/Electron.app/Contents/MacOS/Electron tests/smoke/electron-smoke.cjs`。
+- **恢复演练不要碰真实数据**：`restoreFromTrash()` 用 `os.homedir()` 拼 `~/.Trash`，
+  而 Node 在 POSIX 优先读 `$HOME` → 把 HOME 指到临时目录 + 造假回收站即可完全隔离。
+  本机读真实 `~/.Trash` 是 EPERM（TCC），别拿「前后条目数」当断言。
+- **迁移器陷阱**（已修，2026-11-06，CODE_REVIEW 附录 H）：`migrateAllStores` 曾要求
+  config 与 ai-cache 同时 >= v2 才 no-op；ai-cache 缺失/损坏时 `readStore` 返回 `{}`，
+  导致已是 v2 的 config 被重迁，内容指纹当路径清空标注，且 orphans 是 hex 键
+  无法用路径重连找回。现在两个 store 各自判断版本（缺失视为 v0），只写需要迁的那份。
