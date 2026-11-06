@@ -1388,3 +1388,39 @@ format:check / build 全绿；新增 16 项单测（作用域 10 + 相簿名 6�
 | 导出文件的 `payload.app: 'PhotoMinder'` | 是 v0.6.1 及更早备份的**格式标识**，`import-config` 用它校验来源。改成显示名会让用户已有的备份被判成「不是本应用的文件」。 |
 
 界面文案与格式标识属于两个命名空间，不要为了「统一」把它们合并。
+
+---
+
+## 附录 J：v0.6.2 批次 2 · 撤销前置（实施日期 2026-11-06）
+
+### J.1 为什么只撤「最近一条」
+
+文件操作逐文件 `recordOperation` 埋点，`delete-file` / `rename-file` 不回传
+operation id。要按批撤销就得改 IPC 契约（四处同步）并给日志分组，成本与
+「可信版」收益不匹配 —— 这一降级已由维护者确认接受。现场撤销因此取
+`getOperationLog({offset:0, limit:1, type:'all'})` 的最新一条未撤销记录，
+按钮文案在批量场景写「撤销 1 项」，不谎报范围。
+
+### J.2 不显示会落空的动作
+
+- 移动 / 导出虽然记日志，但 `undoOperation` 只实现 rename / delete；
+  这两类成功 Toast 不给撤销按钮。若用户在 Toast 挂着时又移动了文件，
+  `src/lib/fs/lastOperation.ts` 会检查 `entry.type` 并明确说明「暂不支持自动撤销」，
+  而不是把泛化错误丢给用户。
+- `ToastAction` 只有单个按钮。部分成功的删除保留「重试」（避免失败项丢失），
+  不给撤销；全部成功才挂「撤销」。
+
+### J.3 ⌘Z 归谁
+
+编辑菜单保留 `role:'undo'`（⌘Z）与 `role:'redo'`（⇧⌘Z），让输入框继续用
+Chromium 原生文本撤销。新增独立菜单项「撤销上次文件操作」用 `Alt+CmdOrCtrl+Z`，
+经 `webContents.send('undo-last-operation')` → preload → App 订阅调用同一条
+`undoLastOperation()`。`ipc-contract.test.cjs` 新增 section 5 静态钉住
+main / preload / d.ts / App 四处对齐（事件不是 invoke 通道，不进 CHANNELS）。
+
+### J.4 验证
+
+`tests/unit/lastOperation.test.ts` 17 项覆盖成功、无记录、已撤销、类型不支持、
+读日志失败 / 抛异常、撤销失败 / 抛异常、Web 无 API、动作工厂与失败出口。
+全套护栏：typecheck / lint 0 problems / test（主进程 **197** 项、单测 **304** 项）/
+format:check / build / Electron 冒烟全绿。
