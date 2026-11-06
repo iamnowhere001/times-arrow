@@ -241,6 +241,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - **主进程承担重活**：目录扫描（含取消）、文件头解析尺寸、EXIF/GPS 解析（只读前 512KB）、感知哈希、HEIC 转换与缩略图生成，全部主进程并发限流完成。
 - **按需缩略图层**：`src/lib/cache/thumbCache.ts`（框架无关）+ `src/components/grid/ThumbnailImage.tsx`（React 绑定），并发上限 12、同 key 去重、先预加载解码再替换避免闪烁。
 - **滚动虚拟化**：网格 `VirtualGrid` 与列表行只渲染视口内元素（含 overscan），滚动事件 rAF 节流。
+- **网格几何唯一入口**：`src/lib/grid/justifiedLayout.ts` 定义卡片内边距 / 间距常量、justified 行布局与行定位。铺行宽度必须是滚动容器**扣除横向 padding 后的内容区宽度**（不是 `clientWidth`），否则最右一列会越界并撑出横向滚动条；`CARD_PADDING` 与 `ImageCard` 的 className 内边距必须成对修改，有静态断言守着。
 - **统一内存治理**：`src/lib/cache/cacheManager.ts` 提供真 LRU（命中刷新 + 逐项淘汰）与 `volatile` / `sticky` 分级；主进程按 RSS 广播内存压力，渲染进程另有堆占用巡检兜底。
 - **统一日志器**：渲染进程 `src/lib/logger.ts`、主进程 `electron/lib/logger.cjs`，调试日志仅开发构建输出。
 

@@ -18,6 +18,13 @@ import { useVideoPoster } from '@/hooks/useVideoPoster';
 import { ThumbImage } from '@/components/grid/ThumbnailImage';
 // 空状态：首屏单独设计，其余五种共用模板但区分语气（K27）
 import { EmptyKind, QuietEmptyState, WelcomeEmptyState } from '@/components/grid/EmptyStates';
+// 网格几何的唯一入口：常量、行布局、行定位都从这里取（几何错误有纯函数单测守着）
+import {
+  buildGridLayout,
+  findRowAt,
+  CARD_CHROME_HEIGHT,
+  GRID_GAP,
+} from '@/lib/grid/justifiedLayout';
 
 /**
  * 把时间戳格式化为「今天 / 昨天 / 具体日期」，用于滚动日期胶囊。
@@ -49,128 +56,8 @@ export interface VirtualGridHandle {
 let savedGridScrollTop = 0;
 let savedListScrollTop = 0;
 
-/* ---------------------------------------------------------------------------
- * 网格卡片尺寸常量
- * 卡片结构 = 内边距 + 图片区（高度等于行高）。
- * 文件名不再独占一行，而是悬停时浮在图片底部，图片区因此吃满整张卡片的高度。
- * VirtualGrid 的布局计算与 ImageCard 的 className 必须保持一致，改样式时同步这里。
- * ------------------------------------------------------------------------- */
-/** 尺寸未知时的兜底比例（宽 / 高） */
-const FALLBACK_IMAGE_ASPECT = 4 / 3;
-/** 极端长图 / 全景的比例钳制，避免单张卡片把整行撑得不可用 */
-const MIN_IMAGE_ASPECT = 0.2;
-const MAX_IMAGE_ASPECT = 5;
-const CARD_PADDING = 2; // p-0.5
-/** 卡片中图片区之外占用的固定高度：只剩上下内边距 */
-const CARD_CHROME_HEIGHT = CARD_PADDING * 2;
-
-/**
- * 取照片的展示宽高比。
- * 手机截屏（约 9:19.5）、竖幅人像、全景都会被如实保留 —— 长图因此得到更高的卡片，
- * 配合图片区的 object-contain，画面内容（含截屏里的文字）不会被裁掉。
- */
-function photoAspect(photo: Photo): number {
-  const dim = photo.dimensions;
-  if (!dim || !dim.width || !dim.height) return FALLBACK_IMAGE_ASPECT;
-  const aspect = dim.width / dim.height;
-  if (!Number.isFinite(aspect) || aspect <= 0) return FALLBACK_IMAGE_ASPECT;
-  return Math.min(MAX_IMAGE_ASPECT, Math.max(MIN_IMAGE_ASPECT, aspect));
-}
-
-interface GridCell {
-  photo: Photo;
-  left: number;
-  width: number;
-}
-
-interface GridRow {
-  top: number;
-  /** 图片区高度（不含内边距 / 名称行） */
-  height: number;
-  cells: GridCell[];
-}
-
-interface GridLayout {
-  rows: GridRow[];
-  /** 下标与 items 对齐：每一项所在的行号 */
-  rowOfItem: number[];
-  totalHeight: number;
-}
-
-/**
- * 居中行布局（justified rows，类似 Google Photos / Flickr）：
- * 按原始顺序把照片逐行铺满容器宽度，同一行共用行高、宽度按各自比例分配。
- * 好处：排序顺序不变、行内不留空隙、每张卡片的比例与照片一致（不裁切内容）。
- */
-function buildGridLayout(
-  items: Photo[],
-  containerWidth: number,
-  targetRowHeight: number,
-  gap: number
-): GridLayout {
-  const rows: GridRow[] = [];
-  const rowOfItem: number[] = new Array(items.length);
-  if (containerWidth <= 0 || items.length === 0) {
-    return { rows, rowOfItem, totalHeight: 0 };
-  }
-
-  let buffer: Array<{ photo: Photo; aspect: number; index: number }> = [];
-  let ratioSum = 0;
-  let top = 0;
-
-  const flush = (stretch: boolean) => {
-    if (buffer.length === 0) return;
-    // 解 sum(aspect) * h + 内边距 + 间距 = 容器宽度，得到「图片区高度」
-    const chrome = CARD_PADDING * 2 * buffer.length + gap * (buffer.length - 1);
-    let height = (containerWidth - chrome) / ratioSum;
-    // 末行不满时不做拉伸，避免寥寥几张被放大得离谱
-    if (!stretch) height = Math.min(height, targetRowHeight);
-    height = Math.max(48, Math.min(height, containerWidth));
-
-    let left = 0;
-    const cells: GridCell[] = buffer.map((entry) => {
-      const width = entry.aspect * height + CARD_PADDING * 2;
-      const cell: GridCell = { photo: entry.photo, left, width };
-      left += width + gap;
-      rowOfItem[entry.index] = rows.length;
-      return cell;
-    });
-
-    rows.push({ top, height, cells });
-    top += height + CARD_CHROME_HEIGHT + gap;
-    buffer = [];
-    ratioSum = 0;
-  };
-
-  for (let i = 0; i < items.length; i += 1) {
-    const aspect = photoAspect(items[i]);
-    buffer.push({ photo: items[i], aspect, index: i });
-    ratioSum += aspect;
-    const chrome = CARD_PADDING * 2 * buffer.length + gap * (buffer.length - 1);
-    // 本行已「矮」到目标行高以下 → 收行
-    if ((containerWidth - chrome) / ratioSum <= targetRowHeight) flush(true);
-  }
-  flush(false);
-
-  return { rows, rowOfItem, totalHeight: rows.length > 0 ? top - gap : 0 };
-}
-
-/** 二分查找：返回 top <= y 的最后一行下标 */
-function findRowAt(rows: GridRow[], y: number): number {
-  let lo = 0;
-  let hi = rows.length - 1;
-  let ans = 0;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (rows[mid].top <= y) {
-      ans = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return ans;
-}
+/* 网格卡片尺寸常量、justified 行布局与行定位已收进 @/lib/grid/justifiedLayout.ts。
+ * 布局里的 CARD_PADDING 必须与 ImageCard 的 className 内边距一致（有静态断言守着）。 */
 
 /**
  * 虚拟化网格：只渲染视口内（含 overscan）的卡片。
@@ -218,15 +105,29 @@ const VirtualGrid = forwardRef<
     ref
   ) => {
     const scrollRef = useRef<HTMLDivElement>(null);
+    // 卡片之间的空白落在「布局容器」上，不是滚动容器本身；两者都算空白点击
+    const contentRef = useRef<HTMLDivElement>(null);
     const [viewport, setViewport] = useState({ width: 0, height: 0 });
     const [scrollTop, setScrollTop] = useState(0);
 
-    // 监听容器尺寸变化，计算列数
+    // 监听容器尺寸变化，计算可用内容宽度
     useLayoutEffect(() => {
       const el = scrollRef.current;
       if (!el) return;
 
-      const update = () => setViewport({ width: el.clientWidth, height: el.clientHeight });
+      const update = () => {
+        // 行宽必须按「内容区」算，不能直接用 clientWidth：滚动容器带 p-4 横向内边距，
+        // clientWidth 含这 32px，拿去铺行会让最右一张越出内容区，进而撑出横向滚动条。
+        const style = getComputedStyle(el);
+        const paddingX =
+          (Number.parseFloat(style.paddingLeft) || 0) +
+          (Number.parseFloat(style.paddingRight) || 0);
+        const width = Math.max(0, el.clientWidth - paddingX);
+        const height = el.clientHeight;
+        setViewport((prev) =>
+          prev.width === width && prev.height === height ? prev : { width, height }
+        );
+      };
       update();
 
       if (typeof ResizeObserver === 'undefined') return;
@@ -415,18 +316,24 @@ const VirtualGrid = forwardRef<
       }
     }
 
+    // 显式关掉横向滚动：行宽已按内容区算准，但卡片 hover 的 scale(1.005) 与
+    // 亚像素取整仍可能让最右一张多出 1~2px，裁掉即可，不该给用户一条横向滚动条。
     return (
       <div
         ref={scrollRef}
         onScroll={handleScroll}
         onClick={(e) => {
-          if (e.target === e.currentTarget) onBlankClick?.();
+          // 空白有两种：滚动容器的 padding 区，和卡片之间的间隙（内层布局容器）。
+          // 只认 currentTarget 会让后者失效 —— 而间隙才是最常点到的空白。
+          if (e.target === e.currentTarget || e.target === contentRef.current) {
+            onBlankClick?.();
+          }
         }}
         onContextMenu={(e) => {
           // 空白区域右键（卡片自身会 stopPropagation）
           onContainerContextMenu?.(e);
         }}
-        className="flex-1 overflow-y-auto custom-scrollbar min-h-0 p-4"
+        className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar min-h-0 p-4"
         style={{ overflowAnchor: 'none' }}
       >
         {topCapsule !== null && (
@@ -463,7 +370,9 @@ const VirtualGrid = forwardRef<
             </button>
           </div>
         )}
-        <div style={{ position: 'relative', height: totalHeight }}>{visible}</div>
+        <div ref={contentRef} style={{ position: 'relative', height: totalHeight }}>
+          {visible}
+        </div>
       </div>
     );
   }
@@ -967,7 +876,7 @@ const ImageCard = React.memo(
         onDoubleClick={() => onOpen(photo)}
         onContextMenu={(e) => onMenu(e, photo)}
         style={enterDelay !== undefined ? { animationDelay: `${enterDelay}ms` } : undefined}
-        className={`group relative flex flex-col items-center p-0.5 rounded-lg cursor-pointer w-full h-full transition-[transform,opacity,background-color,box-shadow] duration-200 ease-entrance ${enterDelay !== undefined ? 'animate-fadeInUp ' : ''}${
+        className={`group relative flex flex-col items-center p-px rounded-lg cursor-pointer w-full h-full transition-[transform,opacity,background-color,box-shadow] duration-200 ease-entrance ${enterDelay !== undefined ? 'animate-fadeInUp ' : ''}${
           isExiting
             ? 'opacity-0 scale-[0.92] pointer-events-none'
             : isSelected
@@ -1194,9 +1103,6 @@ const INTRO_STAGGER_MS = 8;
 /** 入场播完后立刻撤销标记：否则虚拟化重挂载卡片时会反复重播 */
 const INTRO_CLEAR_MS = 1200;
 const NO_INTRO_DELAYS: Map<string, number> = new Map();
-/** 网格模式列间距（对应 gap-1 = 4px）：加上卡片自身内边距，相邻图片净留白 8px */
-const GRID_GAP = 4;
-
 // 与列表视图表头的排序键保持一致：此前网格缺了「修改时间 / 创建时间」，
 // 想按它们排序必须切到列表视图，同一个功能两套入口
 const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
