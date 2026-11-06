@@ -148,13 +148,19 @@ const App: React.FC = () => {
   const mediaFilter = filters.mediaFilter;
 
   // 智能相簿：只存一组筛选条件，内容随图库实时求值（见 hooks/useSmartAlbums）
-  const { albums, setAlbums, handleSaveAlbum, handleSelectAlbum, handleDeleteAlbum } =
-    useSmartAlbums({
-      filters,
-      setFilters,
-      setSearchQuery,
-      showToast,
-    });
+  const {
+    albums,
+    setAlbums,
+    handleSaveAlbum,
+    handleSelectAlbum,
+    handleDeleteAlbum,
+    handleRenameAlbum,
+  } = useSmartAlbums({
+    filters,
+    setFilters,
+    setSearchQuery,
+    showToast,
+  });
 
   // 图库派生数据：分组 / 排序 / 时间线 / 可见列表 / 统计 / 相簿计数 / 空状态（见 hooks/useLibraryDerived）
   const {
@@ -482,8 +488,9 @@ const App: React.FC = () => {
   /** 保存相簿：关闭弹层后交给 hooks/useSmartAlbums 的 handleSaveAlbum */
   const handleSaveAlbumAndClose = useCallback(
     (name: string) => {
+      // 重名 / 无效时 hook 返回 false，弹窗保持打开让用户改名字（K26）
+      if (!handleSaveAlbum(name)) return;
       setIsSaveAlbumModalOpen(false);
-      handleSaveAlbum(name);
     },
     [handleSaveAlbum]
   );
@@ -776,6 +783,8 @@ const App: React.FC = () => {
         onClearList: handleRequestClearList,
         onOpenQuickLook: setQuickLookPhoto,
         onToggleFavorite: toggleFavorite,
+        // 多选时让「收藏」真正作用于整组，而不是只改右键那一张（K13）
+        onToggleFavoriteMany: setFavorite,
         onSetHidden: setHidden,
         onCopyImage: handleCopyImage,
         onShowInFolder: handleShowInFolder,
@@ -794,6 +803,7 @@ const App: React.FC = () => {
       photos.length,
       selectedIds,
       toggleFavorite,
+      setFavorite,
       setHidden,
       handleCopyImage,
       handleShowInFolder,
@@ -965,6 +975,7 @@ const App: React.FC = () => {
           activeAlbumId={activeAlbumId}
           onSelectAlbum={handleSelectAlbum}
           onDeleteAlbum={handleDeleteAlbum}
+          onRenameAlbum={handleRenameAlbum}
           onRequestSaveAlbum={handleOpenSaveAlbum}
           directorySources={directorySources}
           fileSources={fileSources}
@@ -1006,7 +1017,8 @@ const App: React.FC = () => {
           hint={fileOpOverlay.hint}
         />
       )}
-      <div className="main-content flex-1 flex flex-col bg-transparent">
+      {/* v0.6.2：主内容区用语义化 main，补上此前 Lighthouse 唯一的结构性无障碍缺口 */}
+      <main className="main-content flex-1 flex flex-col bg-transparent">
         {/* 重复检测：整页接管主内容区；左栏在整页视图里不渲染（见 isLeftPaneVisible） */}
         {mainView === 'duplicates' ? (
           <ErrorBoundary
@@ -1204,7 +1216,7 @@ const App: React.FC = () => {
             </ErrorBoundary>
           </>
         )}
-      </div>
+      </main>
       {/* Details Pane：仅图库视图展示，重复检测页把整幅宽度让给分组列表 */}
       {mainView === 'library' && (
         <ErrorBoundary
@@ -1359,6 +1371,7 @@ const App: React.FC = () => {
         <SaveAlbumModal
           isOpen={isSaveAlbumModalOpen}
           filters={filters}
+          existingNames={albums.map((album) => album.name)}
           onClose={() => setIsSaveAlbumModalOpen(false)}
           onSave={handleSaveAlbumAndClose}
         />

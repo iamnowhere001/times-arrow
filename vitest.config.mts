@@ -12,6 +12,10 @@ export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.ts'],
     environment: 'node',
+    // 三条静态断言（dhash / photoTime / placesData）会遍历整个 src 逐文件读源码，
+    // worker 全开时 CPU 竞争会把它们推过默认 5s，误报成断言失败。放宽超时只针对
+    // 「慢但确定性」的扫描，不改变任何断言口径；普通纯函数用例仍是毫秒级。
+    testTimeout: 15000,
   },
   resolve: {
     alias: {

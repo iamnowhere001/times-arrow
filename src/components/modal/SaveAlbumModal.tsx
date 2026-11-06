@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PhotoFilters } from '@/types';
 import { buildFilterChips, isFilterActive } from '@/lib/filter/filters';
+import { isNameTaken } from '@/lib/album/albumNames';
 
 interface SaveAlbumModalProps {
   isOpen: boolean;
   /** 要保存的筛选条件（通常是当前视图） */
   filters: PhotoFilters;
+  /** 已有相簿名，用于保存前查重（v0.6.2 · K26） */
+  existingNames: string[];
   onClose: () => void;
   onSave: (name: string) => void;
 }
@@ -16,7 +19,13 @@ const SUGGESTED_NAMES = ['我的精选', '待整理', '家人', '旅行'];
  * 把当前筛选条件存成智能相簿。
  * 相簿只记录条件，因此日后新增的照片只要符合条件就会自动进入相簿。
  */
-const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({ isOpen, filters, onClose, onSave }) => {
+const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({
+  isOpen,
+  filters,
+  existingNames,
+  onClose,
+  onSave,
+}) => {
   const [name, setName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -45,7 +54,9 @@ const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({ isOpen, filters, onClos
   if (!isOpen) return null;
 
   const trimmed = name.trim();
-  const canSave = hasConditions && trimmed.length > 0;
+  // 与 useSmartAlbums 共用同一套比较规则：去空格、忽略大小写
+  const nameTaken = isNameTaken(existingNames, trimmed);
+  const canSave = hasConditions && trimmed.length > 0 && !nameTaken;
 
   const submit = () => {
     if (canSave) onSave(trimmed);
@@ -83,8 +94,14 @@ const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({ isOpen, filters, onClos
                 }
               }}
               placeholder="例如：2024 旅行"
+              aria-invalid={nameTaken}
               className="w-full px-4 py-2.5 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] placeholder-[var(--text-quaternary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
             />
+            {nameTaken && (
+              <p className="mt-1.5 text-xs text-[var(--accent-pink)]" role="alert">
+                已有同名相簿，换一个名字吧
+              </p>
+            )}
           </div>
 
           {!trimmed && (

@@ -1475,6 +1475,59 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(
     const inSelectMode = selectedCount > 0;
 
     /**
+     * 排序 / 缩放属于「浏览视图」控制，选中项出现时也必须留着（K16）。
+     * 抽成共用块，两种情境条都渲染，不再出现「选中后要先按 Esc 才能调排序」。
+     */
+    const directionLabel = sortConfig.direction === 'asc' ? '↑' : '↓';
+    const browseControls = (
+      <>
+        {/* 断点只留 sm：此前 hidden lg 让窄窗口（< 1024px）完全没有网格大小入口 */}
+        <div
+          className="hidden sm:flex items-center gap-2 h-8 pl-2.5 pr-2 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)]"
+          title="调整网格大小"
+        >
+          <ResizeIcon className="w-3.5 h-3.5 text-[var(--text-tertiary)] shrink-0" />
+          <input
+            type="range"
+            min="0.5"
+            max="2"
+            step="0.1"
+            value={scale}
+            onChange={(e) => onScaleChange(parseFloat(e.target.value))}
+            className="w-16 2xl:w-20 appearance-none cursor-pointer accent-[var(--accent-blue)] focus:outline-hidden"
+            aria-label="网格大小"
+          />
+          <span className="text-[11px] font-mono text-[var(--text-tertiary)] w-8 text-right">
+            {Math.round(scale * 100)}%
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)]">
+          {SORT_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => onSort(opt.key)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                sortConfig.key === opt.key
+                  ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-xs'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)]'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+          <button
+            onClick={() => onSort(sortConfig.key)}
+            className="px-2 py-1 rounded-md text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200"
+            title="切换排序方向"
+          >
+            {directionLabel}
+          </button>
+        </div>
+      </>
+    );
+
+    /**
      * 选择条：网格与列表视图共用。
      * 批量重命名 / 导出 / 删除等「条目级操作」都集中在这里（出现即意味着有选中项可用），
      * 顶栏因此只需要承载导入与视图控制。
@@ -1802,13 +1855,21 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(
       sortConfig.key === 'dateTaken' ||
       sortConfig.key === 'dateModified' ||
       sortConfig.key === 'dateCreated';
-    const directionLabel = sortConfig.direction === 'asc' ? '↑' : '↓';
-
     return (
       <div className="flex-1 flex flex-col w-full min-h-0">
         {/* 情境条：无选中 = 浏览条（统计 + 排序）；有选中 = 选择条（批量操作 + 清除） */}
         {inSelectMode ? (
-          selectionBar
+          <>
+            {selectionBar}
+            {/* 选中态也保留排序 / 缩放：独立成行，窄窗口 flex-wrap 换行而不是裁切控件 */}
+            <div className="mb-3 mx-4 shrink-0 rounded-xl border backdrop-blur-xl px-3.5 py-2 flex flex-wrap items-center gap-2.5 min-h-[46px] bg-[var(--bg-elevated)] border-[var(--border-subtle)]">
+              <span className="text-sm text-[var(--text-tertiary)] whitespace-nowrap">
+                浏览设置
+              </span>
+              <div className="flex-1" />
+              {browseControls}
+            </div>
+          </>
         ) : (
           <div className="mb-3 mx-4 shrink-0 rounded-xl border backdrop-blur-xl px-3.5 py-2 flex items-center gap-2.5 min-h-[46px] bg-[var(--bg-elevated)] border-[var(--border-subtle)]">
             <div className="flex items-center gap-2 min-w-0">
@@ -1824,51 +1885,7 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(
 
             <div className="flex-1" />
 
-            {/* 网格大小：从顶栏移到情境条，与排序同属「浏览视图」控制；
-                列表视图不渲染此条，因此天然只在网格模式出现。
-                断点只留 sm：此前 hidden lg 让窄窗口（< 1024px）完全没有网格大小入口 */}
-            <div
-              className="hidden sm:flex items-center gap-2 h-8 pl-2.5 pr-2 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)]"
-              title="调整网格大小"
-            >
-              <ResizeIcon className="w-3.5 h-3.5 text-[var(--text-tertiary)] shrink-0" />
-              <input
-                type="range"
-                min="0.5"
-                max="2"
-                step="0.1"
-                value={scale}
-                onChange={(e) => onScaleChange(parseFloat(e.target.value))}
-                className="w-16 2xl:w-20 appearance-none cursor-pointer accent-[var(--accent-blue)] focus:outline-hidden"
-                aria-label="网格大小"
-              />
-              <span className="text-[11px] font-mono text-[var(--text-tertiary)] w-8 text-right">
-                {Math.round(scale * 100)}%
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1 p-0.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-subtle)]">
-              {SORT_OPTIONS.map((opt) => (
-                <button
-                  key={opt.key}
-                  onClick={() => onSort(opt.key)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
-                    sortConfig.key === opt.key
-                      ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-xs'
-                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)]'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-              <button
-                onClick={() => onSort(sortConfig.key)}
-                className="px-2 py-1 rounded-md text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all duration-200"
-                title="切换排序方向"
-              >
-                {directionLabel}
-              </button>
-            </div>
+            {browseControls}
           </div>
         )}
 

@@ -321,6 +321,10 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: bounds?.width ?? DEFAULT_WINDOW_SIZE.width,
     height: bounds?.height ?? DEFAULT_WINDOW_SIZE.height,
+    // v0.6.2：低于这个尺寸情境条与批量操作按钮会互相挤压甚至被裁切。
+    // 用 minWidth/minHeight 让系统替我们守住布局底线，而不是给每个控件写断点。
+    minWidth: 960,
+    minHeight: 640,
     ...(bounds?.x !== undefined && bounds?.y !== undefined ? { x: bounds.x, y: bounds.y } : {}),
     // macOS：隐藏原生标题栏（含标题文字），仅保留内缩的红绿灯按钮，
     // 窗口拖动由渲染进程中的 -webkit-app-region: drag 区域承担。

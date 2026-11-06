@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { LibrarySource, MediaFilter, SmartAlbum } from '@/types';
 import { PlusIcon, RefreshIcon } from '@/components/icons';
 
@@ -25,6 +25,8 @@ interface SidebarProps {
   activeAlbumId: string | null;
   onSelectAlbum: (album: SmartAlbum) => void;
   onDeleteAlbum: (id: string) => void;
+  /** 重命名相簿；返回 false 表示重名 / 无效，侧栏保持编辑态 */
+  onRenameAlbum: (id: string, name: string) => boolean;
   /** 打开「存为智能相簿」弹窗 */
   onRequestSaveAlbum: () => void;
   activeCategory: string;
@@ -612,6 +614,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   activeAlbumId,
   onSelectAlbum,
   onDeleteAlbum,
+  onRenameAlbum,
   onRequestSaveAlbum,
   directorySources,
   fileSources,
@@ -632,6 +635,22 @@ const Sidebar: React.FC<SidebarProps> = ({
   themeMode,
   onThemeModeChange,
 }) => {
+  /** 相簿内联重命名（v0.6.2 · K26）：编辑态只在侧栏，查重与落盘交给 hook */
+  const [editingAlbumId, setEditingAlbumId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const albumInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editingAlbumId) albumInputRef.current?.select();
+  }, [editingAlbumId]);
+
+  const startRename = (album: SmartAlbum) => {
+    setEditingAlbumId(album.id);
+    setEditingName(album.name);
+  };
+  const commitRename = (id: string) => {
+    if (onRenameAlbum(id, editingName)) setEditingAlbumId(null);
+  };
+
   /** 单独文件来源：聚合成一行，计数与不可用数量都在这里算好 */
   const fileSourceCount = fileSources.length;
   const unavailableFileCount = fileSources.reduce(
@@ -859,38 +878,86 @@ const Sidebar: React.FC<SidebarProps> = ({
                 {albums.map((album) => {
                   const active = activeAlbumId === album.id;
                   const count = albumCounts[album.id] ?? 0;
+                  const editing = editingAlbumId === album.id;
                   return (
                     <li key={album.id} className="group/album relative">
-                      <button
-                        type="button"
-                        onClick={() => onSelectAlbum(album)}
-                        aria-current={active ? 'page' : undefined}
-                        title={album.name}
-                        className={`${ROW_BASE} h-8 gap-2.5 px-2.5 pr-8 text-[12.5px] ${ROW_STATE(active)}`}
-                      >
-                        <span className={ROW_ICON(active)}>
-                          <AlbumIcon />
-                        </span>
-                        <span className="truncate">{album.name}</span>
-                        <span
-                          className={`ml-auto shrink-0 font-numeric text-[11px] tabular-nums transition-opacity duration-150 group-hover/album:opacity-0 ${
-                            active
-                              ? 'text-[var(--accent-contrast)] opacity-75'
-                              : 'text-[var(--text-tertiary)]'
-                          }`}
+                      {editing ? (
+                        <input
+                          ref={albumInputRef}
+                          type="text"
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              commitRename(album.id);
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              setEditingAlbumId(null);
+                            }
+                          }}
+                          // 失焦视为放弃，不自动提交：避免 Esc 取消后 blur 又把旧名字写回去
+                          onBlur={() => setEditingAlbumId(null)}
+                          title="Enter 保存 · Esc 取消"
+                          aria-label={`重命名相簿 ${album.name}`}
+                          className="w-full h-8 px-2.5 pr-14 rounded-[10px] bg-[var(--bg-input)] border border-[var(--accent-blue)] text-[12.5px] text-[var(--text-primary)] outline-hidden"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onSelectAlbum(album)}
+                          aria-current={active ? 'page' : undefined}
+                          title={album.name}
+                          className={`${ROW_BASE} h-8 gap-2.5 px-2.5 pr-14 text-[12.5px] ${ROW_STATE(active)}`}
                         >
-                          {count}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteAlbum(album.id)}
-                        title={`删除相簿「${album.name}」`}
-                        aria-label={`删除相簿 ${album.name}`}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md opacity-0 group-hover/album:opacity-100 focus-visible:opacity-100 text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.14)] transition-opacity duration-150"
-                      >
-                        <TrashIcon />
-                      </button>
+                          <span className={ROW_ICON(active)}>
+                            <AlbumIcon />
+                          </span>
+                          <span className="truncate">{album.name}</span>
+                          <span
+                            className={`ml-auto shrink-0 font-numeric text-[11px] tabular-nums transition-opacity duration-150 group-hover/album:opacity-0 ${
+                              active
+                                ? 'text-[var(--accent-contrast)] opacity-75'
+                                : 'text-[var(--text-tertiary)]'
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      )}
+                      {!editing && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => startRename(album)}
+                            title={`重命名相簿「${album.name}」`}
+                            aria-label={`重命名相簿 ${album.name}`}
+                            className="absolute right-8 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md opacity-0 group-hover/album:opacity-100 focus-visible:opacity-100 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-opacity duration-150"
+                          >
+                            <svg
+                              className="w-3.5 h-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteAlbum(album.id)}
+                            title={`删除相簿「${album.name}」`}
+                            aria-label={`删除相簿 ${album.name}`}
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md opacity-0 group-hover/album:opacity-100 focus-visible:opacity-100 text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.14)] transition-opacity duration-150"
+                          >
+                            <TrashIcon />
+                          </button>
+                        </>
+                      )}
                     </li>
                   );
                 })}
