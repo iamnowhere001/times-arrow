@@ -9,7 +9,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 产品 | PhotoMinder / 界面内名「时光画框」：macOS 优先的**本地**照片 / 视频整理桌面应用 |
+| 产品 | 界面显示名「时光画框」（副标题「本地照片整理工作台」）；仓库 / 英文名 / `appId` / 数据目录保留 PhotoMinder：macOS 优先的**本地**照片整理工作台 |
 | 定位 | **个人自用**，不对外分发；不做签名 / 公证 / 自动更新；不做云同步、账号、遥测 |
 | 核心承诺 | 文件操作直接作用于磁盘；除可选的 DeepSeek AI 分析外，全程不联网 |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
@@ -17,7 +17,7 @@
 | 渲染进程 | React + TypeScript ESM（`src/`） |
 | 数据目录 | macOS：`~/Library/Application Support/PhotoMinder/` |
 | 当前版本 | `0.6.1`（2026-11-06 发布，git tag `v0.6.1`） |
-| 质量基线 | typecheck / lint / 单测 282 项 / 主进程 196 项 / Electron 冒烟 全绿 |
+| 质量基线 | typecheck / lint / 单测 287 项 / 主进程 196 项 / Electron 冒烟 全绿 |
 
 **产品判断与优先级以 `ROADMAP.md` 为准；任务级状态以 `TODO.md` 为准；行为描述以 `README.md` 为准；历史技术结论以 `CODE_REVIEW.md` 为准。**
 
@@ -112,6 +112,7 @@ build/                      # electron-builder 资源 / afterPack / DMG 重压
 
 ### 4.3 身份与持久化
 
+- **品牌口径（2026-11-06 拍板）**：界面显示名「时光画框」、副标题「本地照片整理工作台」；`package.json` 的 `productName` / `appId` 与导出文件的 `payload.app` 一律保持 `PhotoMinder`。前者决定 `userData` 目录，后者是旧备份的格式标识，改动会丢数据或让备份无法导入。由 `tests/unit/branding.test.ts` 静态断言守住。
 - `Photo.fileId` = **内容指纹**（`sha256(size + 头尾各 64KB)` 截 128 bit），是跨会话、跨重命名 / 移动的稳定身份。
 - `Photo.id` 只是会话内唯一 id，**不要**拿它做持久化键。
 - 收藏 / 隐藏 / 标签 / 时间修正 / 智能相簿 / AI 结果都按 `fileId` 记录。不要重新引入按路径记录、`rekeyPathData` / `dropPathData` 那条补丁链。

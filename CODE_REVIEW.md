@@ -1374,3 +1374,17 @@ README 已改为如实写明「以明文保存在本机 `ai-config.json`」。
 
 typecheck / lint 0 problems / test（主进程 196 项、单测 **282** 项）/
 format:check / build 全绿；新增 16 项单测（作用域 10 + 相簿名 6）。
+
+### I.4 品牌统一的边界（P0-4，2026-11-06 拍板）
+
+显示名统一「时光画框」、副标题「本地照片整理工作台」，改的是用户可见文案
+（窗口标题、侧栏、配置导入导出对话框、默认导出文件名、文档口径）。
+
+**两处刻意保留 `PhotoMinder`**，并写进 `tests/unit/branding.test.ts` 静态断言：
+
+| 位置 | 为什么不能改 |
+| --- | --- |
+| `package.json` 的 `productName` / `appId` | 决定 `.app` 名与 `~/Library/Application Support/PhotoMinder/`。改了会迁移 `userData`，现有 `config.json`、收藏、标签、相簿、AI 结果全部失联 —— 代价远高于品牌统一。 |
+| 导出文件的 `payload.app: 'PhotoMinder'` | 是 v0.6.1 及更早备份的**格式标识**，`import-config` 用它校验来源。改成显示名会让用户已有的备份被判成「不是本应用的文件」。 |
+
+界面文案与格式标识属于两个命名空间，不要为了「统一」把它们合并。

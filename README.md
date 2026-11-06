@@ -1,15 +1,16 @@
-# PhotoMinder
+# 时光画框 · PhotoMinder
 
-> macOS 风格的本地照片 / 视频管理桌面应用。纯本地运行，重命名、删除、导出等文件操作直接作用于磁盘，不上传任何数据。
+> 本地照片整理工作台。纯本地运行，重命名、删除、导出等文件操作直接作用于磁盘，不上传任何数据。
 
 | 项目 | 说明 |
 | --- | --- |
+| 名称口径 | 界面显示名「**时光画框**」；仓库 / 英文名 / `appId` / 数据目录 / DMG 文件名保留 `PhotoMinder`（改 `productName` 会迁移 `userData`，导致现有收藏 / 标签失联；导出文件里的 `payload.app` 同理是格式标识）。见 `ROADMAP.md` §1.4 |
 | 定位 | **个人自用**的本地照片 / 视频整理工具，macOS 优先；不对外分发，不做签名 / 公证 / 自动更新 |
 | 隐私 | 全部本地处理；AI 分析是唯一可选的联网功能，密钥由主进程读取并代理请求、在本机明文存储（界面只读到尾号掩码，见「已知限制」） |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
 | 当前版本 | **v0.6.1**（2026-11-06 发布，tag `v0.6.1`）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
 | 产品路线 | 定位、优先级与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；任务清单见 [`TODO.md`](./TODO.md) |
-| 质量护栏 | ESLint + oxlint 0 problems · 单测 282 项 · 主进程集成测试 196 项 · Electron 冒烟 1 项 |
+| 质量护栏 | ESLint + oxlint 0 problems · 单测 287 项 · 主进程集成测试 196 项 · Electron 冒烟 1 项 |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
 | 协作手册 | AI 代理与新贡献者的操作约束见 [`AGENTS.md`](./AGENTS.md) |
 
@@ -47,7 +48,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `npm run lint` / `lint:fix` | ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware；当前均为 0 problems） |
 | `npm run format` / `format:check` | Prettier（已全量格式化，`format:check` 通过） |
 | `npm run test` | `test:main` + `test:unit` |
-| `npm run test:unit` | Vitest 纯函数单测（282 项） |
+| `npm run test:unit` | Vitest 纯函数单测（287 项） |
 | `npm run test:main` | 打桩 electron 的主进程集成测试（196 项 = 22 + 18 + 48 + 16 + 47 + 迁移版本守卫 30 + 分层依赖 6 + IPC 契约 9） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
 
@@ -337,7 +338,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   ├── utils/index.ts    #   纯再导出 barrel（86 行，实现已按领域拆到 lib/）
 │   └── styles/styles.css #   主题变量与基础样式（Tailwind v4 CSS-first）
 ├── tests/                # 三层验证
-│   ├── unit/             #   Vitest 纯函数单测（282 项 / 12 个文件）
+│   ├── unit/             #   Vitest 纯函数单测（287 项 / 13 个文件）
 │   ├── main-process/     #   打桩 electron 的集成测试（196 项，含 ai-config-privacy / data-assets / migration-version-guard / layering / ipc-contract）+ harness.cjs 脚手架
 │   └── smoke/            #   真启动 Electron 的端到端冒烟
 ├── build/                # electron-builder 资源（图标 / afterPack / DMG 重压钩子）
