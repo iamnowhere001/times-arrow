@@ -1338,3 +1338,39 @@ README 已改为如实写明「以明文保存在本机 `ai-config.json`」。
   失败路径（回收站已清空）明确报错，不静默假装成功。
 - 发布护栏：typecheck / lint 0 problems / format:check / build /
   单测 266 项 / 主进程 **196 项** / Electron 冒烟。
+
+---
+
+## 附录 I：v0.6.2 批次 1（实施日期 2026-11-06）
+
+> 只记录本批的技术判断与验证证据；方向见 ROADMAP，任务状态见 TODO，用户可感知变化见 CHANGELOG。
+
+### I.1 作用域语义收口（K13 / K16 / K26）
+
+- **K13** 在纯函数 `buildContextMenuActions` 里收口，没有改 IPC 契约。
+  菜单数字一律由 `targetIds / targetPhotos` 推导：导出只数真实可导出的图片，
+  整组都是视频时不渲染导出；单张语义的动作在多选时标「仅此张」；
+  批量收藏通过新增**可选** deps `onToggleFavoriteMany` 注入已有的 `setFavorite`，
+  未注入时保持单张行为且不谎报数量 —— 可选注入让纯函数可独立测试，
+  也避免为了一个菜单项去改 App 的回调签名。
+- **K16** 把排序 / 缩放抽成 `browseControls` 共用块，两种情境条都渲染。
+  选中态**独立成行 + flex-wrap**，而不是把控件塞进已拥挤的批量操作条 ——
+  960×640 下换行比裁切或横向滚动更可控。
+- **K26** 名称比较收敛到 `src/lib/album/albumNames.ts`；弹窗做行内提示，
+  hook 再做一次防御（配置可能来自导入 / 旧版本，只靠 UI 拦不住）。
+  重命名入口是侧栏内联编辑：Enter 提交、Esc 取消、失焦放弃；
+  刻意不用 `window.prompt`，也不让 blur 自动提交（避免 Esc 后旧名被写回）。
+
+### I.2 测试基础设施的一个既有脆弱点
+
+新增 2 个单测文件后，vitest worker 从 10 增到 12，三条遍历整个 `src` 的
+静态断言（dhash / photoTime / placesData）在 CPU 竞争下超过默认 5s 超时，
+**误报为断言失败**（单独跑全绿，错误信息是 `Test timed out in 5000ms`）。
+在 `vitest.config.mts` 把 `testTimeout` 提到 15s，断言口径未改。
+这是规模变化触发的配置问题，不是源码回归；若将来扫描再变慢，应考虑把
+三处重复的目录遍历抽成共享的 `srcSourceFiles()` 并缓存，而不是继续加超时。
+
+### I.3 验证
+
+typecheck / lint 0 problems / test（主进程 196 项、单测 **282** 项）/
+format:check / build 全绿；新增 16 项单测（作用域 10 + 相簿名 6）。

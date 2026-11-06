@@ -9,7 +9,7 @@
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
 | 当前版本 | **v0.6.1**（2026-11-06 发布，tag `v0.6.1`）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
 | 产品路线 | 定位、优先级与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；任务清单见 [`TODO.md`](./TODO.md) |
-| 质量护栏 | ESLint + oxlint 0 problems · 单测 266 项 · 主进程集成测试 196 项 · Electron 冒烟 1 项 |
+| 质量护栏 | ESLint + oxlint 0 problems · 单测 282 项 · 主进程集成测试 196 项 · Electron 冒烟 1 项 |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
 | 协作手册 | AI 代理与新贡献者的操作约束见 [`AGENTS.md`](./AGENTS.md) |
 
@@ -47,7 +47,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `npm run lint` / `lint:fix` | ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware；当前均为 0 problems） |
 | `npm run format` / `format:check` | Prettier（已全量格式化，`format:check` 通过） |
 | `npm run test` | `test:main` + `test:unit` |
-| `npm run test:unit` | Vitest 纯函数单测（266 项） |
+| `npm run test:unit` | Vitest 纯函数单测（282 项） |
 | `npm run test:main` | 打桩 electron 的主进程集成测试（196 项 = 22 + 18 + 48 + 16 + 47 + 迁移版本守卫 30 + 分层依赖 6 + IPC 契约 9） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
 
@@ -337,7 +337,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   ├── utils/index.ts    #   纯再导出 barrel（86 行，实现已按领域拆到 lib/）
 │   └── styles/styles.css #   主题变量与基础样式（Tailwind v4 CSS-first）
 ├── tests/                # 三层验证
-│   ├── unit/             #   Vitest 纯函数单测（266 项 / 10 个文件）
+│   ├── unit/             #   Vitest 纯函数单测（282 项 / 12 个文件）
 │   ├── main-process/     #   打桩 electron 的集成测试（196 项，含 ai-config-privacy / data-assets / migration-version-guard / layering / ipc-contract）+ harness.cjs 脚手架
 │   └── smoke/            #   真启动 Electron 的端到端冒烟
 ├── build/                # electron-builder 资源（图标 / afterPack / DMG 重压钩子）
