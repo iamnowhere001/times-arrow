@@ -766,7 +766,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               时光画框
             </span>
             <span className="text-[10px] text-[var(--text-quaternary)] truncate">
-              按时间线自动归档
+              本地照片整理工作台
             </span>
           </span>
         </div>

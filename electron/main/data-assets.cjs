@@ -190,13 +190,15 @@ function createDataAssets({
     const config = await readStore(STORE_CONFIG);
     const aiCache = await readStore(STORE_AI_CACHE);
     const chosen = await dialog.showSaveDialog({
-      title: '导出 PhotoMinder 配置',
-      defaultPath: 'PhotoMinder-config.json',
+      title: '导出时光画框配置',
+      defaultPath: '时光画框-config.json',
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
     if (chosen.canceled || !chosen.filePath) return ok(null);
 
     const payload = {
+      // 格式标识，不是显示名：v0.6.1 及更早导出的配置里写的就是 'PhotoMinder'，
+      // 改掉会让用户已有的备份全部无法导入。界面文案统一为「时光画框」不影响这里。
       app: 'PhotoMinder',
       exportedAt: new Date().toISOString(),
       version: CONFIG_VERSION,
@@ -211,7 +213,7 @@ function createDataAssets({
   /** 导入配置：二次确认 + 完整替换主要分段；当前配置已由 .bak 轮转留底 */
   handle('import-config', async () => {
     const chosen = await dialog.showOpenDialog({
-      title: '导入 PhotoMinder 配置',
+      title: '导入时光画框配置',
       properties: ['openFile'],
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
@@ -225,11 +227,12 @@ function createDataAssets({
     }
     if (
       !payload ||
+      // 见 export-config：'PhotoMinder' 是历史导出文件的格式标识，不能随显示名改
       payload.app !== 'PhotoMinder' ||
       !payload.config ||
       typeof payload.config !== 'object'
     ) {
-      return fail('这不是 PhotoMinder 导出的配置文件');
+      return fail('这不是时光画框导出的配置文件');
     }
 
     const answer = await dialog.showMessageBox({
