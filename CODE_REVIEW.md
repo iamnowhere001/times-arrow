@@ -1283,4 +1283,58 @@ README 已改为如实写明「以明文保存在本机 `ai-config.json`」。
   后续可考虑加一条静态断言，校验 README 目录树中的 `electron/` 文件清单与实际目录一致，
   避免再次出现 7 周的滞后。
 
+---
 
+## 附录 H：v0.6.1 发布收尾与迁移版本守卫（实施日期 2026-11-06）
+
+> 本节只记录本次发布收尾的技术结论与验证证据；正文与附录 A–G 保留当时的判断，不回改。
+
+### H.1 恢复演练发现的阻断缺陷
+
+发布检查清单要求做三项恢复演练，其中「删 `config.json` → 从 `.bak` 恢复」的夹具是
+`config.json` 为 v2、**未创建** `ai-cache.json`。演练启动时打印
+`[migrate] v1 → v2 完成: { paths: 1, matched: 0, orphans: 2 }` ——
+一份已经是 v2 的配置被重新迁移了。
+
+根因在 `migrateAllStores()` 的 no-op 条件：
+
+| | 改造前 | 改造后 |
+| --- | --- | --- |
+| 判空条件 | `config.version >= 2 && aiCache.version >= 2` 才跳过 | 两个 store **各自**判断，缺失 / 损坏视为 v0 |
+| 路径收集 | 无条件收集两份里的所有字符串 | 只收集**需要迁移**的那一份 |
+| 字段重映射 | 两份都无条件 remap | 已是 v2 的字段原样保留，一个都不碰 |
+| 写盘 | 两份都 `mergeStore` | 只写需要迁移的那一份 |
+
+`ai-cache.json` 不存在（或刚被 `readStore()` 从损坏中改名备份）时返回 `{}`，
+`version` 为 `undefined`，整体条件不成立 → 每次启动重跑迁移。v2 的 32 位内容指纹被
+当成 v1 路径送给 `computeFileFingerprints()`，自然算不出 id，于是
+`remapArray` / `remapRecord` 把收藏、隐藏、标签、时间修正、视频元数据全部搬进 `orphans`。
+**这些 orphans 的键是 hex 字符串，路径重连按目录前缀匹配，永远找不回来** —— 属不可逆的数据丢失。
+
+触发路径并不罕见：AI 缓存体积大，用户可能手动删掉；也可能因写盘中断被自动备份。
+发布前只读检查了本机真实 `~/Library/Application Support/PhotoMinder/` 的
+`config.json` / `.bak` / `.bak.1`，三者的收藏、隐藏、标签、时间修正均为 0，
+**该缺陷尚未造成实际数据损失**。
+
+### H.2 改法与刻意保留的行为
+
+`electron/main/migrations.cjs`：
+
+- `versionOf()` 把缺失 / 损坏的 store 视为 v0，避免靠 `Number(undefined) < 2` 的
+  NaN 比较「碰巧」得出「不用迁移」；
+- `configNeeds` / `aiNeeds` 分别控制路径收集、字段重映射与写盘；
+- **保留** `paths.length === 0` 的早退不写盘 —— `storage-recovery` 测试依赖
+  「配置刚从损坏中恢复时不要顺手新建 config.json」这条语义，改它会破坏留证。
+
+### H.3 验证
+
+- 新增 `tests/main-process/migration-version-guard.test.cjs`（**30 项**）：
+  直接测 `migrateAllStores()` 的依赖注入，覆盖 6 组「config 版本 × ai-cache 版本」组合
+  （v2 + 缺失 / v2 + 空 / v2 + v1 / v1 + 缺失 / v1 + v2 / 双 v2），
+  钉住「不该动的那份零写盘」。已加入 `test:main`。
+- 三项恢复演练（隔离 HOME + 假回收站，不触碰真实数据）**33 项全绿**：
+  `.bak` 恢复后由全新进程读回、整个目录搬走后 `relink-source` 续接 2 条记录、
+  删除后从假回收站按「文件名 + 体积 + mtime」三重校验取回；
+  失败路径（回收站已清空）明确报错，不静默假装成功。
+- 发布护栏：typecheck / lint 0 problems / format:check / build /
+  单测 266 项 / 主进程 **196 项** / Electron 冒烟。
