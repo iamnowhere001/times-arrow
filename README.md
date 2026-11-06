@@ -7,9 +7,11 @@
 | 定位 | **个人自用**的本地照片 / 视频整理工具，macOS 优先；不对外分发，不做签名 / 公证 / 自动更新 |
 | 隐私 | 全部本地处理；AI 分析是唯一可选的联网功能，密钥由主进程读取并代理请求、在本机明文存储（界面只读到尾号掩码，见「已知限制」） |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
-| 当前版本 | v0.6.0（开发中）· 待办与路线图见 [`TODO.md`](./TODO.md) |
+| 当前版本 | v0.6.0（开发中）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
+| 产品路线 | 定位、优先级与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；任务清单见 [`TODO.md`](./TODO.md) |
 | 质量护栏 | ESLint + oxlint 0 problems · 单测 266 项 · 主进程集成测试 166 项 · Electron 冒烟 1 项 |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
+| 协作手册 | AI 代理与新贡献者的操作约束见 [`AGENTS.md`](./AGENTS.md) |
 
 ---
 
