@@ -18,8 +18,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 文件系统操作
   renameFile: (oldPath, newPath) => ipcRenderer.invoke('rename-file', oldPath, newPath),
   deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
-  /** 批量移动文件到目标文件夹（重名自动加序号、同目录跳过、跨盘复制兜底） */
-  moveFiles: (filePaths, targetDir) => ipcRenderer.invoke('move-files', filePaths, targetDir),
+  /**
+   * 批量移动文件到目标文件夹（重名自动加序号、同目录跳过、跨盘复制兜底）。
+   * priorTargets：源路径 → 上次跨卷移动已落盘的副本路径。跨卷「复制成功但删源失败」
+   * 后重试时回传，主进程只补删源、不再复制一份 —— 必须透传，否则每次重试都会多一份副本。
+   */
+  moveFiles: (filePaths, targetDir, priorTargets) =>
+    ipcRenderer.invoke('move-files', filePaths, targetDir, priorTargets),
   /** 读取文件为 base64（HEIC 自动转为 JPEG） */
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
   /** 在访达 / 资源管理器中定位文件 */

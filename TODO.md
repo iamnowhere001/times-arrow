@@ -276,8 +276,8 @@
 | X3 | 基础图片编辑（裁剪 / 翻转 / 调色） | 暂缓。系统「预览 / 照片」已够用，重复造轮子 |
 | X4 | 地图视图（EXIF GPS 展示） | ✅ 已随 F3 落地轻量版：离线点阵底图 + 点位聚合，未引入地图 SDK；需街道级细节再议 |
 | X5 | 跨平台打包（Win/Linux）+ 自动更新 | 暂缓。只在 macOS 自用 |
-| X7 | `App.tsx` 大拆分 + 开启 `strict` + 引入 `@types/react` | 🔶 **部分完成**（2026-09-16）：`App.tsx` 3707 → 1279 行，拆出 15 个功能域 hook；`@types/react` 已在依赖里。**仍未做**：`strict: true`。2026-11-05 实测：单独打开 `noImplicitAny` 在 `src` / `electron` / `tests` 均为 **0 新增错误**；剩余代价集中在 `strictNullChecks`，仍需专项处理 |
-| X8 | 测试 / lint / CI | 🔶 **部分完成**（2026-09-16）：三层测试（单测 304 项 / 主进程集成以 `npm run test:main` 实测为准，当前 197 项 / Electron 冒烟）与 Prettier 已落地；lint 现在分两层（ESLint 管 JS/CJS、oxlint 管 TS/TSX），已分别纳入 `test` + `test:smoke` 与 `lint`。**仍未做**：CI —— 本机 `npm install` 与 Electron 沙箱都有环境限制，先不接 |
+| X7 | `App.tsx` 大拆分 + 开启 `strict` + 引入 `@types/react` | 🔶 **部分完成**（2026-09-16）：`App.tsx` 3707 → 1322 行（含 2026-11-06 复审的空状态文案与单条目动作抽离），拆出 16 个功能域 hook；`@types/react` 已在依赖里。**仍未做**：`strict: true`。2026-11-05 实测：单独打开 `noImplicitAny` 在 `src` / `electron` / `tests` 均为 **0 新增错误**；剩余代价集中在 `strictNullChecks`，仍需专项处理 |
+| X8 | 测试 / lint / CI | 🔶 **部分完成**（2026-09-16）：三层测试（单测 326 项 / 主进程集成以 `npm run test:main` 实测为准，当前 197 项 / Electron 冒烟）与 Prettier 已落地；lint 现在分两层（ESLint 管 JS/CJS、oxlint 管 TS/TSX），已分别纳入 `test` + `test:smoke` 与 `lint`。**仍未做**：CI —— 本机 `npm install` 与 Electron 沙箱都有环境限制，先不接 |
 | X9 | 十万级库 Worker 化压测与调优 | 暂缓。除非库规模真的到十万级 |
 | X10 | 云同步 / Google Photos 等外部集成 | 暂缓。与「纯本地」定位冲突 |
 | X11 | 视频重编码导出 / 转码预览 | 暂缓。依赖 ffmpeg，体积与复杂度陡增；原文件可直接复制 |
@@ -320,6 +320,8 @@
 - **2026-11-06 · P0-4 品牌统一与退出标准确认**：维护者拍板显示名「时光画框」、副标题「本地照片整理工作台」；`index.html` / 侧栏 / 配置导入导出对话框 / README / AGENTS / ROADMAP §1.4 与 Q2 全部同步。`productName` / `appId` / `payload.app` 刻意保留英文并由新增静态断言守卫。两处退出标准偏差（⌘Z 归原生、批量撤销降级）确认接受，已写进 ROADMAP 退出标准。
 
 - **2026-11-06 · v0.6.2 批次 2（撤销前置）**：成功 Toast 接「撤销」、编辑菜单「撤销上次文件操作」（⌥⌘Z）、失败原因与「在数据资产中查看」出口、重复清理删除后带撤销全部落地；`src/lib/fs/lastOperation.ts` 收口纯逻辑，新增 17 项单测 + 1 项 IPC 事件契约断言。单测 304 项 / 主进程 197 项，全套护栏与冒烟全绿。技术结论见 CODE_REVIEW 附录 J。
+
+- **2026-11-06 · 代码复审与工程组织优化（CODE_REVIEW §4）**：修掉 5 处真实缺陷 —— ① `moveFiles` 的 `priorTargets` 在 preload 漏传，跨卷移动重试会静默产生重复副本（**高**）；② 删除失败分流先转译再匹配 `ENOENT`，失效条目被当成可重试；③ 地图浮层点击冒泡会关掉照片条 / 误选地点；④ 取消重复检测被显示成「未检测到相似图片」；⑤ 视频循环偏好未应用到 `<video>`。组织上：空状态文案抽 `deriveEmptyStateCopy`（+7 项单测）、单条目动作抽 `usePhotoActions`，`App.tsx` 1426 → 1322 行。单测 326 项 / 主进程 197 项 / typecheck / lint / format 全绿。CODE_REVIEW 同步从 1426 行精简到 385 行（保留状态索引与各批次摘要）。
 
 ### 已核对无需复查的范围（两轮审查结论）
 

@@ -212,12 +212,17 @@ export function useDuplicateDetection(
         // 否则取消后「参数与上次不同」的条件一直成立，自动重跑 effect 会把用户的取消吞掉，
         // 表现为：点了取消，进度条消失几百毫秒后又自己跑起来。
         lastDuplicateOptionsRef.current = { similarity: runSimilarity, scope: runScope };
+        // 被新一轮接管时不要收尾：那一轮的进度条刚立起来，标成 done 会让它看起来瞬间完成
+        const supersededByNewRun =
+          duplicateAbortRef.current !== null && duplicateAbortRef.current !== controller;
+        if (!supersededByNewRun) {
+          setDuplicateProgress((prev) =>
+            prev ? { ...prev, processed: prev.total, etaMs: undefined, phase: 'done' } : prev
+          );
+        }
         if (duplicateAbortRef.current === controller) duplicateAbortRef.current = null;
         setIsProcessingDuplicates(false);
         setIsRepartitioningDuplicates(false);
-        setDuplicateProgress((prev) =>
-          prev ? { ...prev, processed: prev.total, etaMs: undefined, phase: 'done' } : prev
-        );
         // 检测结束（或取消）后回收易失缓存，把峰值内存还回去
         releaseMemory('soft', 'duplicate-scan-done');
       }
@@ -230,6 +235,9 @@ export function useDuplicateDetection(
     if (!duplicateAbortRef.current) return;
     duplicateAbortRef.current.abort();
     duplicateAbortRef.current = null;
+    // 把进度收回「尚未检测」：组件用 progress !== null 判断「跑过一轮」，
+    // 留着它会把用户主动取消显示成「未检测到相似图片」—— 那是另一回事。
+    setDuplicateProgress(null);
     showToast('已取消重复检测', 'info');
   }, [showToast]);
 

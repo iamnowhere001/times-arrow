@@ -58,10 +58,18 @@ export const isFileGoneError = (message?: string): boolean => /\bENOENT\b/.test(
 export interface TrashResult {
   /** 成功移入回收站的条目 id */
   deletedIds: Set<string>;
-  /** 失败的照片 */
+  /** 可重试的失败项（权限、占用、磁盘满等） */
   failedPhotos: Photo[];
-  /** 与 failedPhotos 对应的错误说明 */
+  /** 与 failedPhotos 一一对应的、已转成人话的错误说明 */
   errors: string[];
+  /**
+   * 文件已不在磁盘上的条目（ENOENT）。
+   * 与 failedPhotos 分开：这类条目重试只会再失败一次，调用方应直接剔除列表。
+   *
+   * 必须在这里分流，不能让调用方拿 errors 再判一次 —— errors 已经过
+   * humanizeFsError 转译，原始错误码（ENOENT）已被替换成中文，再判必然落空。
+   */
+  gonePhotos: Photo[];
   /**
    * 其中「没有磁盘文件、只是从列表移除」的条目数。
    * 这类条目不会进回收站，提示时必须区分开，否则用户会以为还能去回收站找回。
@@ -80,6 +88,7 @@ export const movePhotosToTrash = async (
   const deletedIds = new Set<string>();
   const failedPhotos: Photo[] = [];
   const errors: string[] = [];
+  const gonePhotos: Photo[] = [];
   let pathlessRemoved = 0;
 
   for (let i = 0; i < targets.length; i++) {
@@ -97,18 +106,26 @@ export const movePhotosToTrash = async (
       try {
         const result = await window.electronAPI.deleteFile(photo.path);
         if (!result.ok) {
-          failedPhotos.push(photo);
-          errors.push(`「${photo.name}」：${humanizeFsError(result.error)}`);
+          // 先判原始错误码再转译：转译后的文案里没有 ENOENT
+          if (isFileGoneError(result.error)) gonePhotos.push(photo);
+          else {
+            failedPhotos.push(photo);
+            errors.push(`「${photo.name}」：${humanizeFsError(result.error)}`);
+          }
         } else {
           deletedIds.add(photo.id);
         }
       } catch (err) {
-        failedPhotos.push(photo);
-        errors.push(`「${photo.name}」：${humanizeFsError((err as Error).message)}`);
+        const message = (err as Error).message;
+        if (isFileGoneError(message)) gonePhotos.push(photo);
+        else {
+          failedPhotos.push(photo);
+          errors.push(`「${photo.name}」：${humanizeFsError(message)}`);
+        }
       }
     }
     onProgress?.(i + 1, targets.length);
   }
 
-  return { deletedIds, failedPhotos, errors, pathlessRemoved };
+  return { deletedIds, failedPhotos, errors, gonePhotos, pathlessRemoved };
 };

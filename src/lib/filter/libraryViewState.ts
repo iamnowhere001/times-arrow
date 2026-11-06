@@ -160,3 +160,99 @@ export function deriveLibraryViewState(input: LibraryViewStateInput): LibraryVie
     gridViewTitle,
   };
 }
+
+/** 空状态主按钮要做的事；具体回调由调用方按动作分发（纯函数不持有 setState） */
+export type EmptyStateAction =
+  'import' | 'clearSearch' | 'clearFilters' | 'showHidden' | 'showAll' | 'showAllMedia' | 'none';
+
+export interface EmptyStateCopy {
+  title: string;
+  description: string;
+  /** 旁注读数：给「是没找到还是本来就没有」一个参照 */
+  hint?: string;
+  action: EmptyStateAction;
+  actionLabel?: string;
+}
+
+export interface EmptyStateCopyInput {
+  kind: EmptyKind;
+  searchQuery: string;
+  mediaFilter: MediaFilter;
+  /** 图库条目总数（counts.all），仅用于旁注读数 */
+  totalCount: number;
+}
+
+/**
+ * 空状态的文案与主按钮。
+ *
+ * 之前这段是 App.tsx 里一组 50 行的嵌套三元 —— 标题、描述、按钮、动作四个维度
+ * 各自按同一组条件分支，改一处文案要横着读四遍。抽成纯函数后：文案集中、可单测，
+ * App 只负责把 action 映射成回调。
+ */
+export function deriveEmptyStateCopy({
+  kind,
+  searchQuery,
+  mediaFilter,
+  totalCount,
+}: EmptyStateCopyInput): EmptyStateCopy {
+  const mediaLabel = MEDIA_FILTER_LABELS[mediaFilter];
+  const copy = ((): EmptyStateCopy => {
+    switch (kind) {
+      case 'library':
+        return {
+          title: '打开你的图库',
+          description:
+            '把整个文件夹拖进窗口，或使用「打开文件夹」导入。打开过的文件夹会被记住，重启后可一键恢复；所有整理都在本地完成。',
+          action: 'import',
+        };
+      case 'search':
+        return {
+          title: '没有匹配的结果',
+          description: `找不到与「${searchQuery}」匹配的内容。试着换个关键词，或清除搜索。`,
+          action: 'clearSearch',
+        };
+      case 'allHidden':
+        return {
+          title: '所有项目都已隐藏',
+          description: '当前图库里的项目都被隐藏了，它们收在「已隐藏」里，可在那里取消隐藏。',
+          action: 'showHidden',
+          actionLabel: '查看「已隐藏」',
+        };
+      case 'hiddenEmpty':
+        return {
+          title: '没有已隐藏的项目',
+          description: '在照片上点右键选择「隐藏」，被隐藏的项目就会收在这里，不打扰日常浏览。',
+          action: 'none',
+        };
+      case 'filter':
+        return {
+          title: '没有符合筛选条件的结果',
+          description: '当前筛选条件没有匹配项，放宽条件或清除筛选后再试。',
+          action: 'clearFilters',
+          actionLabel: '清除筛选',
+        };
+      case 'media':
+        return {
+          title: `还没有${mediaLabel}`,
+          description: `当前图库中没有${mediaLabel}，切回「全部」可以查看其他内容。`,
+          action: 'showAllMedia',
+          actionLabel: '前往「所有照片」',
+        };
+      case 'favorites':
+        return {
+          title: '收藏夹还是空的',
+          description: '在「所有照片」中点击照片角落的心形按钮，就能把喜欢的照片收进这里。',
+          action: 'showAll',
+          actionLabel: '前往「所有照片」',
+        };
+    }
+  })();
+
+  // 首屏与「全部隐藏」不显示旁注：前者还没有库，后者的总数就在描述里
+  const hint =
+    kind === 'library' || kind === 'allHidden'
+      ? undefined
+      : `库中 ${totalCount} 项，当前条件下没有匹配`;
+
+  return hint ? { ...copy, hint } : copy;
+}

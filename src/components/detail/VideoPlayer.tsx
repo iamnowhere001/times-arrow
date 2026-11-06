@@ -617,6 +617,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
             autoPlay
             playsInline
             preload="auto"
+            // loop 必须由 state 驱动：偏好是持久化的，只靠控制条上的 toggle 写 el.loop，
+            // 重新打开预览时会显示「循环已开启」但元素仍是默认的不循环。
+            loop={loop}
             disablePictureInPicture={false}
             onLoadedMetadata={handleLoadedMetadata}
             onLoadedData={() => {

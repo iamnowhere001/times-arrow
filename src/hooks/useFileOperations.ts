@@ -467,7 +467,7 @@ export function useFileOperations({
     } finally {
       endFileOp();
     }
-    const { deletedIds, failedPhotos, errors, pathlessRemoved } = trash;
+    const { deletedIds, failedPhotos, errors, gonePhotos, pathlessRemoved } = trash;
 
     // 同步收敛状态：列表、选中项、重复检测结果
     if (deletedIds.size > 0) {
@@ -488,21 +488,15 @@ export function useFileOperations({
       pathlessRemoved > 0 ? `，另有 ${pathlessRemoved} 项无磁盘文件，仅从列表移除` : '';
 
     // ENOENT 的失败项说明文件早已不在磁盘（外部删除 / 移动）：剔除条目，
-    // 不进「重试」（重试只会再失败一次）；其余失败项维持原有重试入口
-    const gonePhotos: Photo[] = [];
-    const retryPhotos: Photo[] = [];
-    const retryErrors: string[] = [];
-    failedPhotos.forEach((photo, i) => {
-      if (isFileGoneError(errors[i])) {
-        gonePhotos.push(photo);
-      } else {
-        retryPhotos.push(photo);
-        retryErrors.push(errors[i]);
-      }
-    });
+    // 不进「重试」（重试只会再失败一次）；其余失败项维持原有重试入口。
+    // 分流在 movePhotosToTrash 内部完成 —— 那里的错误信息尚未被转译，还带着原始错误码。
     if (gonePhotos.length > 0) fsGuard.reportGone(gonePhotos);
+    const retryPhotos = failedPhotos;
+    const retryErrors = errors;
 
     if (retryPhotos.length === 0) {
+      // 全部条目都已失效：reportGone 的提示已经说明，不再补一条误导性的「已删除 0 张」
+      if (deletedIds.size === 0) return;
       showToast(
         `已将 ${deletedIds.size - pathlessRemoved} 张照片移至回收站${pathlessNote}`,
         'success',

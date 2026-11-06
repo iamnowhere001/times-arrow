@@ -944,8 +944,13 @@ const LocationMap: React.FC<LocationMapProps> = ({
         ) : (
           <>
             {/* 缩放控件：悬浮在地图右上方的玻璃竖簇。地图类工具的通用位置，
-                标题栏因此只剩陈述，不堆操作 */}
-            <div className="app-no-drag absolute right-4 top-4 z-20 flex flex-col overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-lg)] backdrop-blur-xl">
+                标题栏因此只剩陈述，不堆操作。
+                stopPropagation：地图容器上挂着 handleClick（点光点选中地点），
+                按钮点击若冒泡上去，会在缩放的同时又选中/取消一个地点。 */}
+            <div
+              className="app-no-drag absolute right-4 top-4 z-20 flex flex-col overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-lg)] backdrop-blur-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
               <button
                 type="button"
                 onClick={() => handleZoomButton(1.5)}
@@ -1032,9 +1037,14 @@ const LocationMap: React.FC<LocationMapProps> = ({
               </div>
             )}
 
-            {/* 选中地点：底部拉出照片条 */}
+            {/* 选中地点：底部拉出照片条。
+                stopPropagation：缩略图与关闭按钮都在地图容器内，不拦住冒泡的话
+                点缩略图会先打开 QuickLook、再被 handleClick 判成「点空白处」把照片条关掉。 */}
             {activeSite && (
-              <div className="absolute inset-x-0 bottom-0 z-30 animate-fadeInUp px-4 pb-4">
+              <div
+                className="absolute inset-x-0 bottom-0 z-30 animate-fadeInUp px-4 pb-4"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <div className="mx-auto max-w-5xl overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--bg-elevated)] shadow-[var(--shadow-xl)] backdrop-blur-xl">
                   <div className="flex items-center gap-3 border-b border-[var(--border-subtle)] px-4 py-2">
                     <span className="flex min-w-0 items-center gap-1.5 text-[var(--accent-blue)]">

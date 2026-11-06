@@ -7,9 +7,9 @@
  *  - reportFailure：所有 IPC 失败统一 logger + humanizeFsError 转译 + error Toast；
  *  - reportGone：判定为「文件已不在原位」的条目自动从列表剔除，并给出汇总 Toast。
  *
- * reportGone 有意【不】清收藏 / 标签 / 时间修正：这些按路径记录，等文件从其它
- * 目录重新导入时仍能命中（README 已知限制）；只摘 importedPaths 登记，否则
- * 同路径文件重建后 ingestFiles 的去重会拒绝其重新入库。
+ * reportGone 有意【不】清收藏 / 标签 / 时间修正：这些按内容指纹（fileId）记录，
+ * 文件从其它目录重新导入时会自动续上；只摘 importedPaths 登记，否则同路径文件
+ * 重建后 ingestFiles 的去重会拒绝其重新入库。
  */
 
 import { Photo } from '@/types';

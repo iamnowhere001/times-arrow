@@ -9,7 +9,7 @@
  *   1. preload 暴露的方法 ⊇ d.ts 声明 ⊇ src 实际调用（双向都查，防止声明了却未暴露）
  *   2. invoke 通道集合与冻结清单一致，且每个通道只注册一次
  *   3. `pm` 协议 handler 恰好一个
- *   4. 已知缺口 `moveFiles` 的形参数量被钉住（修复后本断言会失败，提醒同步更新）
+ *   4. `moveFiles` 的形参数量在 preload 与 d.ts 之间一致（曾漏传 priorTargets）
  *
  * 新增 / 删除通道时必须同步修改 CHANNELS 清单 —— 这是刻意的变更成本。
  *
@@ -167,7 +167,7 @@ const mainSrc = read('electron/main.js');
 const pmHandlers = [...mainSrc.matchAll(/protocol\.handle\(\s*'pm'/g)].length;
 check("protocol.handle('pm') 仅出现一次", pmHandlers === 1, `实际 ${pmHandlers}`);
 
-section('4. 已知缺口登记（修复后请更新本断言）');
+section('4. 形参对齐（moveFiles 曾漏传 priorTargets，2026-11-06 修复）');
 const firstGroup = (match) => (match ? match[1] : '');
 const preloadArity = firstGroup(read('electron/preload.js').match(/moveFiles:\s*\(([^)]*)\)/))
   .split(',')
@@ -176,10 +176,13 @@ const dtsArity =
   firstGroup(read('src/types/global.d.ts').match(/moveFiles:\s*\(\s*([\s\S]*?)\n {6}\)/)).match(
     /^\s*([A-Za-z_]\w*)\??:/gm
   )?.length ?? 0;
+// 修复前这里是 preload 2 / d.ts 3 的「已知缺口」断言。缺口的后果不是报错而是
+// **静默产生重复副本**：跨卷移动「复制成功、删源失败」后点重试，主进程拿不到
+// priorTargets，会回退正常流程再复制一份。所以这里改成钉「三处必须一致」。
 check(
-  'moveFiles：preload 形参 2 个、d.ts 形参 3 个（priorTargets 未透传，属已知缺口）',
-  preloadArity === 2 && dtsArity === 3,
-  `preload ${preloadArity} / d.ts ${dtsArity}；若已修复请同步更新本断言与文档`
+  'moveFiles：preload 与 d.ts 的形参数量一致（均为 3）',
+  preloadArity === 3 && dtsArity === 3,
+  `preload ${preloadArity} / d.ts ${dtsArity}`
 );
 
 section('5. 主进程 → 渲染层事件契约（v0.6.2 批次 2）');

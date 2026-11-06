@@ -15,7 +15,8 @@ import { createUndoActionFactory, undoLastOperation, type UndoDeps } from '@/lib
 import { useToasts } from '@/hooks/useToasts';
 import { useThemeMode } from '@/hooks/useThemeMode';
 import { useDuplicateDetection } from '@/hooks/useDuplicateDetection';
-import { MEDIA_FILTER_LABELS, createEmptyFilters } from '@/lib/filter/filters';
+import { createEmptyFilters } from '@/lib/filter/filters';
+import { deriveEmptyStateCopy } from '@/lib/filter/libraryViewState';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
 import { basenameOfPath } from '@/lib/persistence/sources';
 import Sidebar from '@/components/layout/Sidebar';
@@ -45,7 +46,6 @@ import SaveAlbumModal from '@/components/modal/SaveAlbumModal';
 import RestoreLibraryModal from '@/components/modal/RestoreLibraryModal';
 import AiSettingsModal from '@/components/modal/AiSettingsModal';
 import ShortcutsOverlay from '@/components/common/ShortcutsOverlay';
-import { logger } from '@/lib/logger';
 import { useAppConfig } from '@/hooks/useAppConfig';
 import { useCollapseAnimation } from '@/hooks/useCollapseAnimation';
 import { useDragAndDrop } from '@/hooks/useDragAndDrop';
@@ -57,6 +57,7 @@ import { useLibraryDerived } from '@/hooks/useLibraryDerived';
 import { useLibraryImport } from '@/hooks/useLibraryImport';
 import { useLibrarySources } from '@/hooks/useLibrarySources';
 import { usePersistedLibraryData } from '@/hooks/usePersistedLibraryData';
+import { usePhotoActions } from '@/hooks/usePhotoActions';
 import { useQuickLook } from '@/hooks/useQuickLook';
 import { useSelection } from '@/hooks/useSelection';
 import { useSmartAlbums } from '@/hooks/useSmartAlbums';
@@ -185,13 +186,6 @@ const App: React.FC = () => {
     albumCounts,
     activeAlbumId,
     filterOptions,
-    isEmptyLibrary,
-    isSearchEmpty,
-    isAllHidden,
-    isHiddenEmpty,
-    isFilterEmpty,
-    isFavoritesEmpty,
-    isMediaFilterEmpty,
     gridViewTitle,
     emptyKind,
   } = useLibraryDerived({
@@ -653,81 +647,9 @@ const App: React.FC = () => {
     );
   }, [photos, selectedIds, setFavorite, showToast]);
 
-  // 复制图片到系统剪贴板
-  const handleCopyImage = useCallback(
-    async (photo: Photo) => {
-      if (!window.electronAPI) return;
-      if (isVideoPhoto(photo)) {
-        showToast('视频无法复制到剪贴板，可改用「复制路径」', 'warning');
-        return;
-      }
-      if (!photo.path) {
-        showToast('该文件没有磁盘路径，无法复制', 'warning');
-        return;
-      }
-      const result = await window.electronAPI.copyImage(photo.path);
-      if (!result.ok) {
-        showToast(`复制失败：${result.error}`, 'error');
-      } else {
-        showToast(`已复制 "${photo.name}" 到剪贴板`, 'success');
-      }
-    },
-    [showToast]
-  );
-
-  // 在访达中定位文件
-  const handleShowInFolder = useCallback(
-    async (photo: Photo) => {
-      if (!window.electronAPI || !photo.path) {
-        showToast('该照片没有磁盘路径，无法在访达中显示', 'warning');
-        return;
-      }
-      const result = await window.electronAPI.showInFolder(photo.path);
-      if (!result.ok) {
-        showToast(`无法打开所在文件夹：${result.error}`, 'error');
-      }
-    },
-    [showToast]
-  );
-
-  // 复制文件路径到剪贴板（Electron 下走主进程 clipboard，Web 降级到 navigator.clipboard）
-  const handleCopyPath = useCallback(
-    async (photo: Photo) => {
-      const target = photo.path;
-      if (!target) {
-        showToast('该照片没有磁盘路径，无法复制路径', 'warning');
-        return;
-      }
-      try {
-        if (window.electronAPI?.copyText) {
-          const result = await window.electronAPI.copyText(target);
-          if (!result.ok) throw new Error(result.error);
-        } else {
-          await navigator.clipboard.writeText(target);
-        }
-        showToast('路径已复制到剪贴板', 'success');
-      } catch (error) {
-        logger.error('复制路径失败:', error);
-        showToast('复制路径失败', 'error');
-      }
-    },
-    [showToast]
-  );
-
-  // 用系统默认应用 / 外部编辑器打开文件
-  const handleOpenInEditor = useCallback(
-    async (photo: Photo) => {
-      if (!window.electronAPI || !photo.path) {
-        showToast('该照片没有磁盘路径，无法打开', 'warning');
-        return;
-      }
-      const result = await window.electronAPI.openPath(photo.path);
-      if (!result.ok) {
-        showToast(`打开失败：${result.error}`, 'error');
-      }
-    },
-    [showToast]
-  );
+  // 单张照片的外部动作（复制图片 / 在访达中定位 / 复制路径 / 用默认应用打开）
+  // 见 hooks/usePhotoActions —— 它们只依赖路径与 Toast，不属于图库编排
+  const { copyImage, showInFolder, copyPath, openInEditor } = usePhotoActions(showToast);
 
   // 打开导出弹层（默认导出当前选中项；视频不参与重编码导出）
   const handleExportSelected = useCallback(() => {
@@ -803,10 +725,10 @@ const App: React.FC = () => {
         // 多选时让「收藏」真正作用于整组，而不是只改右键那一张（K13）
         onToggleFavoriteMany: setFavorite,
         onSetHidden: setHidden,
-        onCopyImage: handleCopyImage,
-        onShowInFolder: handleShowInFolder,
-        onCopyPath: handleCopyPath,
-        onOpenInEditor: handleOpenInEditor,
+        onCopyImage: copyImage,
+        onShowInFolder: showInFolder,
+        onCopyPath: copyPath,
+        onOpenInEditor: openInEditor,
         onExportSelected: handleExportSelected,
         onMovePhotos: handleMoveSelected,
         onOpenAdjustDate: () => setIsAdjustDateModalOpen(true),
@@ -822,10 +744,10 @@ const App: React.FC = () => {
       toggleFavorite,
       setFavorite,
       setHidden,
-      handleCopyImage,
-      handleShowInFolder,
-      handleCopyPath,
-      handleOpenInEditor,
+      copyImage,
+      showInFolder,
+      copyPath,
+      openInEditor,
       handleExportSelected,
       handleMoveSelected,
       handleSelectAllVisible,
@@ -890,6 +812,14 @@ const App: React.FC = () => {
       mediaFilter: filter,
     }));
   }, []);
+
+  // 空状态文案与主按钮：判定在 libraryViewState，这里只把动作映射成回调
+  const emptyCopy = deriveEmptyStateCopy({
+    kind: emptyKind,
+    searchQuery,
+    mediaFilter,
+    totalCount: counts.all,
+  });
 
   // handleUpdatePhoto（标签 / AI 结果落盘）已迁至 hooks/usePersistedLibraryData
 
@@ -1185,57 +1115,25 @@ const App: React.FC = () => {
                 onFilterByDate={handleFilterByDate}
                 viewTitle={gridViewTitle}
                 emptyKind={emptyKind}
-                emptyHint={
-                  emptyKind === 'library' || emptyKind === 'allHidden'
-                    ? undefined
-                    : `库中 ${counts.all} 项，当前条件下没有匹配`
-                }
-                emptyTitle={
-                  isSearchEmpty
-                    ? '没有匹配的结果'
-                    : isEmptyLibrary
-                      ? '打开你的图库'
-                      : isAllHidden
-                        ? '所有项目都已隐藏'
-                        : isHiddenEmpty
-                          ? '没有已隐藏的项目'
-                          : isFilterEmpty
-                            ? '没有符合筛选条件的结果'
-                            : isMediaFilterEmpty
-                              ? `还没有${MEDIA_FILTER_LABELS[mediaFilter]}`
-                              : '收藏夹还是空的'
-                }
-                emptyDescription={
-                  isSearchEmpty
-                    ? `找不到与「${searchQuery}」匹配的内容。试着换个关键词，或清除搜索。`
-                    : isEmptyLibrary
-                      ? '把整个文件夹拖进窗口，或使用「打开文件夹」导入。打开过的文件夹会被记住，重启后可一键恢复；所有整理都在本地完成。'
-                      : isAllHidden
-                        ? '当前图库里的项目都被隐藏了，它们收在「已隐藏」里，可在那里取消隐藏。'
-                        : isHiddenEmpty
-                          ? '在照片上点右键选择「隐藏」，被隐藏的项目就会收在这里，不打扰日常浏览。'
-                          : isFilterEmpty
-                            ? '当前筛选条件没有匹配项，放宽条件或清除筛选后再试。'
-                            : isMediaFilterEmpty
-                              ? `当前图库中没有${MEDIA_FILTER_LABELS[mediaFilter]}，切回「全部」可以查看其他内容。`
-                              : '在「所有照片」中点击照片角落的心形按钮，就能把喜欢的照片收进这里。'
-                }
-                onImport={isEmptyLibrary ? handleImport : undefined}
+                emptyHint={emptyCopy.hint}
+                emptyTitle={emptyCopy.title}
+                emptyDescription={emptyCopy.description}
+                onImport={emptyCopy.action === 'import' ? handleImport : undefined}
                 onShowAll={
-                  isAllHidden
+                  emptyCopy.action === 'showHidden'
                     ? () => handleSelectNav('hidden', 'all')
-                    : isFilterEmpty
+                    : emptyCopy.action === 'clearFilters'
                       ? resetFilters
-                      : isFavoritesEmpty
+                      : emptyCopy.action === 'showAll'
                         ? () => handleSelectNav('all', 'all')
-                        : isMediaFilterEmpty
+                        : emptyCopy.action === 'showAllMedia'
                           ? () => updateFilters({ mediaFilter: 'all' })
                           : undefined
                 }
-                showAllLabel={
-                  isAllHidden ? '查看「已隐藏」' : isFilterEmpty ? '清除筛选' : '前往「所有照片」'
+                showAllLabel={emptyCopy.actionLabel}
+                onClearSearch={
+                  emptyCopy.action === 'clearSearch' ? () => setSearchQuery('') : undefined
                 }
-                onClearSearch={isSearchEmpty ? () => setSearchQuery('') : undefined}
                 exitingIds={exitingIds}
               />
             </ErrorBoundary>
