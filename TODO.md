@@ -1,6 +1,6 @@
 # PhotoMinder TODO
 
-> **最后更新**：2026-11-06（**v0.6.2 可信版：批次 1、2 与 P0-4 已完成，两处退出标准偏差已确认接受**；v0.6.1 已发布：N8 / N9 / N10 / F10 全部交付，tag `v0.6.1`；发布收尾期间修复配置迁移版本守卫，见 CODE_REVIEW 附录 H）。2026-09-16 批次：P0 5/5、P1 10/10、P2 10/20 已完成（另 21 部分完成）；冗余清理批次见附录 E；K 批次余 K3–K6（K4 部分完成）、K7–K13、K16 / K20 / K26、K31 / K32，K27–K30 已部分落地。2026-11-05：主进程拆为 4 个模块、AI 配置读取改掩码回显（附录 F）；产品定位确认为「个人自用」，不对外分发；P1 数据资产专项落地（内容指纹主键 + 迁移器 + 备份/导出导入/重连 + 操作日志撤销 + 增量备份，附录 G））
+> **最后更新**：2026-11-06（**v0.6.2 可信版：批次 1、2 与 P0-4 已完成，两处退出标准偏差已确认接受**；v0.6.1 已发布：N8 / N9 / N10 / F10 全部交付，tag `v0.6.1`；发布收尾期间修复配置迁移版本守卫，见 CODE_REVIEW 附录 H）。2026-09-16 批次：P0 5/5、P1 10/10、P2 10/20 已完成（另 21 部分完成）；冗余清理批次见附录 E；K 批次余 K3–K6（K4 部分完成）、K7–K13、K16 / K20 / K26、K31 / K32，K27–K30 已部分落地。2026-11-05：主进程拆为 4 个模块、AI 配置读取改掩码回显（附录 F）；产品定位确认为「个人自用」，不对外分发；P1 数据资产专项落地（内容指纹主键 + 迁移器 + 备份/导出导入/重连 + 操作日志撤销 + 增量备份，附录 G）。2026-11-09：v0.8.0 身份层（K28 / K29 / K30）与「这一天 / 这一年」入口提前落地，F12 / F15 / 重复检测进度打磨仍待 v0.8 正式收口）
 > **相关文档**：功能现状见 [`README.md`](./README.md)；产品方向与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md)；协作与代理约束见 [`AGENTS.md`](./AGENTS.md)；审查结论与修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)
 
 | 约定 | 说明 |
@@ -255,13 +255,16 @@
 - [~] **K27** 首屏空状态与设计语言同质化 · 低 · `src/components/grid/EmptyStates.tsx`
   - ✅ 主体已落地：`WelcomeEmptyState`（首屏按封面设计）+ `QuietEmptyState`（其余五种按 `kind` 区分语气），`ImageGrid` 已接线
   - 余：首屏点阵配色与文案细节打磨
-- [~] **K28** 整页视图未统一沉浸态 · 低 · `src/components/common/ImmersiveView.tsx`
-  - 外壳 `ImmersiveView` 与 `.immersive-surface` 暗房色板已实现，**尚未接线**到时光画廊 / 按地点浏览 / QuickLook
-- [~] **K29** 统计数字未被当作设计元素 · 低 · `src/components/common/Stat.tsx`
-  - 排版规范与 `Stat` / `StatPill` 已实现；`Stat` 目前仅被同样未接线的 `EmptyStateHint` 使用，
-    **侧栏计数 / 重复检测顶栏 / 地图顶栏尚未套用**
-- [~] **K30** 点阵底图语言未贯穿 · 低 · `src/components/common/DotField.tsx`
-  - `LandDotField` 已用于首屏（`WelcomeEmptyState`）；`DotGrid`（底纹）与 `DotPinIcon`（点阵销钉）已实现但**未接线**
+- [x] **K28** 整页视图未统一沉浸态 · 低 · `src/components/common/ImmersiveView.tsx`
+  - ✅ 2026-11-09 接线完成：时光画廊 / 按地点浏览 / QuickLook 共用 `.immersive-surface` 暗房色板；
+    QuickLook 的顶栏、翻页、控制条、菜单从冷灰硬编码改为 `--bg-elevated` / `--bg-modal` 等语义令牌；
+    地图强制暗房色板（不再随浅色主题换色板），离开后按模块级 `savedCamera` 恢复视野
+- [x] **K29** 统计数字未被当作设计元素 · 低 · `src/components/common/Stat.tsx`
+  - ✅ 2026-11-09 接线完成：侧栏导航 / 相簿计数、时光画廊顶栏、地图顶栏与视野读数、重复检测顶栏 / 选择条 / 「本次检测」面板统一 `Stat` / `StatPill`；
+    `Stat` 新增 `inheritColor` 供反白行继承文字色；重复检测「可释放」是全应用唯一 `hero`
+- [x] **K30** 点阵底图语言未贯穿 · 低 · `src/components/common/DotField.tsx`
+  - ✅ 2026-11-09 接线完成：侧栏「按地点」换 `DotPinIcon`；`DotGrid` 用于时光画廊加载骨架 / 空态与重复检测「从未检测」空态，
+    仅作底噪，不扩散成装饰
 
 ---
 
