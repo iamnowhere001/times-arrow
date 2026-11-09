@@ -1038,7 +1038,6 @@ const App: React.FC = () => {
               onQuickLook={handleMapQuickLook}
               onBack={() => setMainView('library')}
               isLeftPaneOpen={isLeftPaneVisible}
-              isLight={isLight}
             />
           </ErrorBoundary>
         ) : (

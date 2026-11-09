@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { LibrarySource, MediaFilter, SmartAlbum } from '@/types';
 import { PlusIcon, RefreshIcon } from '@/components/icons';
+import { DotPinIcon } from '@/components/common/DotField';
+import { Stat } from '@/components/common/Stat';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -261,24 +263,7 @@ const TimelineIcon = () => (
   </svg>
 );
 
-/** 按地点：三折地图，与「把照片落到地图上」的语义一致 */
-const MapIcon = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M9 4 3 6.5v13L9 17l6 3 6-2.5v-13L15 7 9 4z"></path>
-    <path d="M9 4v13"></path>
-    <path d="M15 7v13"></path>
-  </svg>
-);
-
+/** 按地点：点阵销钉，与地图底图用同一种颗粒（K30） */
 /** 相似照片检测：叠放的两张照片 */
 const DuplicateIcon = () => (
   <svg
@@ -562,17 +547,18 @@ const NavRow: React.FC<NavRowProps> = ({
           <ChevronRightIcon />
         </span>
       ) : (
-        <span
-          className={`ml-auto shrink-0 font-numeric text-[11.5px] tabular-nums transition-colors duration-150 ${
+        <Stat
+          value={count}
+          emphasis="micro"
+          inheritColor
+          className={`ml-auto shrink-0 transition-colors duration-150 ${
             active
-              ? 'text-[var(--accent-contrast)] opacity-75'
+              ? 'opacity-75'
               : isZero
                 ? 'text-[var(--text-quaternary)]'
                 : 'text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)]'
           }`}
-        >
-          {count}
-        </span>
+        />
       )}
     </button>
   );
@@ -786,7 +772,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 title="按时间线沉浸式回顾全部记忆"
               />
               <NavRow
-                icon={<MapIcon />}
+                icon={<DotPinIcon />}
                 label="按地点"
                 onClick={onSelectMap}
                 active={isMapActive}
@@ -914,15 +900,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                             <AlbumIcon />
                           </span>
                           <span className="truncate">{album.name}</span>
-                          <span
-                            className={`ml-auto shrink-0 font-numeric text-[11px] tabular-nums transition-opacity duration-150 group-hover/album:opacity-0 ${
-                              active
-                                ? 'text-[var(--accent-contrast)] opacity-75'
-                                : 'text-[var(--text-tertiary)]'
+                          <Stat
+                            value={count}
+                            emphasis="micro"
+                            inheritColor
+                            className={`ml-auto shrink-0 transition-opacity duration-150 group-hover/album:opacity-0 ${
+                              active ? 'opacity-75' : 'text-[var(--text-tertiary)]'
                             }`}
-                          >
-                            {count}
-                          </span>
+                          />
                         </button>
                       )}
                       {!editing && (

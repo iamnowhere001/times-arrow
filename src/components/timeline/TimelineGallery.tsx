@@ -5,6 +5,9 @@ import { formatVideoDuration, isVideoPhoto } from '@/utils';
 // 时间语义统一入口：本文件原先内联了 `dateTaken || lastModified || 0`
 import { photoTakenTime } from '@/lib/media/photoTime';
 import { ChevronLeftIcon } from '@/components/icons';
+import ImmersiveView from '@/components/common/ImmersiveView';
+import { Stat } from '@/components/common/Stat';
+import { DotGrid } from '@/components/common/DotField';
 
 interface TimelineGalleryProps {
   /** 已按拍摄时间升序排列的照片 */
@@ -605,9 +608,15 @@ const MonthBlockBase: React.FC<MonthBlockProps> = ({
            同时一眼就能看出是「内容待加载」，而不是一块空白的板子 */
         <div
           aria-hidden
-          className="flex gap-3 overflow-hidden pb-3"
+          className="relative flex gap-3 overflow-hidden pb-3"
           style={{ height: height + 12 }}
         >
+          {/* 点阵底噪：加载态也属于产品语言，不用一块纯色板子等待（K30） */}
+          <DotGrid
+            cols={48}
+            rows={6}
+            className="pointer-events-none absolute inset-0 h-full w-full text-[var(--text-quaternary)] opacity-[0.07]"
+          />
           {[1.4, 1, 1.6, 1.05, 1.35, 0.9].map((aspect, i) => (
             <div
               key={i}
@@ -851,6 +860,10 @@ interface TimelineHeaderProps {
   videos: number;
   density: DensityKey;
   onDensityChange: (key: DensityKey) => void;
+  /** 跳到今天所在的月份；未提供表示库里没有今天的照片 */
+  onJumpToday?: () => void;
+  /** 跳到今年；未提供表示今年没有照片 */
+  onJumpThisYear?: () => void;
 }
 
 const TimelineHeaderBase: React.FC<TimelineHeaderProps> = ({
@@ -862,6 +875,8 @@ const TimelineHeaderBase: React.FC<TimelineHeaderProps> = ({
   videos,
   density,
   onDensityChange,
+  onJumpToday,
+  onJumpThisYear,
 }) => (
   <header
     className={`app-drag z-20 shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] backdrop-blur-xl ${
@@ -886,15 +901,15 @@ const TimelineHeaderBase: React.FC<TimelineHeaderProps> = ({
           <div className="hidden min-w-0 items-baseline gap-2 text-[11px] text-[var(--text-tertiary)] lg:flex">
             {yearsCount > 0 && (
               <>
-                <span className="font-numeric tabular-nums">{yearsCount} 年</span>
+                <Stat value={yearsCount} unit="年" emphasis="micro" />
                 <Dot />
               </>
             )}
-            <span className="font-numeric tabular-nums">{total} 项</span>
+            <Stat value={total} unit="项" emphasis="micro" />
             {videos > 0 && (
               <>
                 <Dot />
-                <span className="font-numeric tabular-nums">视频 {videos}</span>
+                <Stat value={videos} unit="视频" emphasis="micro" />
               </>
             )}
             {rangeLabel && (
@@ -907,32 +922,61 @@ const TimelineHeaderBase: React.FC<TimelineHeaderProps> = ({
         )}
       </div>
 
-      {/* 密度切换：与图库网格缩放同一心智 */}
-      <div
-        role="radiogroup"
-        aria-label="卡片大小"
-        className="ml-auto flex shrink-0 items-center gap-0.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] p-0.5"
-      >
-        {DENSITY_OPTIONS.map((opt) => {
-          const active = density === opt.key;
-          return (
-            <button
-              key={opt.key}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              title={`${opt.label}显示 · ${opt.hint}`}
-              onClick={() => onDensityChange(opt.key)}
-              className={`h-[22px] rounded-md px-2.5 text-[11px] font-medium transition-colors duration-150 ${
-                active
-                  ? 'bg-[var(--bg-glass-active)] text-[var(--text-primary)]'
-                  : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
-              }`}
-            >
-              {opt.label}
-            </button>
-          );
-        })}
+      {/* 右侧：回顾入口 + 密度切换。
+          「这一天 / 这一年」只在库里确实有对应内容时出现，不新增侧栏一级入口（Q9）。 */}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {(onJumpToday || onJumpThisYear) && (
+          <div className="hidden items-center gap-1 sm:flex">
+            {onJumpThisYear && (
+              <button
+                type="button"
+                onClick={onJumpThisYear}
+                title="跳到今年的照片"
+                className="h-[24px] rounded-md border border-[var(--border-subtle)] px-2 text-[11px] font-medium text-[var(--text-tertiary)] transition-colors duration-150 hover:border-[var(--border-default)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-secondary)]"
+              >
+                这一年
+              </button>
+            )}
+            {onJumpToday && (
+              <button
+                type="button"
+                onClick={onJumpToday}
+                title="跳到今天所在的月份"
+                className="h-[24px] rounded-md border border-[var(--border-subtle)] px-2 text-[11px] font-medium text-[var(--text-tertiary)] transition-colors duration-150 hover:border-[var(--border-default)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-secondary)]"
+              >
+                这一天
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 密度切换：与图库网格缩放同一心智 */}
+        <div
+          role="radiogroup"
+          aria-label="卡片大小"
+          className="flex shrink-0 items-center gap-0.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] p-0.5"
+        >
+          {DENSITY_OPTIONS.map((opt) => {
+            const active = density === opt.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                title={`${opt.label}显示 · ${opt.hint}`}
+                onClick={() => onDensityChange(opt.key)}
+                className={`h-[22px] rounded-md px-2.5 text-[11px] font-medium transition-colors duration-150 ${
+                  active
+                    ? 'bg-[var(--bg-glass-active)] text-[var(--text-primary)]'
+                    : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   </header>
@@ -945,8 +989,14 @@ const TimelineHeader = memo(TimelineHeaderBase);
 // ---------------------------------------------------------------------------
 
 const EmptyState: React.FC<{ onBack: () => void }> = ({ onBack }) => (
-  <div className="flex flex-1 items-center justify-center px-8">
-    <div className="max-w-sm text-center animate-fadeInUp">
+  <div className="relative flex flex-1 items-center justify-center overflow-hidden px-8">
+    {/* 空态也留在点阵世界里：底噪退到几乎不可见，只提供「同一套语言」的连续性（K30） */}
+    <DotGrid
+      cols={32}
+      rows={10}
+      className="pointer-events-none absolute left-1/2 top-1/2 w-[min(560px,80%)] -translate-x-1/2 -translate-y-1/2 text-[var(--text-quaternary)] opacity-[0.12]"
+    />
+    <div className="relative max-w-sm text-center animate-fadeInUp">
       <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.1)] border border-[rgba(var(--accent-blue-rgb),0.22)] text-[var(--accent-blue)]">
         <ClockIcon size={30} />
       </div>
@@ -1047,6 +1097,31 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
   }, [years]);
 
   const maxYearTotal = useMemo(() => years.reduce((m, y) => Math.max(m, y.total), 0), [years]);
+
+  /**
+   * 「这一天 / 这一年」的锚点。
+   *
+   * 只做跳转，不新增一级入口：入口必须说得清它去哪，且库里确实有对应内容才出现，
+   * 否则按钮会把用户带到一个空月份。Q9 已明确不从侧栏进入。
+   */
+  const todayTarget = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const day = now.getDate();
+    const monthKey = `${year}-${month}`;
+    const group = monthByKey.get(monthKey);
+    if (!group) return null;
+    const hasDay = group.photos.some((photo) => {
+      const ts = photoTimestamp(photo);
+      if (!ts) return false;
+      const date = new Date(ts);
+      return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day;
+    });
+    return hasDay ? { monthKey } : null;
+  }, [monthByKey]);
+  const thisYear = new Date().getFullYear();
+  const hasThisYear = years.some((group) => group.year === thisYear);
 
   // ---- 滚动状态：当前月份 / 年份、时间脊进度、回到顶部 ----
   const [activeMonthKey, setActiveMonthKey] = useState<string | null>(null);
@@ -1241,7 +1316,7 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
   // 空状态
   if (totalPhotos === 0) {
     return (
-      <div className="flex flex-1 flex-col bg-transparent">
+      <ImmersiveView>
         <TimelineHeader
           onBack={onBack}
           isLeftPaneOpen={isLeftPaneOpen}
@@ -1253,12 +1328,12 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
           onDensityChange={handleDensityChange}
         />
         <EmptyState onBack={onBack} />
-      </div>
+      </ImmersiveView>
     );
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-transparent">
+    <ImmersiveView>
       <TimelineHeader
         onBack={onBack}
         isLeftPaneOpen={isLeftPaneOpen}
@@ -1268,6 +1343,8 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
         videos={videoCount}
         density={density}
         onDensityChange={handleDensityChange}
+        onJumpToday={todayTarget ? () => scrollToMonth(todayTarget.monthKey) : undefined}
+        onJumpThisYear={hasThisYear ? () => scrollToYear(thisYear) : undefined}
       />
 
       {/* 屏幕阅读器播报：当前浏览到的年月，配合键盘导航成为可感知的状态 */}
@@ -1379,7 +1456,7 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </ImmersiveView>
   );
 };
 

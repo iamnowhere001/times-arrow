@@ -535,7 +535,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-[rgba(12,11,10,0.96)] backdrop-blur-xl flex flex-col animate-fadeIn overflow-hidden select-none"
+      className="immersive-surface fixed inset-0 z-[100] bg-[rgba(12,11,10,0.96)] backdrop-blur-xl flex flex-col animate-fadeIn overflow-hidden select-none"
       onClick={handleBackdropClick}
     >
       {/* 顶栏：文件名 / 序号 / 缩放或视频信息 */}
@@ -543,7 +543,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
         className={`absolute top-6 left-0 right-0 flex justify-center z-30 transition-opacity duration-500 ${chromeClass}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="max-w-[min(72vw,560px)] bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] px-6 py-2 rounded-full shadow-2xl flex items-center gap-4 text-sm font-medium text-[rgba(255,255,255,0.95)]">
+        <div className="max-w-[min(72vw,560px)] bg-[var(--bg-elevated)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] px-6 py-2 rounded-full shadow-2xl flex items-center gap-4 text-sm font-medium text-[rgba(255,255,255,0.95)]">
           <span className="truncate max-w-[280px]">{photo.name}</span>
           {typeof currentIndex === 'number' &&
             currentIndex >= 0 &&
@@ -597,7 +597,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
           e.stopPropagation();
           onClose();
         }}
-        className={`absolute top-6 right-6 z-30 w-10 h-10 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl hover:bg-[rgba(50,50,60,0.9)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] transition-all duration-300 border border-[rgba(255,255,255,0.1)] hover:scale-105 active:scale-95 ${chromeClass}`}
+        className={`absolute top-6 right-6 z-30 w-10 h-10 bg-[var(--bg-elevated)] backdrop-blur-xl hover:bg-[var(--bg-glass-hover)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] transition-all duration-300 border border-[rgba(255,255,255,0.1)] hover:scale-105 active:scale-95 ${chromeClass}`}
         title="关闭（Esc）"
         aria-label="关闭预览"
       >
@@ -798,7 +798,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
             }}
           >
             <button
-              className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform -translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg"
+              className="w-12 h-12 bg-[var(--bg-elevated)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform -translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg"
               title="上一张（←）"
               aria-label="上一张"
             >
@@ -829,7 +829,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
             }}
           >
             <button
-              className="w-12 h-12 bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg"
+              className="w-12 h-12 bg-[var(--bg-elevated)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-full flex items-center justify-center text-[rgba(255,255,255,0.9)] opacity-40 group-hover:opacity-100 group-hover:border-[rgba(var(--accent-blue-rgb),0.5)] transform translate-x-2 group-hover:translate-x-0 transition-all duration-300 shadow-lg"
               title="下一张（→）"
               aria-label="下一张"
             >
@@ -854,7 +854,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
           className={`absolute bottom-8 left-0 right-0 flex justify-center z-30 pointer-events-none transition-all duration-500 transform ${showControls ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-2xl px-2 py-2 flex items-center gap-1 shadow-2xl pointer-events-auto">
+          <div className="bg-[var(--bg-elevated)] backdrop-blur-xl border border-[rgba(255,255,255,0.1)] rounded-2xl px-2 py-2 flex items-center gap-1 shadow-2xl pointer-events-auto">
             {onToggleFavorite && (
               <>
                 <button
@@ -1014,7 +1014,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
                 <div
                   role="menu"
                   aria-label="幻灯片间隔"
-                  className="absolute bottom-12 left-1/2 -translate-x-1/2 w-[132px] p-1 rounded-2xl bg-[rgba(30,30,40,0.95)] backdrop-blur-xl border border-[rgba(255,255,255,0.12)] shadow-2xl animate-scaleIn"
+                  className="absolute bottom-12 left-1/2 -translate-x-1/2 w-[132px] p-1 rounded-2xl bg-[var(--bg-modal)] backdrop-blur-xl border border-[rgba(255,255,255,0.12)] shadow-2xl animate-scaleIn"
                 >
                   {SLIDESHOW_INTERVAL_OPTIONS.map((seconds) => {
                     const active = slideshowInterval === seconds;
@@ -1071,7 +1071,7 @@ const QuickLook: React.FC<QuickLookProps> = ({
       {/* 视频兼容性提示：容器可能不被内置解码器支持时提前给出预期管理 */}
       {isVideo && showCodecHint && (
         <div className="absolute bottom-32 left-0 right-0 flex justify-center z-20 pointer-events-none px-4">
-          <span className="max-w-[min(80vw,520px)] px-3 py-1.5 rounded-full text-[11px] text-center font-medium text-[rgba(255,255,255,0.82)] bg-[rgba(30,30,40,0.85)] backdrop-blur-xl border border-[rgba(255,255,255,0.12)] animate-fadeInUp">
+          <span className="max-w-[min(80vw,520px)] px-3 py-1.5 rounded-full text-[11px] text-center font-medium text-[rgba(255,255,255,0.82)] bg-[var(--bg-elevated)] backdrop-blur-xl border border-[rgba(255,255,255,0.12)] animate-fadeInUp">
             该容器格式可能无法在应用内播放，若没有画面可用「在访达中打开」
           </span>
         </div>

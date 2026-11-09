@@ -17,18 +17,22 @@ import React from 'react';
 /** 数量级：决定字号与颜色档位 */
 export type StatEmphasis = 'hero' | 'inline' | 'micro';
 
-const NUMBER_CLASS: Record<StatEmphasis, string> = {
-  hero: 'text-[22px] font-semibold leading-none tracking-[-0.01em] text-[var(--text-primary)]',
-  inline: 'text-[13px] font-semibold text-[var(--text-primary)]',
-  micro: 'text-[11.5px] font-medium text-[var(--text-secondary)]',
+const NUMBER_SIZE: Record<StatEmphasis, string> = {
+  hero: 'text-[22px] font-semibold leading-none tracking-[-0.01em]',
+  inline: 'text-[13px] font-semibold',
+  micro: 'text-[11.5px] font-medium',
 };
 
+const NUMBER_COLOR = 'text-[var(--text-primary)]';
+
 /** 单位比数字低一档：数字是主角，单位只是它的量纲 */
-const UNIT_CLASS: Record<StatEmphasis, string> = {
-  hero: 'text-[12px] font-medium text-[var(--text-tertiary)]',
-  inline: 'text-[11.5px] font-medium text-[var(--text-tertiary)]',
-  micro: 'text-[11px] font-medium text-[var(--text-tertiary)]',
+const UNIT_SIZE: Record<StatEmphasis, string> = {
+  hero: 'text-[12px] font-medium',
+  inline: 'text-[11.5px] font-medium',
+  micro: 'text-[11px] font-medium',
 };
+
+const UNIT_COLOR = 'text-[var(--text-tertiary)]';
 
 const GAP_CLASS: Record<StatEmphasis, string> = {
   hero: 'gap-1.5',
@@ -45,6 +49,14 @@ interface StatProps {
   label?: string;
   emphasis?: StatEmphasis;
   className?: string;
+  /**
+   * 继承父级文字颜色。
+   *
+   * 侧栏导航行的选中态是整行反白（`--accent-contrast`），若数字自带
+   * `--text-primary` 就会在同一行里出现两种白。开启后只保留字号 / 字重，
+   * 颜色交给所在行决定；需要强调数字时保持默认。
+   */
+  inheritColor?: boolean;
   /** 无障碍：默认整块作为一个可读单元播报 */
   ariaLabel?: string;
 }
@@ -59,15 +71,20 @@ export const Stat: React.FC<StatProps> = ({
   label,
   emphasis = 'inline',
   className,
+  inheritColor = false,
   ariaLabel,
 }) => (
   <span
     className={`inline-flex items-baseline whitespace-nowrap font-numeric tabular-nums ${GAP_CLASS[emphasis]} ${className ?? ''}`}
     aria-label={ariaLabel}
   >
-    {label && <span className={UNIT_CLASS[emphasis]}>{label}</span>}
-    <span className={NUMBER_CLASS[emphasis]}>{value}</span>
-    {unit && <span className={UNIT_CLASS[emphasis]}>{unit}</span>}
+    {label && (
+      <span className={`${UNIT_SIZE[emphasis]} ${inheritColor ? '' : UNIT_COLOR}`}>{label}</span>
+    )}
+    <span className={`${NUMBER_SIZE[emphasis]} ${inheritColor ? '' : NUMBER_COLOR}`}>{value}</span>
+    {unit && (
+      <span className={`${UNIT_SIZE[emphasis]} ${inheritColor ? '' : UNIT_COLOR}`}>{unit}</span>
+    )}
   </span>
 );
 

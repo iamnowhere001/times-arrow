@@ -674,6 +674,12 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({
                     </div>
                   </div>
 
+                  {videoStatus === 'idle' && !videoDuration && (
+                    <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-quaternary)]">
+                      时长与分辨率由播放器首次读取后补上；若长时间停留在「读取中」，可直接在访达中用系统播放器打开。
+                    </p>
+                  )}
+
                   {playbackUncertain && videoStatus !== 'error' && (
                     <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-quaternary)]">
                       该容器（{videoExt.toUpperCase()}

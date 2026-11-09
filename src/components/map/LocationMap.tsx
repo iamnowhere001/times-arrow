@@ -3,6 +3,9 @@ import { Photo } from '@/types';
 import { ThumbImage } from '@/components/grid/ThumbnailImage';
 import { formatVideoDuration, isVideoPhoto, photoOriginalTime } from '@/utils';
 import { ChevronLeftIcon, PlusIcon } from '@/components/icons';
+import ImmersiveView from '@/components/common/ImmersiveView';
+import { Stat, StatPill } from '@/components/common/Stat';
+import { DotPinIcon } from '@/components/common/DotField';
 import {
   GeoCluster,
   MapCamera,
@@ -32,8 +35,6 @@ interface LocationMapProps {
   onBack: () => void;
   /** 侧栏是否展开：标题栏据此为红绿灯让位 */
   isLeftPaneOpen: boolean;
-  /** 浅色主题：点阵底图与光点需要换一套对比度 */
-  isLight: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,9 @@ const ZOOM_STEP = 1.7;
 const KEY_PAN_STEP = 90;
 /** 照片条最多渲染的缩略图数量 */
 const STRIP_LIMIT = 120;
+
+/** 离开地图时记住视野：从 QuickLook / 图库回来仍停在刚才看的那片地方 */
+let savedCamera: MapCamera | null = null;
 
 /** canvas 配色：与 styles.css 的暗房色板保持一致（canvas 读不到 CSS 变量） */
 const PALETTE = {
@@ -413,8 +417,13 @@ const LocationMap: React.FC<LocationMapProps> = ({
   onQuickLook,
   onBack,
   isLeftPaneOpen,
-  isLight,
 }) => {
+  /**
+   * 沉浸态强制暗房色板（K28）：地图外壳走 `.immersive-surface` 后，
+   * 浅色主题下画布仍是暖黑底，若继续用浅色主题的深色点阵会看不见。
+   * 这里不在两套色板间切换，三处整页视图共享同一种「暗房」。
+   */
+  const isLight = false;
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -486,9 +495,22 @@ const LocationMap: React.FC<LocationMapProps> = ({
     if (viewport.width <= 0 || viewport.height <= 0) return;
     setCamera((prev) => {
       if (prev) return clampCamera(prev, viewport);
-      return fitCameraToPoints(points, viewport) ?? worldCamera(viewport);
+      const restored = savedCamera ? clampCamera(savedCamera, viewport) : null;
+      return restored ?? fitCameraToPoints(points, viewport) ?? worldCamera(viewport);
     });
   }, [viewport, points]);
+
+  // 离开地图时保存视野；下次进入（含从 QuickLook 返回）先回到这里，再按当前视口夹取
+  const cameraRef = useRef(camera);
+  useEffect(() => {
+    cameraRef.current = camera;
+  }, [camera]);
+  useEffect(
+    () => () => {
+      if (cameraRef.current) savedCamera = cameraRef.current;
+    },
+    []
+  );
 
   const clusters = useMemo(() => {
     if (!camera || viewport.width <= 0 || viewport.height <= 0) return [];
@@ -850,7 +872,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
   const isEmpty = points.length === 0;
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-transparent">
+    <ImmersiveView>
       <header
         className={`app-drag z-20 shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] backdrop-blur-xl ${
           isLeftPaneOpen ? 'px-4' : 'pl-[78px] pr-4'
@@ -872,14 +894,16 @@ const LocationMap: React.FC<LocationMapProps> = ({
               按地点浏览
             </h1>
             {!isEmpty && (
-              <div className="hidden items-center gap-2 text-[11px] text-[var(--text-tertiary)] lg:flex">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-glass)] px-2 py-0.5">
-                  <MapPinIcon />
-                  {locationCount} 个地点
-                </span>
-                <span className="font-numeric tabular-nums">{points.length} 张照片</span>
+              <div className="hidden items-center gap-2 lg:flex">
+                <StatPill
+                  icon={<DotPinIcon size={12} />}
+                  value={locationCount}
+                  unit="个地点"
+                  title="带 GPS 的拍摄地点数量"
+                />
+                <Stat value={points.length} unit="张照片" emphasis="micro" />
                 {missingCount > 0 && (
-                  <span className="text-[var(--text-quaternary)]">
+                  <span className="text-[11px] text-[var(--text-quaternary)]">
                     · 另有 {missingCount} 张未记录地点
                   </span>
                 )}
@@ -987,10 +1011,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
               <div className="pointer-events-none absolute bottom-4 left-4 z-20">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 py-1 text-[11px] text-[var(--text-tertiary)] backdrop-blur-xl">
                   视野内
-                  <span className="font-numeric tabular-nums text-[var(--text-secondary)]">
-                    {inViewCount}
-                  </span>
-                  张
+                  <Stat value={inViewCount} unit="张" emphasis="micro" />
                 </span>
               </div>
             )}
@@ -1146,7 +1167,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
           </>
         )}
       </div>
-    </div>
+    </ImmersiveView>
   );
 };
 

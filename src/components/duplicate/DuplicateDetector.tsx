@@ -9,6 +9,8 @@ import {
 import { useThumbnailSrc } from '@/hooks/useThumbnailSrc';
 import DeleteConfirmModal from '@/components/modal/DeleteConfirmModal';
 import { ChevronLeftIcon, RefreshIcon } from '@/components/icons';
+import { Stat, StatPill } from '@/components/common/Stat';
+import { DotGrid } from '@/components/common/DotField';
 import { DUPLICATE_SIMILARITY_MAX, DUPLICATE_SIMILARITY_MIN } from '@/lib/duplicate/constants';
 
 /**
@@ -645,11 +647,10 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                     <span className="relative inline-flex rounded-full w-2.5 h-2.5 bg-[var(--accent-pink)]" />
                   </span>
                   <span className="text-sm font-semibold text-[var(--text-primary)] whitespace-nowrap">
-                    待删除 {markedPhotos.length} 张
+                    待删除
                   </span>
-                  <span className="text-xs text-[var(--text-tertiary)] whitespace-nowrap tabular-nums">
-                    约 {formatBytes(markedSize)}
-                  </span>
+                  <Stat value={markedPhotos.length} unit="张" emphasis="inline" />
+                  <Stat value={formatBytes(markedSize)} label="约" emphasis="micro" />
                   <button
                     onClick={handleClearSelection}
                     className="ml-1 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] px-2 py-1 rounded-lg hover:bg-[var(--bg-glass-hover)] transition-all duration-200"
@@ -690,16 +691,18 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                     </span>
                   ) : (
                     <>
-                      <span className="text-sm font-semibold text-[var(--text-primary)] whitespace-nowrap tabular-nums">
-                        {stats.groupCount} 组相似
-                      </span>
-                      {/* 明亮模式下这两颗胶囊最容易糊在浅底上，文字各提一档、底色各加深一档 */}
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[var(--bg-glass)] border border-[var(--border-subtle)] text-[var(--text-secondary)] whitespace-nowrap tabular-nums">
-                        涉及 {stats.totalDuplicateCount} 张
-                      </span>
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[rgba(var(--accent-pink-rgb),0.16)] border border-[rgba(var(--accent-pink-rgb),0.35)] text-[var(--accent-pink)] whitespace-nowrap tabular-nums">
-                        可清理 {copyStats.count} 张 · 约 {formatBytes(copyStats.size)}
-                      </span>
+                      <Stat value={stats.groupCount} unit="组相似" emphasis="inline" />
+                      <StatPill
+                        value={stats.totalDuplicateCount}
+                        unit="张"
+                        title="涉及的重复照片总数"
+                      />
+                      <StatPill
+                        value={copyStats.count}
+                        unit={`张 · 可释放 ${formatBytes(copyStats.size)}`}
+                        tone="accent"
+                        title="清掉每组拷贝后可释放的空间"
+                      />
                     </>
                   )}
                 </div>
@@ -837,8 +840,13 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
 
             {/* 从未检测：引导首扫 —— 与「扫完很干净」是两种心境，不能共用一张绿色对勾脸 */}
             {!isProcessing && duplicateGroups.length === 0 && progress === null && (
-              <div className="h-full flex items-center justify-center p-8 text-center">
-                <div className="max-w-sm animate-fadeInUp">
+              <div className="relative flex h-full items-center justify-center overflow-hidden p-8 text-center">
+                <DotGrid
+                  cols={36}
+                  rows={9}
+                  className="pointer-events-none absolute left-1/2 top-1/2 w-[min(520px,78%)] -translate-x-1/2 -translate-y-1/2 text-[var(--text-quaternary)] opacity-[0.12]"
+                />
+                <div className="relative max-w-sm animate-fadeInUp">
                   <div className="w-20 h-20 mx-auto mb-5 rounded-3xl bg-[rgba(var(--accent-blue-rgb),0.1)] border border-[rgba(var(--accent-blue-rgb),0.22)] text-[var(--accent-blue)] flex items-center justify-center">
                     <DuplicateGlyph />
                   </div>
@@ -1114,27 +1122,17 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
               <h2 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-quaternary)] mb-3">
                 本次检测
               </h2>
-              {/* 「14 组 / 建议保留 14 / 可清理 14」是同义重复，只留真正影响决定的数字 */}
+              {/* 「14 组 / 建议保留 14 / 可清理 14」是同义重复，只留真正影响决定的数字。
+                  可释放空间是本页唯一的 hero：它是最能推动「按下删除」的那个结论。 */}
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-xs text-[var(--text-tertiary)]">相似组</span>
-                <span className="text-sm font-semibold tabular-nums text-[var(--text-primary)]">
-                  {stats.groupCount}
-                </span>
+                <span className="text-xs text-[var(--text-tertiary)]">可释放</span>
+                <Stat value={formatBytes(copyStats.size)} emphasis="hero" />
               </div>
-              <p className="mt-2.5 text-[11px] leading-relaxed text-[var(--text-tertiary)]">
-                涉及{' '}
-                <span className="font-medium tabular-nums text-[var(--text-primary)]">
-                  {stats.totalDuplicateCount}
-                </span>{' '}
-                张 · 可清理{' '}
-                <span className="font-medium tabular-nums text-[var(--accent-pink)]">
-                  {copyStats.count}
-                </span>{' '}
-                张 · 可释放{' '}
-                <span className="font-medium tabular-nums text-[var(--accent-cyan)]">
-                  {formatBytes(copyStats.size)}
-                </span>
-              </p>
+              <div className="mt-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
+                <Stat value={stats.groupCount} unit="组" label="相似" emphasis="micro" />
+                <Stat value={stats.totalDuplicateCount} unit="张" label="涉及" emphasis="micro" />
+                <Stat value={copyStats.count} unit="张" label="可清理" emphasis="micro" />
+              </div>
 
               <p className="mt-4 text-[11px] leading-relaxed text-[var(--text-quaternary)]">
                 每组以创建时间最早的一张作为原图。删除只会移入系统回收站，随时可以还原。
