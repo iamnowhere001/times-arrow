@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { formatBytes } from '@/lib/format/format';
+import { loadDataHealth, openCrashLogFile } from '@/lib/dataAssets/health';
 
-type Tab = 'operations' | 'relink' | 'backup';
+type Tab = 'operations' | 'relink' | 'backup' | 'health';
 type Notify = (message: string, type: 'success' | 'info' | 'error' | 'warning') => void;
 
 interface DataAssetsModalProps {
@@ -73,6 +75,28 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
   const [backupRunning, setBackupRunning] = useState(false);
   const [summary, setSummary] = useState<BackupSummary | null>(null);
 
+  // ---- 数据健康检查 ----
+  const [health, setHealth] = useState<DataHealthReport | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+
+  const loadHealth = useCallback(async () => {
+    setHealthLoading(true);
+    setHealthError(null);
+    try {
+      const res = await loadDataHealth();
+      if (res.ok) setHealth(res.data);
+      else setHealthError(res.error);
+    } finally {
+      setHealthLoading(false);
+    }
+  }, []);
+
+  const handleOpenCrashLog = async () => {
+    const error = await openCrashLogFile();
+    if (error) onNotify?.(error, 'error');
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -94,7 +118,8 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
     if (!isOpen) return;
     if (tab === 'operations') void loadLog();
     if (tab === 'relink') void loadCandidates();
-  }, [isOpen, tab, loadLog, loadCandidates]);
+    if (tab === 'health') void loadHealth();
+  }, [isOpen, tab, loadLog, loadCandidates, loadHealth]);
 
   if (!isOpen) return null;
 
@@ -202,6 +227,7 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
     { key: 'operations', label: '最近操作' },
     { key: 'relink', label: '路径重连' },
     { key: 'backup', label: '增量备份' },
+    { key: 'health', label: '健康检查' },
   ];
 
   return (
@@ -362,6 +388,158 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
                   </div>
                 </div>
               ))}
+            </>
+          )}
+
+          {tab === 'health' && (
+            <>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-[var(--text-tertiary)]">
+                  只读取本机统计：配置与备份、路径重连、缩略图缓存、迁移与崩溃记录。不上传任何内容。
+                </p>
+                <button
+                  className={smallBtn}
+                  disabled={healthLoading}
+                  onClick={() => void loadHealth()}
+                >
+                  {healthLoading ? '检查中…' : '重新检查'}
+                </button>
+              </div>
+
+              {healthError && (
+                <div className={card}>
+                  <p className="text-xs text-[var(--accent-pink)]">{healthError}</p>
+                </div>
+              )}
+
+              {health && (
+                <>
+                  {health.warnings.length === 0 ? (
+                    <div className={card}>
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        未发现需要处理的问题。配置有备份，标注没有待续接的孤儿，崩溃日志为空。
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-[rgba(var(--accent-orange-rgb),0.35)] bg-[rgba(var(--accent-orange-rgb),0.1)] px-4 py-3">
+                      <p className="mb-1.5 text-xs font-medium text-[var(--accent-orange)]">
+                        需要注意 {health.warnings.length} 项
+                      </p>
+                      <ul className="space-y-1">
+                        {health.warnings.map((warning) => (
+                          <li
+                            key={warning}
+                            className="text-[11px] leading-relaxed text-[var(--text-secondary)]"
+                          >
+                            · {warning}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className={card}>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-medium text-[var(--text-secondary)]">配置与备份</p>
+                      <p className="text-[11px] text-[var(--text-quaternary)]">
+                        结构版本 v{health.config.version}
+                      </p>
+                    </div>
+                    <div className="mt-2 space-y-1.5 text-[11px] text-[var(--text-tertiary)]">
+                      <p>
+                        config.json：
+                        {health.config.exists
+                          ? `${formatBytes(health.config.size)} · ${fmtTime(health.config.mtime ?? 0)}`
+                          : '尚未写入'}
+                        {health.config.parseOk === false ? ' · 无法解析' : ''}
+                      </p>
+                      {health.config.backups.map((backup) => (
+                        <p
+                          key={backup.name}
+                          className={
+                            backup.exists && backup.parseOk === false
+                              ? 'text-[var(--accent-pink)]'
+                              : undefined
+                          }
+                        >
+                          {backup.name}：
+                          {backup.exists
+                            ? `${formatBytes(backup.size)} · ${fmtTime(backup.mtime ?? 0)}${
+                                backup.parseOk === false ? ' · 无法解析' : ''
+                              }`
+                            : '不存在'}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={`${card} grid grid-cols-2 gap-x-4 gap-y-3 text-[11px]`}>
+                    <div>
+                      <p className="text-[var(--text-quaternary)]">待路径重连</p>
+                      <p className="mt-1 text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                        {health.orphans} 条
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-quaternary)]">缩略图缓存</p>
+                      <p className="mt-1 text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                        {health.thumbCache.files} 个 · {formatBytes(health.thumbCache.bytes)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[var(--text-quaternary)]">
+                        上限 {health.thumbCache.limit} 个，超过时启动自动修剪
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-quaternary)]">操作日志</p>
+                      <p className="mt-1 text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                        {health.operationLog.entries} 条
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[var(--text-quaternary)]">
+                        {health.operationLog.lastAt
+                          ? `最近 ${fmtTime(health.operationLog.lastAt)}`
+                          : '还没有文件操作记录'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-quaternary)]">崩溃日志</p>
+                      <p className="mt-1 text-sm font-semibold tabular-nums text-[var(--text-primary)]">
+                        {health.crashLog.entries} 条
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[var(--text-quaternary)]">
+                        {health.crashLog.lastAt
+                          ? `最近 ${fmtTime(health.crashLog.lastAt)}`
+                          : '没有异常记录'}
+                      </p>
+                      {health.crashLog.entries > 0 && (
+                        <button
+                          className={`${smallBtn} mt-1.5`}
+                          onClick={() => void handleOpenCrashLog()}
+                        >
+                          打开日志
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={card}>
+                    <p className="text-xs font-medium text-[var(--text-secondary)]">最近一次启动迁移</p>
+                    {health.migration ? (
+                      <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+                        {fmtTime(health.migration.at)} ·{' '}
+                        {health.migration.error
+                          ? `失败：${health.migration.error}`
+                          : health.migration.changed && health.migration.stats
+                            ? `完成 v1 → v2：扫描 ${health.migration.stats.paths} 条路径，匹配 ${health.migration.stats.matched} 条，留下 ${health.migration.stats.orphans} 条孤儿待重连`
+                            : '无需迁移（配置已是当前结构）'}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-[11px] text-[var(--text-tertiary)]">
+                        还没有迁移记录。
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
 

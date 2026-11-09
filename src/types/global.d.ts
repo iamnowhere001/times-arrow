@@ -129,6 +129,47 @@ declare global {
     at: number;
   }
 
+  /** 上次运行留下的崩溃记录（主进程启动时取走并清空） */
+  interface CrashNotice {
+    at: number;
+    /** 异常来源：uncaught-exception / unhandled-rejection / render-process-gone / migration */
+    kind: string;
+    message: string;
+    stack?: string;
+  }
+
+  /** 数据健康检查报告（只读统计，不上传） */
+  interface DataHealthReport {
+    checkedAt: number;
+    config: {
+      path: string;
+      exists: boolean;
+      size: number;
+      mtime: number | null;
+      parseOk: boolean | null;
+      version: number;
+      backups: {
+        name: string;
+        exists: boolean;
+        size: number;
+        mtime: number | null;
+        parseOk: boolean | null;
+      }[];
+    };
+    orphans: number;
+    thumbCache: { dir: string; files: number; bytes: number; limit: number };
+    operationLog: { entries: number; lastAt: number | null; bytes: number };
+    crashLog: { entries: number; lastAt: number | null; path: string };
+    migration: {
+      at: number;
+      changed: boolean;
+      stats: { paths: number; matched: number; orphans: number } | null;
+      error?: string;
+    } | null;
+    corruptBackups: { name: string; size: number; mtime: number | null }[];
+    warnings: string[];
+  }
+
   /** 统一导入对话框的选择结果：文件与文件夹可混合多选 */
   interface PickedPaths {
     /** 直接选中的媒体文件（图片 / 视频）路径 */
@@ -243,6 +284,15 @@ declare global {
        * 启动加载完配置后调用一次；非空时应当提示用户。
        */
       storageNotices: () => Promise<IpcResult<StorageRecoveryNotice[]>>;
+      /**
+       * 取走「上次运行崩溃」的通知（取走即清空）。
+       * 启动时调用一次；非空时提示用户并给出「打开日志」出口。
+       */
+      crashNotices: () => Promise<IpcResult<CrashNotice[]>>;
+      /** 打开崩溃日志（路径由主进程决定，渲染层不传路径） */
+      openCrashLog: () => Promise<IpcResult<boolean>>;
+      /** 数据健康检查：配置备份、orphans、缩略图缓存、崩溃与迁移记录 */
+      getDataHealth: () => Promise<IpcResult<DataHealthReport>>;
       /** 批量计算内容指纹；未授权路径不出现在结果里 */
       computeFileIds: (paths: string[]) => Promise<IpcResult<Record<string, string>>>;
       /** 配置导出 / 导入（导出不含 AI 密钥） */

@@ -90,6 +90,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * 启动加载完配置后调用一次；非空时应当提示用户，否则他会以为数据凭空消失。
    */
   storageNotices: () => ipcRenderer.invoke('storage-notices'),
+  /**
+   * 取走「上次运行崩溃」的通知（取走即清空）。
+   * 启动时调用一次；非空时提示用户并给出「打开日志」出口。
+   */
+  crashNotices: () => ipcRenderer.invoke('crash-notices'),
+  /** 打开崩溃日志（路径由主进程决定，渲染层不传路径） */
+  openCrashLog: () => ipcRenderer.invoke('open-crash-log'),
+  /** 数据健康检查：配置备份、orphans、缩略图缓存、崩溃与迁移记录 */
+  getDataHealth: () => ipcRenderer.invoke('get-data-health'),
   /** 批量计算内容指纹（标注资产的跨重启身份） */
   computeFileIds: (paths) => ipcRenderer.invoke('compute-file-ids', paths),
   /** 数据资产：配置导出 / 导入、路径重连、操作日志、增量备份 */

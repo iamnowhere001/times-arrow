@@ -46,14 +46,6 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', error);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
 const path = require('path');
 const fs = require('fs');
 const { promisify } = require('util');
@@ -73,9 +65,31 @@ const { createMediaPipeline } = require('./main/media-pipeline.cjs');
 const { createAiService } = require('./main/ai.cjs');
 const { createDataAssets } = require('./main/data-assets.cjs');
 const { migrateAllStores } = require('./main/migrations.cjs');
+const { createCrashReporter } = require('./main/crash-report.cjs');
+const { createHealthCheck, writeMigrationReport } = require('./main/health.cjs');
 
 const { UNAUTHORIZED_ERROR, authorizeRoot, authorizePaths, isPathAuthorized } =
   createAuthorization();
+
+/**
+ * 崩溃记录器要在 process.on 注册之前可用：异常可能发生在模块求值期间，
+ * 而 handler 里引用的是这个绑定本身，事件触发时它已经初始化完成。
+ */
+const crashReporter = createCrashReporter({
+  userDataDir: app.getPath('userData'),
+  logger,
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  // 同步落盘 + 下次启动提示：DMG 用户没有终端，只打日志等于「悄悄坏了」（K4）
+  crashReporter.record('uncaught-exception', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  crashReporter.record('unhandled-rejection', reason);
+});
 
 const store = createStore({ userDataDir: app.getPath('userData'), logger });
 const {
@@ -101,6 +115,7 @@ const media = createMediaPipeline({
 const {
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
+  THUMB_CACHE_LIMIT,
   isHeicFile,
   isMediaFile,
   mimeTypeFor,
@@ -1195,6 +1210,32 @@ registerStoreIpc({ handle, ok, fail });
  */
 handle('storage-notices', async () => ok(drainStorageNotices()));
 
+/**
+ * 取走「上次运行崩溃」的通知（取走即清空）。
+ * 与存储损坏通知同一语义：只提示一次，避免每次启动都变成噪音。
+ */
+handle('crash-notices', async () => ok(crashReporter.drain()));
+
+/** 打开崩溃日志：路径由主进程决定，渲染层不传任何路径（因此不需要路径授权） */
+handle('open-crash-log', async () => {
+  if (!fs.existsSync(crashReporter.logPath)) {
+    return fail('还没有崩溃日志可打开');
+  }
+  const error = await shell.openPath(crashReporter.logPath);
+  return error ? fail(`无法打开日志：${error}`) : ok(true);
+});
+
+// 数据健康检查：只读统计，不上传任何内容
+const health = createHealthCheck({
+  store,
+  media,
+  userDataDir: app.getPath('userData'),
+  crashReporter,
+  logger,
+  thumbCacheLimit: THUMB_CACHE_LIMIT,
+});
+health.registerIpc({ handle, ok, fail });
+
 // AI 配置 / 分析 / 测试连接通道由 ./main/ai.cjs 提供
 registerAiIpc({ handle, ok, fail });
 const { recordOperation } = createDataAssets({
@@ -1352,10 +1393,25 @@ app.on('ready', () => {
       // v1 → v2：标注资产从「路径」换成「内容指纹」。必须在建窗口前跑完，
       // 否则渲染层拿到的是旧结构。迁移失败不能卡住启动 —— 旧配置仍在磁盘上，
       // 且写盘前已轮转 .bak 留了副本。
+      const startedAt = Date.now();
       try {
-        await migrateAllStores({ readStore, mergeStore, logger });
+        const result = await migrateAllStores({ readStore, mergeStore, logger });
+        await writeMigrationReport(app.getPath('userData'), {
+          at: startedAt,
+          changed: result.changed,
+          stats: result.stats,
+        });
       } catch (error) {
         logger.error('[migrate] 配置结构升级失败:', error);
+        // 失败也要留证据：下次启动的「数据健康检查」会显示这条记录，
+        // 崩溃提示里也能看到，用户至少知道该去 check .bak。
+        crashReporter.record('migration', error);
+        await writeMigrationReport(app.getPath('userData'), {
+          at: startedAt,
+          changed: false,
+          stats: null,
+          error: error?.message || String(error),
+        });
       }
     })
     .then(() => createWindow());
@@ -1365,6 +1421,16 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// 渲染进程崩溃（OOM、GPU 进程连带退出等）同样要留证据：
+// 用户看到的是「窗口白了一下」，重启后却没有任何记录可查。
+app.on('render-process-gone', (event, webContents, details) => {
+  logger.error('Render process gone:', details);
+  crashReporter.record(
+    'render-process-gone',
+    new Error(`渲染进程退出：${details.reason}（exitCode ${details.exitCode}）`)
+  );
 });
 
 app.on('activate', () => {

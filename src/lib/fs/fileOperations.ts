@@ -6,6 +6,7 @@
  */
 
 import { Photo } from '@/types';
+import { mapWithConcurrency } from '@/lib/concurrency';
 
 /**
  * 把主进程回传的 fs 错误翻译成用户能看懂的一句话。
@@ -77,6 +78,24 @@ export interface TrashResult {
   pathlessRemoved: number;
 }
 
+/** 单张删除的归类结果（保持逐项语义，便于并发后按原顺序汇总） */
+type TrashOutcome =
+  | { kind: 'deleted'; id: string }
+  | { kind: 'pathless'; id: string }
+  | { kind: 'gone'; photo: Photo }
+  | { kind: 'failed'; photo: Photo; error: string };
+
+/**
+ * 批量删除的并发度。
+ *
+ * 删除是一来一回的系统调用（`shell.trashItem`），串行删几百张时主要时间花在等 IPC 上。
+ * 但也不能不设上限：回收站操作会占用文件句柄，并发太高反而更容易触发 EMFILE / EBUSY。
+ * 4 是在「明显快于串行」与「失败信息仍可读」之间的折中，且单项失败不牵连同批其他项。
+ *
+ * 注意：批量**移动**仍是主进程内串行 —— 那里必须逐项探测同名，并发会互相抢名字。
+ */
+const TRASH_CONCURRENCY = 4;
+
 /**
  * 批量移入回收站：返回成功删除的 id、失败照片与错误说明（失败项可用于重试）。
  * onProgress 逐项回调（含跳过 / 失败项），供调用方展示批量删除进度。
@@ -85,46 +104,67 @@ export const movePhotosToTrash = async (
   targets: Photo[],
   onProgress?: (done: number, total: number) => void
 ): Promise<TrashResult> => {
+  let done = 0;
+
+  const deleteOne = async (photo: Photo): Promise<TrashOutcome> => {
+    if (!window.electronAPI) {
+      return { kind: 'failed', photo, error: `「${photo.name}」：电子 API 不可用` };
+    }
+    if (!photo.path) {
+      // 拖放降级条目（只有 blob: 预览、磁盘上没有文件）：
+      // 「移入回收站」无处可移，从列表中移除即为唯一有意义的操作。
+      // 视为删除成功，交由调用方 removeWithCollapse 顺带回收 blob URL。
+      return { kind: 'pathless', id: photo.id };
+    }
+    try {
+      const result = await window.electronAPI.deleteFile(photo.path);
+      if (!result.ok) {
+        // 先判原始错误码再转译：转译后的文案里没有 ENOENT
+        if (isFileGoneError(result.error)) return { kind: 'gone', photo };
+        return {
+          kind: 'failed',
+          photo,
+          error: `「${photo.name}」：${humanizeFsError(result.error)}`,
+        };
+      }
+      return { kind: 'deleted', id: photo.id };
+    } catch (err) {
+      const message = (err as Error).message;
+      if (isFileGoneError(message)) return { kind: 'gone', photo };
+      return {
+        kind: 'failed',
+        photo,
+        error: `「${photo.name}」：${humanizeFsError(message)}`,
+      };
+    }
+  };
+
+  // 结果数组按 targets 原顺序回填：并发只影响「谁先完成」，
+  // 不影响错误列表的顺序 —— 调用方展示的失败项顺序必须稳定。
+  const outcomes = await mapWithConcurrency(targets, TRASH_CONCURRENCY, async (photo) => {
+    const outcome = await deleteOne(photo);
+    done += 1;
+    onProgress?.(done, targets.length);
+    return outcome;
+  });
+
   const deletedIds = new Set<string>();
   const failedPhotos: Photo[] = [];
   const errors: string[] = [];
   const gonePhotos: Photo[] = [];
   let pathlessRemoved = 0;
 
-  for (let i = 0; i < targets.length; i++) {
-    const photo = targets[i];
-    if (!window.electronAPI) {
-      failedPhotos.push(photo);
-      errors.push(`「${photo.name}」：电子 API 不可用`);
-    } else if (!photo.path) {
-      // 拖放降级条目（只有 blob: 预览、磁盘上没有文件）：
-      // 「移入回收站」无处可移，从列表中移除即为唯一有意义的操作。
-      // 视为删除成功，交由调用方 removeWithCollapse 顺带回收 blob URL。
-      deletedIds.add(photo.id);
+  for (const outcome of outcomes) {
+    if (!outcome) continue;
+    if (outcome.kind === 'deleted') deletedIds.add(outcome.id);
+    else if (outcome.kind === 'pathless') {
+      deletedIds.add(outcome.id);
       pathlessRemoved += 1;
-    } else {
-      try {
-        const result = await window.electronAPI.deleteFile(photo.path);
-        if (!result.ok) {
-          // 先判原始错误码再转译：转译后的文案里没有 ENOENT
-          if (isFileGoneError(result.error)) gonePhotos.push(photo);
-          else {
-            failedPhotos.push(photo);
-            errors.push(`「${photo.name}」：${humanizeFsError(result.error)}`);
-          }
-        } else {
-          deletedIds.add(photo.id);
-        }
-      } catch (err) {
-        const message = (err as Error).message;
-        if (isFileGoneError(message)) gonePhotos.push(photo);
-        else {
-          failedPhotos.push(photo);
-          errors.push(`「${photo.name}」：${humanizeFsError(message)}`);
-        }
-      }
+    } else if (outcome.kind === 'gone') gonePhotos.push(outcome.photo);
+    else {
+      failedPhotos.push(outcome.photo);
+      errors.push(outcome.error);
     }
-    onProgress?.(i + 1, targets.length);
   }
 
   return { deletedIds, failedPhotos, errors, gonePhotos, pathlessRemoved };

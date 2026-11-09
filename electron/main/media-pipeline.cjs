@@ -1048,6 +1048,7 @@ function createMediaPipeline({
   return {
     IMAGE_EXTENSIONS,
     VIDEO_EXTENSIONS,
+    THUMB_CACHE_LIMIT,
     isHeicFile,
     isVideoFile,
     isMediaFile,

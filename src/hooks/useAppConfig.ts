@@ -149,6 +149,24 @@ export function useAppConfig({
         );
       })();
 
+      // 上次运行崩溃 / 迁移失败也要可见。只打日志等于「悄悄坏了」：
+      // 用户没有终端，唯一能知道出过事的入口就是这里。
+      void (async () => {
+        const crashes = await window.electronAPI?.crashNotices?.();
+        if (cancelled || !crashes?.ok || crashes.data.length === 0) return;
+        const latest = crashes.data[crashes.data.length - 1];
+        const count = crashes.data.length > 1 ? `（共 ${crashes.data.length} 次）` : '';
+        const reason = latest?.message ? `：${latest.message.slice(0, 80)}` : '';
+        showToast(`上次运行记录了异常${count}${reason}`, 'warning', {
+          label: '打开日志',
+          onClick: () => {
+            void window.electronAPI?.openCrashLog?.().then((res) => {
+              if (res && !res.ok) showToast(res.error, 'error');
+            });
+          },
+        });
+      })();
+
       // v2 起这些 key 是内容指纹（不再是磁盘路径），变量名沿用只为少改一行
       (config.favorites ?? []).forEach((path) => favoritesRef.current.add(path));
       (config.hidden ?? []).forEach((path) => hiddenRef.current.add(path));

@@ -1042,24 +1042,35 @@ const App: React.FC = () => {
           </ErrorBoundary>
         ) : (
           <>
-            <Toolbar
-              onImport={handleImport}
-              viewMode={viewMode}
-              setViewMode={setViewMode}
-              isDetailsPaneOpen={isDetailsPaneOpen}
-              setIsDetailsPaneOpen={setIsDetailsPaneOpen}
-              isLeftPaneOpen={isLeftPaneOpen}
-              setIsLeftPaneOpen={setIsLeftPaneOpen}
-              searchQuery={searchQuery}
-              onSearchQueryChange={setSearchQuery}
-              searchInputRef={searchInputRef}
-              filters={filters}
-              onFiltersChange={updateFilters}
-              onResetFilters={resetFilters}
-              filterOptions={filterOptions}
-              hasVideos={counts.videos > 0 || filters.durationFilter !== 'any'}
-              onFilterOpenChange={handleFilterOpenChange}
-            />
+            {/* 工具栏单独兜底：它挂掉时图库与快捷键仍应可用，
+                不该让整屏降级到顶层「界面出了点问题」 */}
+            <ErrorBoundary
+              label="工具栏"
+              fallback={
+                <div className="app-drag shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4 py-3 text-xs text-[var(--text-tertiary)]">
+                  工具栏渲染出错，图库与快捷键仍可用；重新加载应用可恢复。
+                </div>
+              }
+            >
+              <Toolbar
+                onImport={handleImport}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                isDetailsPaneOpen={isDetailsPaneOpen}
+                setIsDetailsPaneOpen={setIsDetailsPaneOpen}
+                isLeftPaneOpen={isLeftPaneOpen}
+                setIsLeftPaneOpen={setIsLeftPaneOpen}
+                searchQuery={searchQuery}
+                onSearchQueryChange={setSearchQuery}
+                searchInputRef={searchInputRef}
+                filters={filters}
+                onFiltersChange={updateFilters}
+                onResetFilters={resetFilters}
+                filterOptions={filterOptions}
+                hasVideos={counts.videos > 0 || filters.durationFilter !== 'any'}
+                onFilterOpenChange={handleFilterOpenChange}
+              />
+            </ErrorBoundary>
             {/* 「已隐藏」视图里分子是隐藏项数，分母必须也用隐藏总数，
             否则会显示成「5 / 100 项」这种两个互斥集合相除的假比例 */}
             <ActiveFiltersBar
