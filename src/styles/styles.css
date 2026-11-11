@@ -11,8 +11,10 @@
 @source "../services";
 
 @theme {
-  /* 暗房色板：中性石墨 + 相纸白 + 安全灯琥珀
-     与下方 :root 的 CSS 变量保持一致，改色时两处同步。 */
+  /* 暗房色板的**唯一来源**：中性石墨 + 相纸白 + 安全灯琥珀。
+     :root 与 .light-theme 通过 var(--color-*) 引用这里的取值，改色只改这一处。
+     rgb 通道值供 rgba(var(--accent-*-rgb), α) 使用；hex 与通道值的一致性由
+     tests/unit/designTokens.test.ts 静态断言守住，避免「改了颜色忘了改通道」。 */
   --color-ink-900: #0c0b0a;
   --color-ink-800: #131211;
   --color-ink-700: #1b1917;
@@ -26,6 +28,11 @@
   --color-signal-danger: #e9585e;
   --color-signal-success: #63c08a;
   --color-signal-warning: #f08a3c;
+  /* 通道值：组件里大量使用 rgba(var(--accent-*-rgb), α)，无法从 hex 变量推导 */
+  --safelight-rgb: 232, 163, 61;
+  --signal-danger-rgb: 233, 88, 94;
+  --signal-success-rgb: 99, 192, 138;
+  --signal-warning-rgb: 240, 138, 60;
 
   /* 摄影参数与计数统一使用等宽数字，保证纵向对齐 */
   --font-numeric: 'SF Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -107,10 +114,12 @@
    继承链上自己的声明优先 —— 浅色主题因此压不住它。 */
 :root,
 .immersive-surface {
+  /* 基础色一律引用 @theme 的 --color-*（D15：改色只改一处）；
+     这里只定义语义映射、半透明叠加与阴影等无法从色板直接得出的值。 */
   /* 承载面：暖石墨，从底到高逐级抬升 */
-  --bg-primary: #0c0b0a;
-  --bg-secondary: #131211;
-  --bg-tertiary: #1b1917;
+  --bg-primary: var(--color-ink-900);
+  --bg-secondary: var(--color-ink-800);
+  --bg-tertiary: var(--color-ink-700);
   --bg-elevated: rgba(24, 22, 19, 0.86);
   --bg-glass: rgba(255, 246, 232, 0.05);
   --bg-glass-hover: rgba(255, 246, 232, 0.08);
@@ -121,7 +130,7 @@
   --text-secondary: rgba(250, 247, 242, 0.62);
   --text-tertiary: rgba(250, 247, 242, 0.42);
   --text-quaternary: rgba(250, 247, 242, 0.28);
-  --text-accent: #e8a33d;
+  --text-accent: var(--color-safelight);
 
   /* 浮层 / 输入 / 表格等承载面 */
   --bg-overlay: rgba(6, 6, 5, 0.62);
@@ -135,10 +144,10 @@
   --border-input: rgba(255, 246, 232, 0.16);
 
   /* 主色：安全灯琥珀。*-rgb 为通道值，供组件里 rgba(var(...), α) 使用 */
-  --accent-blue: #e8a33d;
-  --accent-blue-hover: #f2b75e;
-  --accent-blue-deep: #b87a22;
-  --accent-blue-rgb: 232, 163, 61;
+  --accent-blue: var(--color-safelight);
+  --accent-blue-hover: var(--color-safelight-hover);
+  --accent-blue-deep: var(--color-safelight-deep);
+  --accent-blue-rgb: var(--safelight-rgb);
 
   /* 次级：淡金，用于标签与信息类小字 */
   --accent-cyan: #e3b871;
@@ -151,16 +160,16 @@
   --accent-purple-rgb: 180, 131, 60;
 
   /* 语义色：保留可辨识的红/绿/橙，但降饱和以贴合暖色底 */
-  --accent-pink: #e9585e;
+  --accent-pink: var(--color-signal-danger);
   --accent-pink-hover: #f1777c;
   --accent-pink-deep: #c13b42;
-  --accent-pink-rgb: 233, 88, 94;
+  --accent-pink-rgb: var(--signal-danger-rgb);
 
-  --accent-green: #63c08a;
-  --accent-green-rgb: 99, 192, 138;
+  --accent-green: var(--color-signal-success);
+  --accent-green-rgb: var(--signal-success-rgb);
 
-  --accent-orange: #f08a3c;
-  --accent-orange-rgb: 240, 138, 60;
+  --accent-orange: var(--color-signal-warning);
+  --accent-orange-rgb: var(--signal-warning-rgb);
 
   --accent-yellow: #edc256;
   --accent-yellow-rgb: 237, 194, 86;
@@ -181,7 +190,7 @@
   --shadow-xl: 0 20px 56px rgba(0, 0, 0, 0.55);
   /* 最重的一层落影：弹窗 / QuickLook 镀铬。浅色主题在 .light-theme 另给暖棕值 */
   --shadow-2xl: 0 28px 64px rgba(0, 0, 0, 0.62);
-  --shadow-glow-blue: 0 6px 20px rgba(232, 163, 61, 0.18);
+  --shadow-glow-blue: 0 6px 20px rgba(var(--safelight-rgb), 0.18);
   --shadow-glow-purple: 0 0 24px rgba(180, 131, 60, 0.2);
   --shadow-glow-cyan: 0 0 24px rgba(227, 184, 113, 0.18);
   --shadow-inner: inset 0 1px 0 rgba(255, 246, 232, 0.05);
@@ -222,7 +231,7 @@
 
 .light-theme {
   /* 相纸：暖白而非中性灰，压印质感来自纸本身，不靠蓝调 */
-  --bg-primary: #f5f3ef;
+  --bg-primary: var(--color-paper);
   --bg-secondary: #edeae4;
   --bg-tertiary: #e1ddd5;
   --bg-elevated: rgba(255, 255, 255, 0.9);

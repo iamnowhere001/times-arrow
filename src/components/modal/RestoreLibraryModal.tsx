@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useModalA11y } from '@/hooks/useModalA11y';
 
 interface RestoreLibraryModalProps {
   isOpen: boolean;
@@ -34,22 +35,21 @@ const RestoreLibraryModal: React.FC<RestoreLibraryModalProps> = ({
   onConfirm,
 }) => {
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: dialogRef });
 
-  // Esc 暂不恢复、Enter 恢复：与系统弹窗一致的键盘习惯
+  // Enter 恢复：与系统弹窗一致的键盘习惯（Esc 关闭交由 useModalA11y）
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      } else if (e.key === 'Enter') {
+      if (e.key === 'Enter') {
         e.preventDefault();
         onConfirm();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose, onConfirm]);
+  }, [isOpen, onConfirm]);
 
   useEffect(() => {
     if (isOpen) confirmRef.current?.focus();
@@ -69,6 +69,7 @@ const RestoreLibraryModal: React.FC<RestoreLibraryModalProps> = ({
         className="bg-[var(--bg-modal)] backdrop-blur-xl rounded-xl shadow-2xl w-[440px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] animate-scaleIn p-6"
         role="dialog"
         aria-modal="true"
+        ref={dialogRef}
         aria-label="恢复上次的图库"
         onClick={(e) => e.stopPropagation()}
       >

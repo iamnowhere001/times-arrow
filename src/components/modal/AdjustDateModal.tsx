@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useModalA11y } from '@/hooks/useModalA11y';
 import { Photo } from '@/types';
 // 时间语义统一从 @/lib/media/photoTime 取（本文件原先内联了同一份回退链）
 import { photoOriginalTime } from '@/lib/media/photoTime';
@@ -79,6 +80,9 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
   const [keepRelative, setKeepRelative] = useState(true);
   const [targetValue, setTargetValue] = useState('');
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: dialogRef });
+
   const earliest = useMemo(() => {
     if (photos.length === 0) return 0;
     return photos.reduce((min, photo) => {
@@ -99,18 +103,6 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
     const anchor = earliest || Date.now();
     setTargetValue(toLocalInputValue(anchor));
   }, [isOpen, earliest]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
 
   const offsetMs = ((days * 24 + hours) * 60 + minutes) * 60_000;
 
@@ -177,6 +169,7 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
         className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[460px] max-w-[90vw] max-h-[90vh] overflow-hidden border border-[var(--border-default)] animate-scaleIn flex flex-col"
         role="dialog"
         aria-modal="true"
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-[var(--border-subtle)]">

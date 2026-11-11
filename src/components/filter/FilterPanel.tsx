@@ -127,7 +127,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         <SectionTitle
           extra={
             datePreset === 'custom' ? (
-              <span className="text-[10px] text-[var(--accent-cyan)]">自定义</span>
+              <span className="text-xs text-[var(--accent-cyan)]">自定义</span>
             ) : null
           }
         >

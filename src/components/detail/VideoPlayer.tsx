@@ -786,7 +786,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
             {/* 悬停时间提示 */}
             {hoverRatio !== null && effectiveDuration > 0 && !isScrubbing && (
               <div
-                className="absolute -top-8 -translate-x-1/2 px-2 py-1 rounded-md text-[11px] font-medium tabular-nums text-[rgba(255,255,255,0.95)] bg-[rgba(20,18,16,0.92)] border border-[rgba(255,255,255,0.14)] pointer-events-none whitespace-nowrap"
+                className="absolute -top-8 -translate-x-1/2 px-2 py-1 rounded-md text-xs font-medium tabular-nums text-[rgba(255,255,255,0.95)] bg-[rgba(20,18,16,0.92)] border border-[rgba(255,255,255,0.14)] pointer-events-none whitespace-nowrap"
                 style={{ left: `${hoverRatio * 100}%` }}
               >
                 {formatClock(hoverRatio * effectiveDuration)}
@@ -921,7 +921,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ photo, onRevealInFinder, cont
                   >
                     原始尺寸 1:1
                   </PopoverItem>
-                  <p className="px-3 pt-1 pb-1.5 text-[10px] leading-snug text-[rgba(255,255,255,0.42)] w-40">
+                  <p className="px-3 pt-1 pb-1.5 text-xs leading-snug text-[rgba(255,255,255,0.42)] w-40">
                     {mediaSize.width > 0
                       ? `源分辨率 ${mediaSize.width}×${mediaSize.height}，原始尺寸按 1:1 像素显示，可拖动查看细节`
                       : '原始尺寸按 1:1 像素显示，可拖动查看细节'}

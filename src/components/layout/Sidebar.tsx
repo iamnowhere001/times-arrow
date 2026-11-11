@@ -3,6 +3,7 @@ import { LibrarySource, MediaFilter, SmartAlbum } from '@/types';
 import { PlusIcon, RefreshIcon } from '@/components/icons';
 import { DotPinIcon } from '@/components/common/DotField';
 import { Stat } from '@/components/common/Stat';
+import { navItemActive } from '@/lib/filter/viewContext';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -681,7 +682,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       category: 'favorites',
       filter: 'all',
       count: counts.favorites,
-      icon: <HeartIcon filled={activeCategory === 'favorites' && mediaFilter === 'all'} />,
+      icon: <HeartIcon filled={activeCategory === 'favorites'} />,
     },
     {
       id: 'hidden',
@@ -751,7 +752,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <span className="text-[13px] font-semibold text-[var(--text-primary)] truncate">
               时光画框
             </span>
-            <span className="text-[10px] text-[var(--text-quaternary)] truncate">
+            <span className="text-xs text-[var(--text-quaternary)] truncate">
               本地照片整理工作台
             </span>
           </span>
@@ -800,7 +801,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     icon={item.icon}
                     label={item.label}
                     count={item.count}
-                    active={activeCategory === item.category && mediaFilter === item.filter}
+                    active={navItemActive(item, activeCategory, mediaFilter)}
                     onClick={() => onSelectNav(item.category, item.filter)}
                   />
                 </li>
@@ -817,7 +818,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     icon={item.icon}
                     label={item.label}
                     count={item.count}
-                    active={activeCategory === item.category && mediaFilter === item.filter}
+                    active={navItemActive(item, activeCategory, mediaFilter)}
                     onClick={() => onSelectNav(item.category, item.filter)}
                   />
                 </li>
@@ -1029,7 +1030,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         {unavailableFileCount > 0 ? (
                           <WarningIcon />
                         ) : (
-                          <span className="font-numeric text-[11px] tabular-nums">
+                          <span className="font-numeric text-xs tabular-nums">
                             {fileSourceCount}
                           </span>
                         )}

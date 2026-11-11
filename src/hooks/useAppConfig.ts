@@ -15,6 +15,7 @@ import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction }
 import { assetKeyOf } from '@/lib/media/photoIdentity';
 import {
   AiCacheEntry,
+  DuplicateScope,
   LibrarySource,
   Photo,
   PhotoFilters,
@@ -67,7 +68,7 @@ export interface UseAppConfigParams {
   setIsLeftPaneOpen: Dispatch<SetStateAction<boolean>>;
   setIsDetailsPaneOpen: Dispatch<SetStateAction<boolean>>;
   setDuplicateSimilarity: Dispatch<SetStateAction<number>>;
-  setDuplicateScope: Dispatch<SetStateAction<'all' | 'sameFolder'>>;
+  setDuplicateScope: Dispatch<SetStateAction<DuplicateScope>>;
   /** 配置是否已读取完成：完成前不写偏好，避免用默认值覆盖已存配置 */
   isConfigLoaded: boolean;
   setIsConfigLoaded: Dispatch<SetStateAction<boolean>>;
@@ -230,6 +231,8 @@ export function useAppConfig({
             )
           );
         }
+        // 'selected' 是一次性的会话意图：跨启动恢复一个空选中集只会让人困惑，
+        // 因此读取时忽略它，回落到默认的 'all'。
         if (duplicate.scope === 'all' || duplicate.scope === 'sameFolder') {
           setDuplicateScope(duplicate.scope);
         }

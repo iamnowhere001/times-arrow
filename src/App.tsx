@@ -90,6 +90,11 @@ const App: React.FC = () => {
   const resetFilters = useCallback(() => {
     setFilters(createEmptyFilters());
   }, []);
+  /** K20：条件条的「清除全部」要连搜索词一起清，否则清完仍看不到全部照片 */
+  const handleResetViewContext = useCallback(() => {
+    resetFilters();
+    setSearchQuery('');
+  }, [resetFilters]);
 
   /** 事件回调需读取最新照片列表：用 ref 避免闭包过期与依赖抖动 */
   const photosRef = useRef<Photo[]>([]);
@@ -310,8 +315,14 @@ const App: React.FC = () => {
     handleExitDuplicates,
     handleDeleteDuplicates,
     pruneDuplicateGroups,
+    ignoredGroups,
+    handleIgnoreGroup,
+    handleRestoreIgnoredGroup,
+    scanReport,
+    selectedCount: duplicateSelectedCount,
   } = useDuplicateDetection({
     photos,
+    selectedIds,
     showToast,
     isConfigLoaded,
     isDuplicateDetectorOpen,
@@ -1001,6 +1012,11 @@ const App: React.FC = () => {
               scope={duplicateScope}
               onScopeChange={setDuplicateScope}
               isLeftPaneOpen={isLeftPaneVisible}
+              selectedCount={duplicateSelectedCount}
+              onIgnoreGroup={handleIgnoreGroup}
+              ignoredGroups={ignoredGroups}
+              onRestoreIgnored={handleRestoreIgnoredGroup}
+              scanReport={scanReport}
             />
           </ErrorBoundary>
         ) : mainView === 'timeline' ? (
@@ -1075,8 +1091,12 @@ const App: React.FC = () => {
             否则会显示成「5 / 100 项」这种两个互斥集合相除的假比例 */}
             <ActiveFiltersBar
               filters={filters}
+              searchQuery={searchQuery}
+              activeAlbumName={albums.find((album) => album.id === activeAlbumId)?.name}
               onPatch={updateFilters}
-              onReset={resetFilters}
+              onResetFilters={resetFilters}
+              onClearSearch={() => setSearchQuery('')}
+              onResetAll={handleResetViewContext}
               onSaveAsAlbum={() => setIsSaveAlbumModalOpen(true)}
               resultCount={visiblePhotos.length}
               totalCount={filters.hiddenOnly ? counts.hidden : counts.all}

@@ -193,6 +193,13 @@ declare global {
         oldPath: string,
         newPath: string
       ) => Promise<IpcResult<{ path: string; conflicted: boolean }>>;
+      /**
+       * K11：只读预演重命名结果，按主进程 reserveUniquePath 的同一套规则算出最终文件名。
+       * 不写盘、不返回目录内容；结果条数与入参一一对应。路径未授权时整体失败。
+       */
+      probeRenameTargets: (
+        entries: { oldPath: string; desiredPath: string }[]
+      ) => Promise<IpcResult<{ finalName: string; conflicted: boolean }[]>>;
       deleteFile: (path: string) => Promise<IpcResult<boolean>>;
       /** 批量移动文件到目标文件夹；逐项返回成功 / 跳过 / 失败结果；
        *  priorTargets（源路径 → 上次跨卷移动已落盘的副本路径）用于幂等重试补删源 */

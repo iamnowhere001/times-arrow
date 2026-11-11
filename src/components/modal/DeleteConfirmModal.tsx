@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useModalA11y } from '@/hooks/useModalA11y';
 
 interface DeleteConfirmModalProps {
   isOpen: boolean;
@@ -19,22 +20,21 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   isBusy = false,
 }) => {
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: dialogRef, disabled: isBusy });
 
-  // Esc 关闭、Enter 确认：保持与系统弹窗一致的键盘习惯；执行中不响应
+  // Enter 确认：保持与系统弹窗一致的键盘习惯；执行中不响应（Esc 关闭交由 useModalA11y）
   useEffect(() => {
     if (!isOpen || isBusy) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      } else if (e.key === 'Enter') {
+      if (e.key === 'Enter') {
         e.preventDefault();
         onConfirm();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, isBusy, onClose, onConfirm]);
+  }, [isOpen, isBusy, onConfirm]);
 
   // 焦点落到主操作按钮上：键盘用户一眼能看出回车会落在哪
   useEffect(() => {
@@ -51,6 +51,7 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
         className="bg-[var(--bg-modal)] backdrop-blur-xl rounded-xl shadow-2xl w-[380px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] animate-scaleIn p-6"
         role="dialog"
         aria-modal="true"
+        ref={dialogRef}
         aria-label={isDiskOperation ? '移至回收站确认' : '移除确认'}
         onClick={(e) => e.stopPropagation()}
       >

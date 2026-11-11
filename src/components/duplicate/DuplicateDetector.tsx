@@ -11,7 +11,10 @@ import DeleteConfirmModal from '@/components/modal/DeleteConfirmModal';
 import { ChevronLeftIcon, RefreshIcon } from '@/components/icons';
 import { Stat, StatPill } from '@/components/common/Stat';
 import { DotGrid } from '@/components/common/DotField';
+import DuplicateReportPanel from '@/components/duplicate/DuplicateReportPanel';
 import { DUPLICATE_SIMILARITY_MAX, DUPLICATE_SIMILARITY_MIN } from '@/lib/duplicate/constants';
+import { releasableSizeOf } from '@/lib/duplicate/ignoredGroups';
+import type { DuplicateScanReport, IgnoredDuplicateGroup } from '@/lib/duplicate/ignoredGroups';
 
 /**
  * 取末两级目录做展示标签（`…/2024/01`）。
@@ -70,9 +73,9 @@ const TimeRow: React.FC<{ label: string; value: string; strong?: boolean }> = ({
   strong,
 }) => (
   <div className="flex items-center justify-between gap-1">
-    <span className="text-[10px] text-[var(--text-quaternary)] shrink-0">{label}</span>
+    <span className="text-xs text-[var(--text-quaternary)] shrink-0">{label}</span>
     <span
-      className={`text-[10px] tabular-nums truncate ${
+      className={`text-xs tabular-nums truncate ${
         strong ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'
       }`}
       title={value}
@@ -130,6 +133,15 @@ interface DuplicateDetectorProps {
   onScopeChange: (scope: DuplicateScope) => void;
   /** 侧边栏是否展开：收起时顶栏左侧需为红绿灯按钮让位 */
   isLeftPaneOpen: boolean;
+  /** 当前图库选中数量：范围切到「仅选中」时把作用域写在界面上 */
+  selectedCount: number;
+  /** 标记「这组不是重复」 */
+  onIgnoreGroup: (group: Photo[]) => void;
+  /** 已忽略的组与恢复入口 */
+  ignoredGroups: IgnoredDuplicateGroup[];
+  onRestoreIgnored: (key: string) => void;
+  /** 本次检测报告：数字由 hook 统一算出，组件不另起一套统计 */
+  scanReport: DuplicateScanReport;
 }
 
 /** 检测完成后默认展开的组数：首屏直接看到内容，又不至于把页面拉得过长 */
@@ -222,7 +234,7 @@ const DuplicatePhotoCard = memo(function DuplicatePhotoCard({
         </span>
 
         {photo.isRecommended && !marked && (
-          <div className="absolute top-1.5 right-1.5 bg-[var(--accent-green)] text-[var(--accent-contrast)] text-[10px] font-medium px-1.5 py-0.5 rounded-full shadow-xs">
+          <div className="absolute top-1.5 right-1.5 bg-[var(--accent-green)] text-[var(--accent-contrast)] text-xs font-medium px-1.5 py-0.5 rounded-full shadow-xs">
             原图 · 建议保留
           </div>
         )}
@@ -231,7 +243,7 @@ const DuplicatePhotoCard = memo(function DuplicatePhotoCard({
             也只有 <100% 时百分比才值得占一个角标 */}
         {!photo.isRecommended && similarity !== null && (
           <div
-            className="absolute top-1.5 right-1.5 bg-[rgba(0,0,0,0.55)] text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full shadow-xs backdrop-blur-xs"
+            className="absolute top-1.5 right-1.5 bg-[rgba(0,0,0,0.55)] text-white text-xs font-medium px-1.5 py-0.5 rounded-full shadow-xs backdrop-blur-xs"
             title={similarity === 100 ? '与保留项哈希完全一致' : '与「建议保留」项的感知哈希相似度'}
           >
             {similarity === 100 ? '完全相同' : `相似 ${similarity}%`}
@@ -239,7 +251,7 @@ const DuplicatePhotoCard = memo(function DuplicatePhotoCard({
         )}
 
         {marked && (
-          <div className="absolute inset-x-0 bottom-0 bg-[var(--accent-pink)] text-[var(--accent-contrast)] text-[10px] font-medium text-center py-0.5">
+          <div className="absolute inset-x-0 bottom-0 bg-[var(--accent-pink)] text-[var(--accent-contrast)] text-xs font-medium text-center py-0.5">
             移至回收站
           </div>
         )}
@@ -269,12 +281,12 @@ const DuplicatePhotoCard = memo(function DuplicatePhotoCard({
 
         <div className="flex items-center justify-between gap-1 mt-1">
           <span
-            className="text-[10px] text-[var(--text-tertiary)] truncate"
+            className="text-xs text-[var(--text-tertiary)] truncate"
             title={photo.path || folderPath}
           >
             {folderPath}
           </span>
-          <span className="text-[10px] text-[var(--text-tertiary)] shrink-0">
+          <span className="text-xs text-[var(--text-tertiary)] shrink-0">
             {formatBytes(photo.size)}
           </span>
         </div>
@@ -298,6 +310,11 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
   scope,
   onScopeChange,
   isLeftPaneOpen,
+  selectedCount,
+  onIgnoreGroup,
+  ignoredGroups,
+  onRestoreIgnored,
+  scanReport,
 }) => {
   /** 展开的组（以组内最早照片 id 标识，见 groupKeyOf） */
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -459,20 +476,11 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
    * 「拷贝」侧统计：每组除保留项外的照片数量与体积，
    * 用于回答「清干净能腾出多少空间」这个真正让人做决定的问题。
    */
-  const copyStats = useMemo(() => {
-    let count = 0;
-    let size = 0;
-    duplicateGroups.forEach((group) => {
-      const original = group.find((p) => p.isRecommended) || group[0];
-      group.forEach((p) => {
-        if (p.id !== original.id) {
-          count += 1;
-          size += p.size || 0;
-        }
-      });
-    });
-    return { count, size };
-  }, [duplicateGroups]);
+  // 与右栏报告共用同一个纯函数：这里再算一遍就会出现「顶栏 14 组、报告 12 组」
+  const { count: copyCount, bytes: copyBytes } = useMemo(
+    () => releasableSizeOf(duplicateGroups),
+    [duplicateGroups]
+  );
 
   const handleToggleGroup = useCallback((key: string) => {
     if (!key) return;
@@ -575,7 +583,9 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
       ? progress?.phase === 'comparing'
         ? '正在比对分组…'
         : '正在为图片计算指纹并分组…'
-      : '以感知哈希比对相似图片，全部在本机完成';
+      : scope === 'selected'
+        ? `仅检测选中的 ${selectedCount} 项，全部在本机完成`
+        : '以感知哈希比对相似图片，全部在本机完成';
 
   return (
     <div className="flex-1 flex flex-col w-full min-h-0">
@@ -698,8 +708,8 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                         title="涉及的重复照片总数"
                       />
                       <StatPill
-                        value={copyStats.count}
-                        unit={`张 · 可释放 ${formatBytes(copyStats.size)}`}
+                        value={copyCount}
+                        unit={`张 · 可释放 ${formatBytes(copyBytes)}`}
                         tone="accent"
                         title="清掉每组拷贝后可释放的空间"
                       />
@@ -1007,6 +1017,13 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                               {allMarked ? '取消全选' : '全选本组'}
                             </button>
                           )}
+                          <button
+                            onClick={() => onIgnoreGroup(group)}
+                            className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors px-2 py-1 rounded-lg hover:bg-[var(--bg-glass-active)]"
+                            title="标记为不是重复，按内容指纹记住；组成员变化后会重新出现"
+                          >
+                            忽略此组
+                          </button>
                         </div>
                       </div>
 
@@ -1082,7 +1099,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                   aria-label="相似度阈值"
                 />
                 {/* 百分比本身就是刻度：右端越严越准，左端越松越多 */}
-                <div className="flex items-center justify-between mt-1 text-[10px] text-[var(--text-quaternary)]">
+                <div className="flex items-center justify-between mt-1 text-xs text-[var(--text-quaternary)]">
                   <span>更宽松 · 找得多</span>
                   <span>更严格 · 找得准</span>
                 </div>
@@ -1097,6 +1114,7 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                     [
                       ['all', '全库跨目录'],
                       ['sameFolder', '仅同目录'],
+                      ['selected', '仅选中'],
                     ] as const
                   ).map(([value, label]) => (
                     <button
@@ -1113,31 +1131,20 @@ const DuplicateDetector: React.FC<DuplicateDetectorProps> = ({
                   ))}
                 </div>
                 <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-quaternary)]">
-                  调整后会自动重新分组，指纹已缓存，因此重跑很快。
+                  {scope === 'selected'
+                    ? selectedCount >= 2
+                      ? `当前选中 ${selectedCount} 项，回到图库可改选；视频与隐藏项不参与检测。`
+                      : '请先回到图库选中至少 2 张图片，再切到这个范围。'
+                    : '调整后会自动重新分组，指纹已缓存，因此重跑很快。'}
                 </p>
               </div>
             </section>
 
-            <section className="px-4 py-4">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-quaternary)] mb-3">
-                本次检测
-              </h2>
-              {/* 「14 组 / 建议保留 14 / 可清理 14」是同义重复，只留真正影响决定的数字。
-                  可释放空间是本页唯一的 hero：它是最能推动「按下删除」的那个结论。 */}
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-xs text-[var(--text-tertiary)]">可释放</span>
-                <Stat value={formatBytes(copyStats.size)} emphasis="hero" />
-              </div>
-              <div className="mt-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
-                <Stat value={stats.groupCount} unit="组" label="相似" emphasis="micro" />
-                <Stat value={stats.totalDuplicateCount} unit="张" label="涉及" emphasis="micro" />
-                <Stat value={copyStats.count} unit="张" label="可清理" emphasis="micro" />
-              </div>
-
-              <p className="mt-4 text-[11px] leading-relaxed text-[var(--text-quaternary)]">
-                每组以创建时间最早的一张作为原图。删除只会移入系统回收站，随时可以还原。
-              </p>
-            </section>
+            <DuplicateReportPanel
+              report={scanReport}
+              ignoredGroups={ignoredGroups}
+              onRestoreIgnored={onRestoreIgnored}
+            />
 
             {inSelectionMode && (
               <section className="mt-auto px-4 py-4 border-t border-[var(--border-subtle)]">

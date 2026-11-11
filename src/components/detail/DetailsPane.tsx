@@ -439,7 +439,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({
                 )}
 
                 {isExportMode && (
-                  <div className="absolute top-2.5 right-2.5 bg-[var(--accent-blue)] text-[var(--accent-contrast)] text-[10px] font-medium px-2.5 py-1 rounded-full shadow-lg">
+                  <div className="absolute top-2.5 right-2.5 bg-[var(--accent-blue)] text-[var(--accent-contrast)] text-xs font-medium px-2.5 py-1 rounded-full shadow-lg">
                     预览
                   </div>
                 )}
@@ -727,7 +727,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({
                       内容创建时间
                       {photo.dateAdjusted && (
                         <span
-                          className="ml-1.5 text-[10px] font-medium text-[var(--accent-cyan)]"
+                          className="ml-1.5 text-xs font-medium text-[var(--accent-cyan)]"
                           title="该时间已被手动调整（原文件未改动）"
                         >
                           已修正

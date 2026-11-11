@@ -17,6 +17,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 文件系统操作
   renameFile: (oldPath, newPath) => ipcRenderer.invoke('rename-file', oldPath, newPath),
+  /**
+   * K11：只读预演一组重命名的最终文件名（不写盘、不创建占位文件）。
+   * 源 / 目标路径都必须在会话白名单内；结果条数与入参一一对应。
+   */
+  probeRenameTargets: (entries) => ipcRenderer.invoke('probe-rename-targets', entries),
   deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
   /**
    * 批量移动文件到目标文件夹（重名自动加序号、同目录跳过、跨盘复制兜底）。

@@ -1,14 +1,22 @@
 import React from 'react';
-import { PhotoFilters } from '@/types';
-import { buildFilterChips, isFilterActive } from '@/lib/filter/filters';
+import type { PhotoFilters } from '@/types';
+import { buildViewContext, type ViewContextChip } from '@/lib/filter/viewContext';
 import { FunnelIcon } from '@/components/icons';
 
 interface ActiveFiltersBarProps {
   filters: PhotoFilters;
-  /** 单条条件的清除补丁 */
+  /** K20：搜索词也要进条件条，否则「收藏夹里还叠着搜索」看不见 */
+  searchQuery: string;
+  /** 当前筛选恰好等于某智能相簿的条件时，显示相簿名 */
+  activeAlbumName?: string;
+  /** 单条筛选条件的清除补丁 */
   onPatch: (patch: Partial<PhotoFilters>) => void;
-  /** 一键清除全部筛选 */
-  onReset: () => void;
+  /** 只清筛选（保留搜索词）：点「相簿」chip 时用 */
+  onResetFilters: () => void;
+  /** 只清搜索词 */
+  onClearSearch: () => void;
+  /** 清除全部上下文：筛选 + 搜索词 */
+  onResetAll: () => void;
   /** 把当前条件存为智能相簿 */
   onSaveAsAlbum: () => void;
   /** 当前筛选命中的结果数，用于即时反馈 */
@@ -31,34 +39,48 @@ const CloseIcon = () => (
 );
 
 /**
- * 已启用筛选条件条（N3）。
- * 存在的意义是「所见即所得」：任何会缩小结果集的条件都在这里显式列出，
- * 既能一眼看清当前视图为什么少了照片，也能逐条或一次性清除。
+ * 已启用条件条（N3 / K20）。
+ *
+ * 存在的意义是「所见即所得」：任何会缩小结果集的条件 —— 搜索词、当前相簿、
+ * 分类、媒体类型、日期、相机… —— 都在这里显式列出，既能一眼看清当前视图为什么
+ * 少了照片，也能逐条或一次性清除。
+ *
+ * K20 之前这里只看 PhotoFilters：只有搜索词时整条隐藏，点「收藏夹」保留的搜索词
+ * 就成了看不见的暗规则。现在由 buildViewContext 统一汇总所有上下文。
  */
 const ActiveFiltersBar: React.FC<ActiveFiltersBarProps> = ({
   filters,
+  searchQuery,
+  activeAlbumName,
   onPatch,
-  onReset,
+  onResetFilters,
+  onClearSearch,
+  onResetAll,
   onSaveAsAlbum,
   resultCount,
   totalCount,
 }) => {
-  if (!isFilterActive(filters)) return null;
+  const context = buildViewContext({ filters, searchQuery, albumName: activeAlbumName });
+  if (!context.active) return null;
 
-  const chips = buildFilterChips(filters);
+  const clearChip = (chip: ViewContextChip) => {
+    if (chip.kind === 'search') onClearSearch();
+    else if (chip.kind === 'album') onResetFilters();
+    else if (chip.patch) onPatch(chip.patch);
+  };
 
   return (
     <div className="mx-4 mt-3 shrink-0 rounded-xl border border-[rgba(var(--accent-blue-rgb),0.25)] bg-[rgba(var(--accent-blue-rgb),0.07)] backdrop-blur-xl px-3 py-2 flex items-center gap-2 flex-wrap">
       <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--accent-blue)] shrink-0">
         <FunnelIcon />
-        筛选
+        当前视图
       </span>
 
-      {chips.map((chip) => (
+      {context.chips.map((chip) => (
         <button
           key={chip.key}
           type="button"
-          onClick={() => onPatch(chip.patch)}
+          onClick={() => clearChip(chip)}
           title={`清除「${chip.label}」`}
           className="group flex items-center gap-1 pl-2 pr-1.5 py-0.5 rounded-full bg-[var(--bg-glass)] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] hover:border-[var(--border-hover)] hover:text-[var(--text-primary)] transition-all duration-200 max-w-[200px]"
         >
@@ -99,7 +121,8 @@ const ActiveFiltersBar: React.FC<ActiveFiltersBarProps> = ({
 
       <button
         type="button"
-        onClick={onReset}
+        onClick={onResetAll}
+        title="清除筛选条件与搜索词"
         className="shrink-0 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--accent-pink)] px-2 py-1 rounded-lg hover:bg-[var(--bg-glass-hover)] transition-all duration-200"
       >
         清除全部

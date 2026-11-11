@@ -106,6 +106,7 @@ const CHANNELS = [
   'move-files',
   'open-crash-log',
   'open-path',
+  'probe-rename-targets',
   'read-file',
   'relink-source',
   'rename-file',

@@ -31,10 +31,7 @@ const { createCrashReporter, LOG_LIMIT } = require('../../electron/main/crash-re
   check('超长消息被截断到 2000 字符', long.message.length === 2000, String(long.message.length));
 
   for (let i = 0; i < LOG_LIMIT + 5; i += 1) reporter.record('test', `entry-${i}`);
-  const lines = fs
-    .readFileSync(reporter.logPath, 'utf8')
-    .split('\n')
-    .filter(Boolean);
+  const lines = fs.readFileSync(reporter.logPath, 'utf8').split('\n').filter(Boolean);
   check(`日志条数不超过上限 ${LOG_LIMIT}`, lines.length === LOG_LIMIT, String(lines.length));
   check('保留的是最新的条目', lines[lines.length - 1].includes('entry-104'));
 
@@ -45,10 +42,7 @@ const { createCrashReporter, LOG_LIMIT } = require('../../electron/main/crash-re
   const firstDrain = reporter.drain();
   check('第一次 drain 返回待提示条目', firstDrain.length === 10, String(firstDrain.length));
   check('第二次 drain 为空', reporter.drain().length === 0);
-  check(
-    '待提示文件已删除',
-    !fs.existsSync(path.join(dir, 'crash-pending.json'))
-  );
+  check('待提示文件已删除', !fs.existsSync(path.join(dir, 'crash-pending.json')));
 
   section('3. 主进程 IPC：下次启动能看到上次的异常');
   const userData = tempDir('pm-crash-ipc-');

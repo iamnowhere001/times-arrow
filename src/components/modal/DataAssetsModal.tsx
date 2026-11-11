@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useModalA11y } from '@/hooks/useModalA11y';
 import { formatBytes } from '@/lib/format/format';
 import { loadDataHealth, openCrashLogFile } from '@/lib/dataAssets/health';
 
@@ -80,6 +81,14 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
   const [healthError, setHealthError] = useState<string | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y({
+    isOpen,
+    onClose,
+    containerRef: dialogRef,
+    disabled: busy || backupRunning,
+  });
+
   const loadHealth = useCallback(async () => {
     setHealthLoading(true);
     setHealthError(null);
@@ -96,18 +105,6 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
     const error = await openCrashLogFile();
     if (error) onNotify?.(error, 'error');
   };
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !backupRunning) {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [isOpen, onClose, backupRunning]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -236,6 +233,7 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
         className="bg-[var(--bg-elevated)] rounded-2xl shadow-2xl w-[680px] max-w-[92vw] max-h-[86vh] overflow-hidden border border-[var(--border-default)] animate-scaleIn flex flex-col"
         role="dialog"
         aria-modal="true"
+        ref={dialogRef}
         aria-label="数据资产"
         onClick={(e) => e.stopPropagation()}
       >
@@ -522,7 +520,9 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
                   </div>
 
                   <div className={card}>
-                    <p className="text-xs font-medium text-[var(--text-secondary)]">最近一次启动迁移</p>
+                    <p className="text-xs font-medium text-[var(--text-secondary)]">
+                      最近一次启动迁移
+                    </p>
                     {health.migration ? (
                       <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-tertiary)]">
                         {fmtTime(health.migration.at)} ·{' '}
@@ -582,7 +582,7 @@ const DataAssetsModal: React.FC<DataAssetsModalProps> = ({ isOpen, onClose, onNo
                       }}
                     />
                   </div>
-                  <p className="mt-2 text-[11px] font-mono text-[var(--text-quaternary)] truncate">
+                  <p className="mt-2 text-xs font-mono text-[var(--text-quaternary)] truncate">
                     {progress.current}
                   </p>
                 </div>

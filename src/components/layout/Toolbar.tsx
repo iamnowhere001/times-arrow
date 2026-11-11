@@ -377,7 +377,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
               </button>
             ) : (
               <span className="absolute right-2 top-1/2 -translate-y-1/2 hidden xl:flex items-center pointer-events-none">
-                <span className="kbd !h-[18px] !min-w-[18px] !px-1 !text-[10px]">⌘F</span>
+                <span className="kbd !h-[18px] !min-w-[18px] !px-1 !text-xs">⌘F</span>
               </span>
             )}
           </div>
@@ -399,7 +399,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
             >
               <FunnelIcon size={17} />
               {advancedFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-[var(--accent-blue)] text-[var(--accent-contrast)] text-[10px] font-semibold leading-[15px] text-center border border-[var(--bg-elevated)]">
+                <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-[var(--accent-blue)] text-[var(--accent-contrast)] text-xs font-semibold leading-[15px] text-center border border-[var(--bg-elevated)]">
                   {advancedFilterCount}
                 </span>
               )}

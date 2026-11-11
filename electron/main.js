@@ -485,11 +485,17 @@ const UNIQUE_NAME_MAX_ATTEMPTS = 100;
  * 调用方**必须**负责：若最终决定不使用这个路径，调用 `discardReservedPath()` 清掉占位
  * 文件，否则会在用户目录里留下一个空文件。
  */
-async function reserveUniquePath(dir, fileName) {
+function uniqueNameCandidates(fileName) {
   const ext = path.extname(fileName);
   const base = path.basename(fileName, ext);
-  for (let attempt = 0; attempt < UNIQUE_NAME_MAX_ATTEMPTS; attempt += 1) {
-    const candidate = path.join(dir, attempt === 0 ? fileName : `${base}-${attempt}${ext}`);
+  return Array.from({ length: UNIQUE_NAME_MAX_ATTEMPTS }, (_, attempt) =>
+    attempt === 0 ? fileName : `${base}-${attempt}${ext}`
+  );
+}
+
+async function reserveUniquePath(dir, fileName) {
+  for (const candidateName of uniqueNameCandidates(fileName)) {
+    const candidate = path.join(dir, candidateName);
     let handle;
     try {
       // eslint-disable-next-line no-await-in-loop
@@ -626,6 +632,100 @@ handle('rename-file', async (event, oldPath, newPath) => {
   logger.debug(`Renamed file: ${oldPath} -> ${reservedPath}`);
   await recordOperation({ type: 'rename', from: oldPath, to: reservedPath });
   return ok({ path: reservedPath, conflicted });
+});
+
+/**
+ * K11：只读预演一组重命名的最终文件名。
+ *
+ * 预览阶段不能调 reserveUniquePath —— 那会真的创建占位文件（用户每改一次前缀就留一堆空文件）。
+ * 这里按**完全相同**的候选名序列（原名 → base-1.ext → base-2.ext…）做只读 stat 探测，
+ * 并把「批内已分配的名字」当作虚拟占用，得到与落盘一致的结论。
+ *
+ * 顺序语义：批量重命名是按 rows 顺序逐条落盘的，前一条改名后它的旧路径即腾空。
+ * 用 freed 模拟这一点，否则「A 改成 B 的旧名」这类链式改名会预演出多余的 -1。
+ *
+ * 安全：源与目标路径都必须已授权，任一越界整体拒绝；不写盘、不返回目录列表，
+ * 只回最终文件名，不能把这个接口当成「探测任意目录」的入口。
+ */
+const RENAME_PROBE_MAX = 500;
+
+handle('probe-rename-targets', async (event, entries) => {
+  if (!Array.isArray(entries)) return fail('无效的重命名预演参数');
+  if (entries.length === 0) return ok([]);
+  if (entries.length > RENAME_PROBE_MAX) return fail('待重命名的项目过多，无法预演');
+
+  const plans = [];
+  for (const entry of entries) {
+    if (
+      !entry ||
+      typeof entry.oldPath !== 'string' ||
+      typeof entry.desiredPath !== 'string' ||
+      !entry.oldPath ||
+      !entry.desiredPath
+    ) {
+      return fail('无效的重命名预演参数');
+    }
+    if (!isPathAuthorized(entry.oldPath) || !isPathAuthorized(entry.desiredPath)) {
+      return fail(UNAUTHORIZED_ERROR);
+    }
+    plans.push(entry);
+  }
+
+  // macOS 默认大小写不敏感，占用集合统一按小写比较
+  const reserved = new Set();
+  const freed = new Set();
+  const results = [];
+
+  for (const { oldPath, desiredPath } of plans) {
+    const dir = path.dirname(desiredPath);
+    const fileName = path.basename(desiredPath);
+    let finalName = fileName;
+    let conflicted = false;
+
+    // 目标就是源自身（含仅大小写变化）：rename-file 会直接返回，不算冲突
+    if (desiredPath.toLowerCase() === oldPath.toLowerCase()) {
+      results.push({ finalName, conflicted: false });
+      reserved.add(desiredPath.toLowerCase());
+      freed.add(oldPath.toLowerCase());
+      continue;
+    }
+
+    for (const candidateName of uniqueNameCandidates(fileName)) {
+      const candidate = path.join(dir, candidateName);
+      const key = candidate.toLowerCase();
+      // 与源自身同名的仅大小写变体，视为可用
+      if (key === oldPath.toLowerCase()) {
+        finalName = candidateName;
+        break;
+      }
+      if (reserved.has(key)) {
+        conflicted = true;
+        continue;
+      }
+      let occupied = false;
+      if (!freed.has(key)) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await stat(candidate);
+          occupied = true;
+        } catch {
+          occupied = false;
+        }
+      }
+      if (occupied) {
+        conflicted = true;
+        continue;
+      }
+      finalName = candidateName;
+      break;
+    }
+
+    reserved.add(path.join(dir, finalName).toLowerCase());
+    freed.add(oldPath.toLowerCase());
+    results.push({ finalName, conflicted: conflicted || finalName !== fileName });
+  }
+
+  return ok(results);
 });
 
 handle('delete-file', async (event, filePath) => {

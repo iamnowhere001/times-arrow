@@ -63,9 +63,7 @@ async function dirUsage(dirPath) {
       const i = index;
       index += 1;
       if (i >= names.length) return;
-      const stat = await fs.promises
-        .stat(path.join(dirPath, names[i]))
-        .catch(() => null);
+      const stat = await fs.promises.stat(path.join(dirPath, names[i])).catch(() => null);
       if (stat?.isFile()) {
         files += 1;
         bytes += stat.size;
@@ -193,13 +191,17 @@ function createHealthCheck({ store, media, userDataDir, crashReporter, logger, t
       warnings.push(`有 ${orphanCount} 条标注等待路径重连（数据资产 → 路径重连）`);
     }
     if (corrupt.length > 0) {
-      warnings.push(`存在 ${corrupt.length} 份损坏备份（config.json.corrupt-*），确认无用后可手动清理`);
+      warnings.push(
+        `存在 ${corrupt.length} 份损坏备份（config.json.corrupt-*），确认无用后可手动清理`
+      );
     }
     if (crashes.entries > 0) {
       warnings.push(`崩溃日志里有 ${crashes.entries} 条记录，可在「打开日志」里查看`);
     }
     if (thumbUsage.files > thumbCacheLimit) {
-      warnings.push(`缩略图缓存 ${thumbUsage.files} 个，超过上限 ${thumbCacheLimit} 个，启动时会自动修剪`);
+      warnings.push(
+        `缩略图缓存 ${thumbUsage.files} 个，超过上限 ${thumbCacheLimit} 个，启动时会自动修剪`
+      );
     }
     if (migration?.error) {
       warnings.push(`上次启动的配置迁移失败：${migration.error}`);

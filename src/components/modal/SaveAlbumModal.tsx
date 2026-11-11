@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useModalA11y } from '@/hooks/useModalA11y';
 import { PhotoFilters } from '@/types';
 import { buildFilterChips, isFilterActive } from '@/lib/filter/filters';
 import { isNameTaken } from '@/lib/album/albumNames';
@@ -28,6 +29,8 @@ const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: dialogRef });
 
   const chips = buildFilterChips(filters);
   const hasConditions = isFilterActive(filters);
@@ -38,18 +41,6 @@ const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({
     const timer = window.setTimeout(() => inputRef.current?.focus(), 50);
     return () => window.clearTimeout(timer);
   }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -68,6 +59,7 @@ const SaveAlbumModal: React.FC<SaveAlbumModalProps> = ({
         className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[440px] max-w-[90vw] overflow-hidden border border-[var(--border-default)] animate-scaleIn flex flex-col"
         role="dialog"
         aria-modal="true"
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-[var(--border-subtle)]">

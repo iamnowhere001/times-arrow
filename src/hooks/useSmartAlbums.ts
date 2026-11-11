@@ -78,9 +78,12 @@ export function useSmartAlbums({
   const handleSelectAlbum = useCallback(
     (album: SmartAlbum) => {
       setFilters(normalizeFilters(album.filters));
-      setSearchQuery('');
+      // K20：与侧栏分类跳转统一 —— 都保留搜索词，由条件条显式展示叠在一起的条件。
+      // 相簿覆盖「筛选条件」是它的定义（一组保存的条件快照），不是另一套搜索词规则；
+      // 差异由条件条完整呈现，用户可逐条清除，不再出现「点相簿搜索词凭空消失」。
+      showToast(`已应用相簿「${album.name}」的条件`, 'info');
     },
-    [setFilters, setSearchQuery]
+    [setFilters, showToast]
   );
 
   const handleDeleteAlbum = useCallback(

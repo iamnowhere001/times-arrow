@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useModalA11y } from '@/hooks/useModalA11y';
 
 interface ClearListConfirmModalProps {
   isOpen: boolean;
@@ -23,22 +24,21 @@ const ClearListConfirmModal: React.FC<ClearListConfirmModalProps> = ({
   onConfirm,
 }) => {
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: dialogRef });
 
-  // Esc 关闭、Enter 确认：保持与系统弹窗一致的键盘习惯
+  // Enter 确认：保持与系统弹窗一致的键盘习惯（Esc 关闭交由 useModalA11y）
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      } else if (e.key === 'Enter') {
+      if (e.key === 'Enter') {
         e.preventDefault();
         onConfirm();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose, onConfirm]);
+  }, [isOpen, onConfirm]);
 
   // 焦点落到主操作按钮上：键盘用户一眼能看出回车会落在哪
   useEffect(() => {
@@ -53,6 +53,7 @@ const ClearListConfirmModal: React.FC<ClearListConfirmModalProps> = ({
         className="bg-[var(--bg-modal)] backdrop-blur-xl rounded-xl shadow-2xl w-[400px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] animate-scaleIn p-6"
         role="dialog"
         aria-modal="true"
+        ref={dialogRef}
         aria-label="清空照片列表确认"
         onClick={(e) => e.stopPropagation()}
       >

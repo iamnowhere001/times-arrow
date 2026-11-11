@@ -254,7 +254,7 @@ const PlayOverlay = () => (
 );
 
 const DurationBadge = ({ text }: { text: string }) => (
-  <span className="absolute bottom-1.5 right-1.5 z-20 rounded-md bg-black/62 px-1.5 py-0.5 font-numeric text-[10px] leading-none tabular-nums text-white/92">
+  <span className="absolute bottom-1.5 right-1.5 z-20 rounded-md bg-black/62 px-1.5 py-0.5 font-numeric text-xs leading-none tabular-nums text-white/92">
     {text}
   </span>
 );
@@ -343,7 +343,7 @@ const TimelineCard = memo(function TimelineCard({
       <span className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-end bg-gradient-to-t from-black/72 via-black/10 to-transparent p-2.5 text-left opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
         <span className="truncate text-[11px] font-medium text-white/95">{photo.name}</span>
         {dateLabel && (
-          <span className="font-numeric text-[10px] tabular-nums text-white/65">{dateLabel}</span>
+          <span className="font-numeric text-xs tabular-nums text-white/65">{dateLabel}</span>
         )}
       </span>
     </button>
@@ -587,10 +587,10 @@ const MonthBlockBase: React.FC<MonthBlockProps> = ({
             {MONTH_LABELS[month.month]}
           </span>
           <span className="h-3 w-px bg-[var(--border-default)]" aria-hidden />
-          <span className="font-numeric text-[11px] tabular-nums text-[var(--text-quaternary)]">
+          <span className="font-numeric text-xs tabular-nums text-[var(--text-quaternary)]">
             {range}
           </span>
-          <span className="rounded-full bg-[var(--bg-glass)] px-1.5 py-0.5 font-numeric text-[10px] tabular-nums text-[var(--text-tertiary)]">
+          <span className="rounded-full bg-[var(--bg-glass)] px-1.5 py-0.5 font-numeric text-xs tabular-nums text-[var(--text-tertiary)]">
             {month.photos.length}
           </span>
         </span>
@@ -691,7 +691,7 @@ const YearSectionBase: React.FC<YearSectionProps> = ({
           <span className="truncate text-[12px] font-medium text-[var(--text-secondary)]">
             {monthSpan}
           </span>
-          <span className="font-numeric text-[11px] tabular-nums text-[var(--text-quaternary)]">
+          <span className="font-numeric text-xs tabular-nums text-[var(--text-quaternary)]">
             {group.total} 项{group.videos > 0 ? ` · 视频 ${group.videos}` : ''}
           </span>
         </div>
@@ -791,7 +791,7 @@ const YearRailBase: React.FC<YearRailProps> = ({
                   >
                     {year}
                   </span>
-                  <span className="hidden font-numeric text-[10px] tabular-nums text-[var(--text-quaternary)] md:inline">
+                  <span className="hidden font-numeric text-xs tabular-nums text-[var(--text-quaternary)] md:inline">
                     {total}
                   </span>
                 </span>
@@ -1417,7 +1417,7 @@ const TimelineGallery: React.FC<TimelineGalleryProps> = ({
                           未知时间
                         </span>
                         <span className="h-3 w-px bg-[var(--border-default)]" aria-hidden />
-                        <span className="font-numeric text-[11px] tabular-nums text-[var(--text-quaternary)]">
+                        <span className="font-numeric text-xs tabular-nums text-[var(--text-quaternary)]">
                           {unknown.length} 项
                         </span>
                       </span>

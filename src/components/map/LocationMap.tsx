@@ -1050,7 +1050,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
                         {hover.photos.length} 张
                       </span>
                     </div>
-                    <div className="font-numeric text-[10px] tabular-nums text-[var(--text-quaternary)]">
+                    <div className="font-numeric text-xs tabular-nums text-[var(--text-quaternary)]">
                       {formatLatLng(hover.latitude, hover.longitude)}
                     </div>
                   </div>
@@ -1074,7 +1074,7 @@ const LocationMap: React.FC<LocationMapProps> = ({
                         {activeSite.placeHint}
                       </span>
                     </span>
-                    <span className="hidden shrink-0 font-numeric text-[11px] tabular-nums text-[var(--text-quaternary)] sm:inline">
+                    <span className="hidden shrink-0 font-numeric text-xs tabular-nums text-[var(--text-quaternary)] sm:inline">
                       {formatLatLng(activeSite.latitude, activeSite.longitude)}
                     </span>
                     <span className="shrink-0 text-[11.5px] text-[var(--text-tertiary)]">

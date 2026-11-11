@@ -8,9 +8,9 @@
 | 定位 | **个人自用**的本地照片 / 视频整理工具，macOS 优先；不对外分发，不做签名 / 公证 / 自动更新 |
 | 隐私 | 全部本地处理；AI 分析是唯一可选的联网功能，密钥由主进程读取并代理请求、在本机明文存储（界面只读到尾号掩码，见「已知限制」） |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
-| 当前版本 | **v0.6.1**（2026-11-06 发布，tag `v0.6.1`）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
+| 当前版本 | **v0.6.2**（2026-11-11 发布，tag `v0.6.2`）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
 | 产品路线 | 定位、优先级与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；任务清单见 [`TODO.md`](./TODO.md) |
-| 质量护栏 | ESLint + oxlint 0 problems · 单测 326 项 · 主进程集成测试 197 项 · Electron 冒烟 1 项 |
+| 质量护栏 | ESLint + oxlint 0 problems · 单测 370 项 · 主进程集成测试 251 项 · Electron 冒烟 1 项 |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
 | 协作手册 | AI 代理与新贡献者的操作约束见 [`AGENTS.md`](./AGENTS.md) |
 
@@ -48,8 +48,8 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `npm run lint` / `lint:fix` | ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware；当前均为 0 problems） |
 | `npm run format` / `format:check` | Prettier（已全量格式化，`format:check` 通过） |
 | `npm run test` | `test:main` + `test:unit` |
-| `npm run test:unit` | Vitest 纯函数单测（326 项） |
-| `npm run test:main` | 打桩 electron 的主进程集成测试（197 项 = 22 + 18 + 48 + 16 + 47 + 迁移版本守卫 30 + 分层依赖 6 + IPC 契约 10） |
+| `npm run test:unit` | Vitest 纯函数单测（370 项） |
+| `npm run test:main` | 打桩 electron 的主进程集成测试（251 项 = 22 + 18 + 48 + 16 + 47 + 迁移守卫 30 + 重命名预演 20 + 崩溃记录 16 + 数据健康 18 + 分层依赖 6 + IPC 契约 10） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
 
 > **两个环境注意事项**
@@ -111,9 +111,16 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 - 主进程并发计算 dHash 感知哈希，不阻塞渲染；三级解码降级：`createImageBitmap` → `nativeImage` → canvas 兜底
 - 体积预筛跳过不可能成组的图片；精确相同优先成组，近似相似在体积相近簇内按汉明距离聚类
-- 可调相似度阈值（80%–100%，默认 90%）与比对范围（全库跨目录 / 仅同目录），调参复用指纹缓存、保留结果列表
+- 可调相似度阈值（80%–100%，默认 90%）与比对范围（全库跨目录 / 仅同目录 / 仅选中项），调参复用指纹缓存、保留结果列表；「仅选中项」是一次性意图，重启后回落到全库
+- **分类与相簿跳转统一**：点收藏夹、媒体类型或智能相簿都保留搜索词，条件条显式列出搜索词、当前相簿与全部筛选，可逐条清除；组合条件下侧栏两个维度分别高亮
 - 每张显示与保留项的相似度（100% 显示「完全相同」）；自动推荐保留项（拍摄时间最早 → 创建最早 → 修改最早 → 体积最大）
 - 结果按组展开，支持逐张 / 整组 / 只留每组原图标记，实时统计待删张数与可释放体积，一键移入回收站
+- **忽略此组**：标记为「不是重复」后按组内成员的内容指纹记到 `config.json` 顶层，下次检测不再出现；右栏「已忽略」可逐条恢复。缺少内容指纹的拖放降级照片会明确说明无法跨重启记住
+- **只检测选中项**：选中不足 2 张时明确提示，不把空结果说成「没有相似项」；视频与隐藏项仍被排除
+- **清理报告**：右栏统一给出「扫描 N 张 / 成组 M 组 / 可清理 K 张 / 可释放 X / 本次已清理 Y 张」，数字全部由同一份结果算出；删除后带现场撤销
+- **组成员变化会让忽略失效**：增删照片或调阈值改变组成员后，被忽略的组会重新出现 —— 刻意不做模糊续接，避免把「不是重复」套到另一组照片上
+- **批量重命名预览即落盘结果**：预览会按当前磁盘状态预演同名占用，直接显示最终会追加的 `-1` 序号；预演只读、不写盘，路径需通过会话白名单
+- **弹层键盘可达**：9 个弹窗统一初始焦点、Tab 焦点陷阱、Esc 与关闭后焦点归还；EXIF / 计数 / 时间等可读信息不低于 12px
 
 ### 详情面板与 AI
 
@@ -141,7 +148,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | 查找 | 工具栏搜索框按文件名 / 格式 / 机型 / AI 标签搜索；漏斗按钮组合筛选 | `⌘F` |
 | 预览 | 选中后打开 QuickLook，`←/→` 翻页，滚轮缩放，双击 1x / 2x | `空格` / `Enter` |
 | 整理 | 收藏 / 隐藏 / 加标签 / 存为智能相簿 / 批量重命名 / 删除 / 导出 | `⌘⇧F`、`⌘⌫` |
-| 清理重复 | 侧栏进入「重复照片检测」，调阈值后检测，标记后一键移入回收站 | — |
+| 清理重复 | 侧栏进入「重复照片检测」，调阈值后检测，标记后一键移入回收站；不想处理的组可「忽略此组」 | — |
 | 数据资产 | 菜单「文件 → 数据资产…」导出 / 导入配置、路径重连、撤销最近操作、增量备份 | `⌘⇧D` |
 | AI 分析 | `⌘,` 填入 DeepSeek Key，选中图片后在详情面板点「分析图片」 | `⌘,` |
 
@@ -340,8 +347,8 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   ├── utils/index.ts    #   纯再导出 barrel（86 行，实现已按领域拆到 lib/）
 │   └── styles/styles.css #   主题变量与基础样式（Tailwind v4 CSS-first）
 ├── tests/                # 三层验证
-│   ├── unit/             #   Vitest 纯函数单测（326 项 / 17 个文件）
-│   ├── main-process/     #   打桩 electron 的集成测试（197 项，含 ai-config-privacy / data-assets / migration-version-guard / layering / ipc-contract）+ harness.cjs 脚手架
+│   ├── unit/             #   Vitest 纯函数单测（370 项 / 21 个文件）
+│   ├── main-process/     #   打桩 electron 的集成测试（251 项，含 rename-probe / crash-report / data-health / layering / ipc-contract）+ harness.cjs 脚手架
 │   └── smoke/            #   真启动 Electron 的端到端冒烟
 ├── build/                # electron-builder 资源（图标 / afterPack / DMG 重压钩子）
 ├── index.html            # Vite 入口 HTML

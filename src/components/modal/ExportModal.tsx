@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useModalA11y } from '@/hooks/useModalA11y';
 import { Photo } from '@/types';
 import { logger } from '@/lib/logger';
 import { humanizeFsError, isFileGoneError } from '@/lib/fs/fileOperations';
@@ -125,6 +126,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
   const [progress, setProgress] = useState(0);
   const [currentFile, setCurrentFile] = useState('');
   const cancelRef = useRef(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: dialogRef, disabled: isExporting });
 
   useEffect(() => {
     if (isOpen) {
@@ -138,19 +141,18 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
     }
   }, [isOpen]);
 
-  // Esc：导出中视为取消请求，否则直接关闭
+  // Esc：导出中视为取消请求；关闭与焦点管理交由 useModalA11y（disabled 时 Esc 不关闭）
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !isExporting) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (isExporting) cancelRef.current = true;
-        else onClose();
+        cancelRef.current = true;
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, isExporting, onClose]);
+  }, [isOpen, isExporting]);
 
   const pickDirectory = useCallback(async () => {
     if (!window.electronAPI) return;
@@ -212,6 +214,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
         className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[440px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] flex flex-col max-h-[90vh]"
         role="dialog"
         aria-modal="true"
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-[var(--border-subtle)]">

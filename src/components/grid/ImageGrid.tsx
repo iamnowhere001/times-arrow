@@ -515,7 +515,7 @@ const ListRow = React.memo(
               className="w-10 h-10 object-cover border border-[var(--border-subtle)] shrink-0 bg-[var(--bg-card)]"
             />
             {isVideoPhoto(photo) && (
-              <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium text-[var(--accent-cyan)] bg-[rgba(var(--accent-blue-rgb),0.12)] border border-[rgba(var(--accent-blue-rgb),0.25)]">
+              <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs font-medium text-[var(--accent-cyan)] bg-[rgba(var(--accent-blue-rgb),0.12)] border border-[rgba(var(--accent-blue-rgb),0.25)]">
                 <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M8 5v14l11-7z" />
                 </svg>
@@ -1008,7 +1008,7 @@ const ImageCard = React.memo(
                 {isVideo ? '无法预览此视频' : '图片加载失败'}
               </p>
               {isVideo && (
-                <p className="mt-1.5 text-[10px] leading-snug text-[rgba(var(--accent-pink-rgb),0.55)] text-center">
+                <p className="mt-1.5 text-xs leading-snug text-[rgba(var(--accent-pink-rgb),0.55)] text-center">
                   编码格式可能不受支持，可右键「在访达中显示」用系统播放器打开
                 </p>
               )}
@@ -1065,7 +1065,7 @@ const ImageCard = React.memo(
 
           {/* 时长角标：贴在左下角，位于文件名浮层之上 */}
           {isVideo && durationLabel && !loadError && (
-            <div className="absolute bottom-1.5 left-1.5 z-[7] px-1.5 py-0.5 rounded-md bg-[rgba(0,0,0,0.6)] text-white text-[10px] font-medium tabular-nums backdrop-blur-md shadow-xs">
+            <div className="absolute bottom-1.5 left-1.5 z-[7] px-1.5 py-0.5 rounded-md bg-[rgba(0,0,0,0.6)] text-white text-xs font-medium tabular-nums backdrop-blur-md shadow-xs">
               {durationLabel}
             </div>
           )}
@@ -1403,7 +1403,7 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(
             className="w-16 2xl:w-20 appearance-none cursor-pointer accent-[var(--accent-blue)] focus:outline-hidden"
             aria-label="网格大小"
           />
-          <span className="text-[11px] font-mono text-[var(--text-tertiary)] w-8 text-right">
+          <span className="text-xs font-mono text-[var(--text-tertiary)] w-8 text-right">
             {Math.round(scale * 100)}%
           </span>
         </div>

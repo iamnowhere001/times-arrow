@@ -63,7 +63,12 @@ export type SortKey = 'name' | 'size' | 'dateModified' | 'dateCreated' | 'dateTa
 export type SortDirection = 'asc' | 'desc';
 
 /** 重复检测的比对范围：全库跨目录 / 仅同目录 */
-export type DuplicateScope = 'all' | 'sameFolder';
+/**
+ * 重复检测的比对范围。
+ * 'selected' 是 v0.6.2 批次 3 新增的「只检测选中项」：与另外两项共用同一个控件语义，
+ * 不另开一套开关，避免「同一件事两种走法」（ROADMAP 原则 7）。
+ */
+export type DuplicateScope = 'all' | 'sameFolder' | 'selected';
 
 export interface SortConfig {
   key: SortKey;
@@ -167,6 +172,20 @@ export interface DuplicatePreferences {
   scope?: DuplicateScope;
 }
 
+/**
+ * 用户标记为「不是重复」的组（v0.6.2 批次 3 / F8）。
+ * 存在 config 顶层而不是 duplicate 偏好里 —— 后者每次调阈值都被整体替换，会把忽略集抹掉。
+ */
+export interface IgnoredDuplicateGroup {
+  /** 组内成员稳定标识排序拼接后压缩出的定长 key，见 groupIdentityKey */
+  key: string;
+  /** 记录时的成员数，仅用于展示 */
+  memberCount: number;
+  /** 记录时组内第一张照片的文件名 */
+  label: string;
+  ignoredAt: number;
+}
+
 /** AI 分析结果缓存条目 */
 export interface AiCacheEntry {
   description?: string;
@@ -246,6 +265,8 @@ export interface PersistedConfig {
   recentDirectories?: string[];
   /** 重复检测参数 */
   duplicate?: DuplicatePreferences;
+  /** 已标记为「不是重复」的组；按内容指纹持久化，检测时过滤 */
+  ignoredDuplicateGroups?: IgnoredDuplicateGroup[];
   /**
    * v1 → v2 迁移时文件已不可达、尚未续接的旧记录（按原路径保存，绝不静默丢弃）。
    * 「路径重连」会用它们把标注接回新位置。

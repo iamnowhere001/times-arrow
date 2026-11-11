@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useModalA11y } from '@/hooks/useModalA11y';
 import type { AiConfigPatch, AiKeySource } from '@/types';
 
 interface AiSettingsModalProps {
@@ -70,6 +71,14 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
   /** 配置读取失败（通常是主进程未重启，IPC handler 还不存在） */
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y({
+    isOpen,
+    onClose,
+    containerRef: dialogRef,
+    disabled: isLoading || isSaving || isTesting,
+  });
+
   // 每次打开都重新拉取最新配置，避免回显上一次编辑的草稿
   useEffect(() => {
     if (!isOpen) return;
@@ -115,18 +124,6 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
       cancelled = true;
     };
   }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -206,6 +203,7 @@ const AiSettingsModal: React.FC<AiSettingsModalProps> = ({ isOpen, onClose, onNo
         className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[480px] max-w-[90vw] overflow-hidden border border-[var(--border-default)] animate-scaleIn flex flex-col"
         role="dialog"
         aria-modal="true"
+        ref={dialogRef}
         aria-label="AI 分析设置"
         onClick={(e) => e.stopPropagation()}
       >

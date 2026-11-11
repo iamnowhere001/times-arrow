@@ -11,12 +11,13 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
   type SetStateAction,
 } from 'react';
-import { DuplicateScope, Photo } from '@/types';
+import { DuplicateScope, Photo, type IgnoredDuplicateGroup } from '@/types';
 import {
   findDuplicatePhotos,
   isDuplicateScanAbort,
@@ -26,13 +27,24 @@ import {
 } from '@/utils';
 import { DUPLICATE_SIMILARITY_DEFAULT, similarityToDistance } from '@/lib/duplicate/constants';
 import { releaseMemory } from '@/lib/cache/cacheManager';
-import { savePersistedConfig } from '@/lib/persistence/persistence';
+import { loadPersistedConfig, savePersistedConfig } from '@/lib/persistence/persistence';
+import {
+  buildScanReport,
+  filterIgnoredGroups,
+  groupIdentityKey,
+  normalizeIgnoredGroups,
+  recordIgnoredGroup,
+  removeIgnoredGroup,
+  type DuplicateScanReport,
+} from '@/lib/duplicate/ignoredGroups';
 import { logger } from '@/lib/logger';
 import { movePhotosToTrash } from '@/lib/fs/fileOperations';
 import { ToastAction, type ToastType } from '@/types/toast';
 
 export interface UseDuplicateDetectionParams {
   photos: Photo[];
+  /** 主图库当前选中项：scope='selected' 时只检测这些照片 */
+  selectedIds: Set<string>;
   showToast: (message: string, type?: ToastType, action?: ToastAction) => void;
   /** 配置是否已读取完成：完成前不写检测参数偏好 */
   isConfigLoaded: boolean;
@@ -75,6 +87,16 @@ export interface DuplicateDetectionResult {
   handleDeleteDuplicates: (photosToDelete: Photo[]) => Promise<void>;
   /** 图库侧删除后，同步收敛检测结果（供通用删除流程复用） */
   pruneDuplicateGroups: (ids: Set<string>) => void;
+  /** 用户标记为「不是重复」的组（按内容指纹持久化） */
+  ignoredGroups: IgnoredDuplicateGroup[];
+  /** 忽略当前组；缺少稳定身份时给出明确说明而不是静默当成功 */
+  handleIgnoreGroup: (group: Photo[]) => void;
+  /** 取消忽略并自动重新分组，让这一组回到列表 */
+  handleRestoreIgnoredGroup: (key: string) => void;
+  /** 本次检测报告：扫描 / 成组 / 可释放 / 已删除，数字全部由同一份结果算出 */
+  scanReport: DuplicateScanReport;
+  /** 当前图库选中数量，供「只检测选中项」控件展示 */
+  selectedCount: number;
 }
 
 export function useDuplicateDetection(
@@ -82,6 +104,7 @@ export function useDuplicateDetection(
 ): DuplicateDetectionResult {
   const {
     photos,
+    selectedIds,
     showToast,
     isConfigLoaded,
     isDuplicateDetectorOpen,
@@ -116,6 +139,21 @@ export function useDuplicateDetection(
   /** 进行中的重复检测：取消时 abort，检测管线会在下一个分片边界停下并释放 */
   const duplicateAbortRef = useRef<AbortController | null>(null);
 
+  // 选中集用 ref 镜像：App 每次渲染可能给出新的 Set，直接放进检测回调的依赖
+  // 会让回调频繁重建，进而抖动「参数变化自动重分组」的防抖 effect。
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
+
+  // 忽略集存 config 顶层字段、由本 hook 自己读写：duplicate 偏好每次调阈值都被整体替换，
+  // 挤进去会被无声抹掉（TODO「现实约束」第 6 条）。
+  const [ignoredGroups, setIgnoredGroups] = useState<IgnoredDuplicateGroup[]>([]);
+  const ignoredGroupsRef = useRef<IgnoredDuplicateGroup[]>([]);
+  ignoredGroupsRef.current = ignoredGroups;
+
+  /** 本轮检测的固定数字；组数含被忽略的组，可见组数由当前列表实时决定 */
+  const scanSummaryRef = useRef({ scanned: 0, groupsFound: 0 });
+  const [deletedStats, setDeletedStats] = useState({ count: 0, bytes: 0 });
+
   // 重复检测参数变更 → 延迟写盘（拖动阈值滑块时同样会连续触发）
   const duplicatePrefsTimerRef = useRef<number | null>(null);
   useEffect(() => {
@@ -138,22 +176,70 @@ export function useDuplicateDetection(
     };
   }, [isConfigLoaded, duplicateSimilarity, duplicateScope]);
 
+  // 启动时读一次忽略集。等 isConfigLoaded 是因为配置读取完成前可能拿到空对象，
+  // 此时若发生写回，会用空集覆盖掉已存记录。
+  useEffect(() => {
+    if (!isConfigLoaded) return;
+    let cancelled = false;
+    void loadPersistedConfig().then((config) => {
+      if (cancelled) return;
+      const restored = normalizeIgnoredGroups(config.ignoredDuplicateGroups);
+      ignoredGroupsRef.current = restored;
+      setIgnoredGroups(restored);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isConfigLoaded]);
+
+  /** 同步更新 state 与 ref：紧接着的重分组必须读到新忽略集，不能等下一次渲染 */
+  const applyIgnoredGroups = useCallback((next: IgnoredDuplicateGroup[]) => {
+    ignoredGroupsRef.current = next;
+    setIgnoredGroups(next);
+    // saveConfig 是顶层字段合并写，不会覆盖其它模块写入的偏好
+    void savePersistedConfig({ ignoredDuplicateGroups: next });
+  }, []);
+
+  /** 报告只在这里算一次：组件不再各自统计，避免顶栏与报告数字对不上 */
+  const scanReport = useMemo(
+    () =>
+      buildScanReport({
+        scanned: scanSummaryRef.current.scanned,
+        groupsFound: scanSummaryRef.current.groupsFound,
+        ignoredGroups: ignoredGroups.length,
+        groups: duplicateGroups,
+        deletedCount: deletedStats.count,
+        deletedBytes: deletedStats.bytes,
+      }),
+    [duplicateGroups, deletedStats, ignoredGroups]
+  );
+
   // 检测：支持传入阈值 / 范围覆盖（参数变化时自动重跑）
   const handleCheckDuplicates = useCallback(
     async (
       override?: { similarity?: number; scope?: DuplicateScope },
       mode: 'full' | 'repartition' = 'full'
     ) => {
-      // 重复检测只针对图片：视频逐帧比对既慢又无意义。
-      // 已隐藏项同样排除：隐藏是跨视图的语义，不该因为进到检测页就重新可见（还能被删掉）
-      const imagePhotos = photos.filter((p) => !isVideoPhoto(p) && !p.isHidden);
-      if (imagePhotos.length === 0) {
-        showToast(photos.length > 0 ? '相似检测仅支持图片' : '没有照片可检查相似项', 'info');
-        return;
-      }
-
       const runSimilarity = override?.similarity ?? duplicateSimilarity;
       const runScope = override?.scope ?? duplicateScope;
+
+      // 「只检测选中项」与另外两种范围共用同一个控件：先收敛到选中集，再排除视频 / 隐藏项。
+      // 不足 2 张时明确说明，不切页、也不把空结果说成「没有相似项」。
+      const scopePhotos =
+        runScope === 'selected' ? photos.filter((p) => selectedIdsRef.current.has(p.id)) : photos;
+      // 视频逐帧比对既慢又无意义；隐藏是跨视图语义，不该因为进了检测页就重新可见（还能被删掉）
+      const imagePhotos = scopePhotos.filter((p) => !isVideoPhoto(p) && !p.isHidden);
+      if (imagePhotos.length < 2) {
+        showToast(
+          runScope === 'selected'
+            ? '只检测选中项时，请先在图库中至少选中 2 张图片'
+            : photos.length > 0
+              ? '相似检测至少需要 2 张图片'
+              : '没有照片可检查相似项',
+          'info'
+        );
+        return;
+      }
 
       // 上一轮还在跑就先取消：两轮重叠会同时占用 CPU 与内存，是列表卡顿的主要来源
       duplicateAbortRef.current?.abort();
@@ -191,10 +277,21 @@ export function useDuplicateDetection(
           },
           setDuplicateProgress
         );
-        setDuplicateGroups(detectedDuplicates);
+        const { visible, ignoredCount } = filterIgnoredGroups(
+          detectedDuplicates,
+          ignoredGroupsRef.current
+        );
+        scanSummaryRef.current = {
+          scanned: imagePhotos.length,
+          groupsFound: detectedDuplicates.length,
+        };
+        setDuplicateGroups(visible);
 
-        if (detectedDuplicates.length > 0) {
-          showToast(`找到 ${detectedDuplicates.length} 组相似照片`, 'info');
+        if (visible.length > 0) {
+          const hiddenNote = ignoredCount > 0 ? `（另 ${ignoredCount} 组已标记不是重复）` : '';
+          showToast(`找到 ${visible.length} 组相似照片${hiddenNote}`, 'info');
+        } else if (ignoredCount > 0) {
+          showToast(`找到 ${ignoredCount} 组，均已标记为不是重复`, 'info');
         } else {
           showToast('未找到相似照片', 'success');
         }
@@ -202,7 +299,10 @@ export function useDuplicateDetection(
         // 取消是用户主动行为而非故障：静默收尾，不弹错误
         if (isDuplicateScanAbort(error)) {
           // 重新分组被新一轮取代时不能清空：旧结果还要继续撑着界面
-          if (!isRepartition) setDuplicateGroups([]);
+          if (!isRepartition) {
+            setDuplicateGroups([]);
+            scanSummaryRef.current = { scanned: 0, groupsFound: 0 };
+          }
           return;
         }
         logger.error('Error detecting duplicates:', error);
@@ -295,6 +395,46 @@ export function useDuplicateDetection(
     );
   }, []);
 
+  /** 标记「这组不是重复」：按内容指纹持久化、从当前列表移除，Toast 给现场撤销出口 */
+  const handleIgnoreGroup = useCallback(
+    (group: Photo[]) => {
+      const key = groupIdentityKey(group);
+      const next = recordIgnoredGroup(ignoredGroupsRef.current, group);
+      if (!key) {
+        // 拖放降级且未算出指纹的照片无法跨重启识别：宁可明说，也不假装已经记住
+        showToast('这组缺少内容指纹，无法跨重启记住；请改用「只留最早」处理', 'warning');
+        return;
+      }
+      if (!next) {
+        showToast('这组已经标记为不是重复', 'info');
+        return;
+      }
+      applyIgnoredGroups(next);
+      setDuplicateGroups((prev) => prev.filter((item) => groupIdentityKey(item) !== key));
+      showToast('已标记为不是重复，下次检测不再显示', 'info', {
+        label: '撤销',
+        onClick: () => {
+          applyIgnoredGroups(removeIgnoredGroup(ignoredGroupsRef.current, key));
+          void handleCheckDuplicates(undefined, 'repartition');
+        },
+      });
+    },
+    [applyIgnoredGroups, handleCheckDuplicates, showToast]
+  );
+
+  /** 取消忽略后自动重新分组：用户点「恢复」就是想再看这组，不该再点一次检测 */
+  const handleRestoreIgnoredGroup = useCallback(
+    (key: string) => {
+      const current = ignoredGroupsRef.current;
+      const restored = removeIgnoredGroup(current, key);
+      if (restored.length === current.length) return;
+      applyIgnoredGroups(restored);
+      void handleCheckDuplicates(undefined, 'repartition');
+      showToast('已恢复 1 组，正在重新检测', 'info');
+    },
+    [applyIgnoredGroups, handleCheckDuplicates, showToast]
+  );
+
   // 删除用户在重复检测面板中手动勾选的照片；
   // 删除后同步收敛检测结果，并重算每组的「推荐保留」项，弹窗保持打开以便继续处理
   const handleDeleteDuplicates = async (photosToDelete: Photo[]) => {
@@ -308,6 +448,13 @@ export function useDuplicateDetection(
     const { deletedIds, failedPhotos, errors } = await movePhotosToTrash(photosToDelete);
 
     if (deletedIds.size > 0) {
+      const freedBytes = photosToDelete
+        .filter((photo) => deletedIds.has(photo.id))
+        .reduce((sum, photo) => sum + (photo.size || 0), 0);
+      setDeletedStats((prev) => ({
+        count: prev.count + deletedIds.size,
+        bytes: prev.bytes + freedBytes,
+      }));
       removeWithCollapse(deletedIds);
       removeIdsFromSelection(deletedIds);
       // 分组与图库同步延后收敛，避免「列表先空一格、分组后跳一下」的错位
@@ -364,5 +511,10 @@ export function useDuplicateDetection(
     handleExitDuplicates,
     handleDeleteDuplicates,
     pruneDuplicateGroups,
+    ignoredGroups,
+    handleIgnoreGroup,
+    handleRestoreIgnoredGroup,
+    scanReport,
+    selectedCount: selectedIds.size,
   };
 }

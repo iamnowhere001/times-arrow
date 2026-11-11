@@ -91,7 +91,11 @@ const app = loadMainProcess({ userData });
   check('带检查时间', typeof report?.checkedAt === 'number');
   check('识别当前配置版本 v2', report?.config.version === 2, String(report?.config.version));
   check('当前配置可解析', report?.config.parseOk === true);
-  check('识别备份文件', report?.config.backups?.length === 2, String(report?.config.backups?.length));
+  check(
+    '识别备份文件',
+    report?.config.backups?.length === 2,
+    String(report?.config.backups?.length)
+  );
 
   section('2. 备份可解析性');
   const bak = report?.config.backups?.find((b) => b.name === 'config.json.bak');
@@ -106,8 +110,14 @@ const app = loadMainProcess({ userData });
     report?.thumbCache.files === 2 && report.thumbCache.bytes === 300,
     JSON.stringify(report?.thumbCache)
   );
-  check('操作日志条数 / 最近时间', report?.operationLog.entries === 3 && report?.operationLog.lastAt === ops[2].at);
-  check('崩溃日志条数 / 最近时间', report?.crashLog.entries === 1 && report?.crashLog.lastAt === crashAt);
+  check(
+    '操作日志条数 / 最近时间',
+    report?.operationLog.entries === 3 && report?.operationLog.lastAt === ops[2].at
+  );
+  check(
+    '崩溃日志条数 / 最近时间',
+    report?.crashLog.entries === 1 && report?.crashLog.lastAt === crashAt
+  );
 
   section('4. 迁移记录');
   check('读到最近一次迁移结果', report?.migration?.changed === true);
@@ -123,7 +133,11 @@ const app = loadMainProcess({ userData });
 
   section('6. 不误清空待提示队列');
   const notices = await app.call('crash-notices');
-  check('健康检查之后崩溃提示仍在', notices.ok && notices.data.length === 1, JSON.stringify(notices));
+  check(
+    '健康检查之后崩溃提示仍在',
+    notices.ok && notices.data.length === 1,
+    JSON.stringify(notices)
+  );
 
   process.exit(summary() === 0 ? 0 : 1);
 })().catch((error) => {

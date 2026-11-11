@@ -94,7 +94,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, actions }) => 
               )}
               <span className="flex-1 truncate">{action.label}</span>
               {action.shortcut && (
-                <span className="shrink-0 font-mono text-[11px] tracking-tight text-[var(--text-quaternary)]">
+                <span className="shrink-0 font-mono text-xs tracking-tight text-[var(--text-quaternary)]">
                   {action.shortcut}
                 </span>
               )}

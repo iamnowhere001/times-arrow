@@ -11,6 +11,10 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   error: Error | null;
+  /** 本次会话里连续重试的次数：单纯 reset 会以相同入参重挂载，常常立刻再崩一次 */
+  retryCount: number;
+  /** 是否展开技术细节（错误堆栈摘要） */
+  showDetails: boolean;
 }
 
 /**
@@ -18,16 +22,23 @@ interface ErrorBoundaryState {
  * 渲染期异常（例如某张图片元数据异常导致组件抛错）会向上冒泡到最近的边界，
  * 由边界降级渲染兜底 UI，从而保住边界之外的其余功能不白屏。
  * 支持局部使用（传 fallback）与整屏使用（默认兜底）。
+ *
+ * v0.6.2 批次 4：默认兜底的「重试」以前只是把 error 清空、以相同入参重挂载，
+ * 用户点几次都回到同一屏，既不知道哪里坏了，也不知道下一步该做什么。
+ * 现在给出出错区域、连续失败次数、可展开的错误详情，并在反复失败后把
+ * 「重新加载」明确为主要动作。
  */
 class ErrorBoundary extends React.Component {
-  state: ErrorBoundaryState = { error: null };
+  state: ErrorBoundaryState = { error: null, retryCount: 0, showDetails: false };
 
   // 本项目未引入 @types/react，React.Component 无类型成员；
   // 这里显式声明用到的基类成员，仅为通过类型检查，运行期由 React 提供。
   declare props: ErrorBoundaryProps;
-  declare setState: (state: Partial<ErrorBoundaryState>) => void;
+  declare setState: (
+    state: Partial<ErrorBoundaryState> | ((prev: ErrorBoundaryState) => Partial<ErrorBoundaryState>)
+  ) => void;
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return { error };
   }
 
@@ -40,20 +51,30 @@ class ErrorBoundary extends React.Component {
   }
 
   private handleRetry = () => {
-    this.setState({ error: null });
+    this.setState((prev: ErrorBoundaryState) => ({
+      error: null,
+      retryCount: prev.retryCount + 1,
+    }));
   };
 
   private handleReload = () => {
     window.location.reload();
   };
 
+  private toggleDetails = () => {
+    this.setState((prev: ErrorBoundaryState) => ({ showDetails: !prev.showDetails }));
+  };
+
   render() {
-    const { error } = this.state;
+    const { error, retryCount, showDetails } = this.state;
     if (!error) return this.props.children;
 
     if (this.props.fallback !== undefined) {
       return this.props.fallback;
     }
+
+    const repeated = retryCount >= 2;
+    const area = this.props.label || '界面';
 
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-[var(--bg-primary)] p-6">
@@ -73,23 +94,53 @@ class ErrorBoundary extends React.Component {
               />
             </svg>
           </div>
-          <h1 className="text-lg font-semibold text-[var(--text-primary)] mb-2">界面出了点问题</h1>
+          <h1 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
+            {area}出了点问题
+          </h1>
           <p className="text-sm text-[var(--text-secondary)] mb-1">
-            应用的一部分意外崩溃，其余功能可能仍然可用。
+            {repeated
+              ? `已连续重试 ${retryCount} 次仍失败，同样的操作很可能再次出错。`
+              : '应用的一部分意外崩溃，其余功能可能仍然可用。'}
           </p>
-          <p className="text-xs text-[var(--text-quaternary)] font-mono break-all mb-6">
-            {error.message}
+          <p className="text-xs text-[var(--text-tertiary)] mb-3">
+            {repeated
+              ? '建议重新加载应用：收藏、标签与相簿已保存在本机，不会因此丢失。'
+              : '可以先试着重试；若反复出现，重新加载应用通常能恢复。'}
           </p>
+
+          <button
+            onClick={this.toggleDetails}
+            aria-expanded={showDetails}
+            className="text-xs text-[var(--accent-blue)] hover:opacity-80 mb-4"
+          >
+            {showDetails ? '收起错误详情' : '查看错误详情'}
+          </button>
+          {showDetails ? (
+            <pre className="text-left text-xs text-[var(--text-quaternary)] font-mono break-all whitespace-pre-wrap max-h-40 overflow-y-auto custom-scrollbar bg-[var(--bg-input)] rounded-xl p-3 mb-5">
+              {error.stack || `${error.name}: ${error.message}`}
+            </pre>
+          ) : (
+            <p className="text-xs text-[var(--text-quaternary)] font-mono break-all mb-5">
+              {error.message}
+            </p>
+          )}
+
           <div className="flex justify-center gap-3">
             <button
               onClick={this.handleRetry}
-              className="px-5 py-2 text-sm font-medium rounded-xl text-[var(--text-secondary)] border border-[var(--border-default)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-colors"
+              className={`px-5 py-2 text-sm font-medium rounded-xl border border-[var(--border-default)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-colors ${
+                repeated ? 'text-[var(--text-tertiary)]' : 'text-[var(--text-secondary)]'
+              }`}
             >
               重试
             </button>
             <button
               onClick={this.handleReload}
-              className="px-5 py-2 text-sm font-semibold rounded-xl text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)] hover:opacity-90 transition-opacity"
+              className={`px-5 py-2 text-sm font-semibold rounded-xl shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)] hover:opacity-90 transition-opacity ${
+                repeated
+                  ? 'text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))]'
+                  : 'text-[var(--text-secondary)] border border-[var(--border-default)] bg-[var(--bg-glass)]'
+              }`}
             >
               重新加载
             </button>

@@ -1,6 +1,6 @@
 # PhotoMinder 代码审查报告
 
-> **当前快照（2026-11-06）**：`electron/` 4,232 行（`main.js` 1,374 + `main/` 6 个 .cjs + `lib/` 4 个共享模块 + preload 157）；`src/` 97 个 ts/tsx，约 27,500 行；`tests/` 三层（单测 326 项 / 主进程 197 项 / Electron 冒烟）。
+> **当前快照（2026-11-11 · v0.6.2 发布）**：`electron/` 4,232 行（2026-11-06 口径；11-11 另加 `main/crash-report.cjs` / `health.cjs` 与 `probe-rename-targets`）；`src/` 104 个 ts/tsx；`tests/` 三层（单测 370 项 / 主进程 251 项 / Electron 冒烟，CSP 违规 0 / 控制台错误 0）。
 > **审查方式**：逐模块通读源码 + 交叉验证（git 跟踪状态、配置项、IPC 契约、真实启动）。
 > **严重程度**：**高** = 安全风险 / 数据损坏 / 架构级债务；**中** = 明确的功能或正确性缺陷，或显著抬高维护成本；**低** = 一致性、可读性、局部优化。
 > **图例**：✅ 已完成 · 🔶 部分完成 · ⏳ 待做 · ⚠️ 已记录但未改行为（需产品决定）
@@ -311,6 +311,40 @@ ai-cache 缺失 / 损坏时 `readStore` 返回 `{}`，导致已是 v2 的 config
 - **只撤「最近一条」**：文件操作逐文件 `recordOperation` 埋点，IPC 不回传 operation id；按批撤销要改契约并给日志分组，与「可信版」收益不匹配。已在按钮文案里写明作用域（批量场景「撤销 1 项」）。
 - **⌘Z 归 Chromium 原生**：编辑菜单 `role:'undo'` 会消费 ⌘Z，替换它会破坏输入框内文本撤销。用独立菜单项 + 不冲突的快捷键，不做 `before-input-event` 拦截。
 - 纯逻辑收在 `src/lib/fs/lastOperation.ts`（注入 api / showToast，便于测试），17 项单测 + 1 项事件契约断言。
+
+### 2.10 v0.6.2 批次 3 · 重复检测收口（2026-11-11）
+
+**范围**：P0-3 / F8 前半 —— 忽略此组、只检测选中项、清理报告、删除后撤销（撤销沿用批次 2）。
+
+- **组身份只认内容**：`stableIdentityOf` 取 `fileId` → 磁盘路径；`groupIdentityKey` 把成员标识排序拼接后用两轮 FNV-1a 压成 16 hex。排序让组内重排 / 改名 / 移动不改变身份，**成员变化则失效**是明确接受并记录在 UI 的取舍，不做模糊续接（否则「不是重复」会被套到另一组照片上）。
+- **持久化位置是硬约束**：忽略集写 `config.json` **顶层** `ignoredDuplicateGroups`，不进 `duplicate` 偏好对象 —— 后者每次调阈值都被整体替换。已用静态单测钉住这条。
+- **不留静默失败**：拖放降级、既无 `fileId` 也无路径的组不能跨重启识别，直接说明「无法跨重启记住」；重复点忽略与真正缺少指纹是两条不同提示。
+- **报告单一来源**：`releasableSizeOf` / `buildScanReport` 同时供顶栏情境条与右栏报告使用，杜绝「顶栏 14 组、报告 12 组」。`DuplicateReportPanel` 从 1,100 行的 `DuplicateDetector` 中拆出，顺带降低该组件继续膨胀的速度。
+- **`selected` 不跨启动恢复**：它是一次性的会话意图；`useAppConfig` 读取时忽略，回落 `all`。
+- **验证**：新增 15 项单测；全套 typecheck / lint 0 / format:check / build / 单测 343 / 主进程 231 / Electron 冒烟全绿。
+
+**边界**：忽略集上限 500 条（超出淘汰最旧）；`normalizeIgnoredGroups` 对坏配置逐条容错。恢复忽略后走 `repartition` 轻量重分组，列表为空时退化为全量扫描并显示进度。
+
+### 2.11 v0.6.2 回补与发版（2026-11-11）
+
+- **K11**：新增受限 IPC `probe-rename-targets`（只读、路径白名单、不返回目录内容），主进程把
+  `uniqueNameCandidates` 抽成单一函数，让「只读预演」与 `reserveUniquePath` 原子占位同源。
+  预览逻辑从 640 行的 RenameModal 抽到 `lib/fs/renamePreview.ts`，组件提交与预览共用同一份
+  `RenameOptions`。主进程测试直接断言「预演名 === 真实落盘名」；`freed` 集合模拟批量改名的
+  顺序语义，避免链式改名预演出多余的 -1。IPC 调用按分层守卫下沉到 `lib/fs/renameProbe.ts`。
+- **K20**：统一为「所有入口保留搜索词 + 条件条显式展示上下文」。`lib/filter/viewContext.ts`
+  汇总搜索词 / 当前相簿 / 全部筛选，侧栏高亮按分类与媒体类型两个独立维度判定。
+  相簿仍覆盖筛选条件（这是它的定义），差异由条件条呈现，不是两套规则。
+- **批次 4 / 5**：10px 清零、信息性 11px 升 12px；顶层错误页给出连续重试次数与可展开详情；
+  `styles.css` 的暗色基础色收敛到 `@theme`，hex 与 rgb 通道一致性由静态断言守住
+  （已验证 Tailwind v4 会把非 `--color-*` 的通道 token 原样输出进产物 CSS）；
+  `useModalA11y` 统一 9 个弹层的焦点陷阱 / 初始焦点 / Esc / 焦点归还，ExportModal 保留
+  「导出中 Esc = 取消」这份额外语义。
+- **验证**：typecheck / lint 0 / format:check / build / 单测 370 / 主进程 251 / 冒烟全绿；
+  发布恢复演练 6 项验证新增 `ignoredDuplicateGroups` 顶层字段不因写偏好被抹掉。
+
+**边界**：预览的磁盘探测有时效，预览到确认之间文件变动仍以主进程原子占位为准，UI 已明说；
+可用性脚本需维护者本人执行，本次发布未做真人测试。
 
 ---
 
