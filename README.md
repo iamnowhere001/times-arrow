@@ -10,7 +10,7 @@
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
 | 当前版本 | **v0.6.2**（2026-11-11 发布，tag `v0.6.2`）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
 | 产品路线 | 定位、优先级与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；任务清单见 [`TODO.md`](./TODO.md) |
-| 质量护栏 | ESLint + oxlint 0 problems · 单测 370 项 · 主进程集成测试 251 项 · Electron 冒烟 1 项 |
+| 质量护栏 | ESLint + oxlint 0 problems · 单测 379 项 · 主进程集成测试 251 项 · Electron 冒烟 1 项 |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
 | 协作手册 | AI 代理与新贡献者的操作约束见 [`AGENTS.md`](./AGENTS.md) |
 
@@ -48,7 +48,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `npm run lint` / `lint:fix` | ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware；当前均为 0 problems） |
 | `npm run format` / `format:check` | Prettier（已全量格式化，`format:check` 通过） |
 | `npm run test` | `test:main` + `test:unit` |
-| `npm run test:unit` | Vitest 纯函数单测（370 项） |
+| `npm run test:unit` | Vitest 纯函数单测（379 项） |
 | `npm run test:main` | 打桩 electron 的主进程集成测试（251 项 = 22 + 18 + 48 + 16 + 47 + 迁移守卫 30 + 重命名预演 20 + 崩溃记录 16 + 数据健康 18 + 分层依赖 6 + IPC 契约 10） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
 
@@ -73,7 +73,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - **离线地名**：坐标自动翻成「这是哪儿」——25km 内直接报地名，150km 内算「附近」，更远给「距 敦煌 192 公里」；数据来自内嵌的约 1700 条城市库，不做在线逆地理编码
 - **QuickLook**：图片支持以光标为中心缩放、旋转、带边界平移；视频使用自定义播放器（缓冲区间、±10 秒、倍速 0.5×–2×、画质、音量、循环、画中画、全屏）；图片与视频共用翻页、收藏与**幻灯片**（2 / 3 / 5 / 8 / 12 秒可选，交叉淡入）
 - **缩略图按需生成**：卡片进入视口才请求，不在导入时逐张预生成；视频首帧由渲染进程抓取后落盘缓存；视频时长 / 分辨率由播放器上报回填，网格显示时长角标
-- **多选与侧栏**：⌘/Ctrl 多选、Shift 区间连选、方向键导航、Home / End 跳首尾；侧栏含图库分类、媒体类型、智能相簿、文件夹来源，以及三个整页视图入口
+- **多选与侧栏**：⌘/Ctrl 多选、Shift 区间连选、方向键导航、Home / End 跳首尾；侧栏含图库分类、媒体类型、标签、智能相簿、文件夹来源，以及三个整页视图入口
 
 ### 搜索与筛选
 
@@ -87,6 +87,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - **隐藏**：隐藏项不出现在任何视图，集中收在侧栏「已隐藏」，可随时取消
 - **智能相簿**：把当前筛选条件存为命名相簿，内容随图库自动更新
 - **用户标签**：与 AI 标签分开维护，参与搜索与筛选
+- **批量标签**（v0.7.0 第一批）：多选时详情面板可一次给整组添加 / 移除标签，带输入建议、进度与取消；完成后可撤销本次批量操作。侧栏按使用频次列出标签，点击即筛
 - **调整日期与时间**：批量平移（天 / 时 / 分）或设为指定时间，仅改应用内记录，详情面板标注「已修正」
 - **媒体类型自动归类**：视频 / 自拍 / 实况照片 / 截屏（本地启发式规则，见 `src/lib/media/mediaTypes.ts`）
 
@@ -147,7 +148,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | 导入 | 菜单「文件 → 导入图片或文件夹…」选择文件夹或多选文件；或直接拖入窗口 | `⌘O` |
 | 查找 | 工具栏搜索框按文件名 / 格式 / 机型 / AI 标签搜索；漏斗按钮组合筛选 | `⌘F` |
 | 预览 | 选中后打开 QuickLook，`←/→` 翻页，滚轮缩放，双击 1x / 2x | `空格` / `Enter` |
-| 整理 | 收藏 / 隐藏 / 加标签 / 存为智能相簿 / 批量重命名 / 删除 / 导出 | `⌘⇧F`、`⌘⌫` |
+| 整理 | 收藏 / 隐藏 / 单张或批量加标签 / 存为智能相簿 / 批量重命名 / 删除 / 导出 | `⌘⇧F`、`⌘⌫` |
 | 清理重复 | 侧栏进入「重复照片检测」，调阈值后检测，标记后一键移入回收站；不想处理的组可「忽略此组」 | — |
 | 数据资产 | 菜单「文件 → 数据资产…」导出 / 导入配置、路径重连、撤销最近操作、增量备份 | `⌘⇧D` |
 | AI 分析 | `⌘,` 填入 DeepSeek Key，选中图片后在详情面板点「分析图片」 | `⌘,` |
@@ -347,7 +348,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   ├── utils/index.ts    #   纯再导出 barrel（86 行，实现已按领域拆到 lib/）
 │   └── styles/styles.css #   主题变量与基础样式（Tailwind v4 CSS-first）
 ├── tests/                # 三层验证
-│   ├── unit/             #   Vitest 纯函数单测（370 项 / 21 个文件）
+│   ├── unit/             #   Vitest 纯函数单测（379 项 / 22 个文件）
 │   ├── main-process/     #   打桩 electron 的集成测试（251 项，含 rename-probe / crash-report / data-health / layering / ipc-contract）+ harness.cjs 脚手架
 │   └── smoke/            #   真启动 Electron 的端到端冒烟
 ├── build/                # electron-builder 资源（图标 / afterPack / DMG 重压钩子）

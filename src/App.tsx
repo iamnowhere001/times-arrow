@@ -15,6 +15,7 @@ import { createUndoActionFactory, undoLastOperation, type UndoDeps } from '@/lib
 import { useToasts } from '@/hooks/useToasts';
 import { useThemeMode } from '@/hooks/useThemeMode';
 import { useDuplicateDetection } from '@/hooks/useDuplicateDetection';
+import { useBatchTags } from '@/hooks/useBatchTags';
 import { createEmptyFilters } from '@/lib/filter/filters';
 import { deriveEmptyStateCopy } from '@/lib/filter/libraryViewState';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
@@ -333,6 +334,26 @@ const App: React.FC = () => {
     scheduleAfterExit,
     makeUndoAction,
   });
+
+  // v0.7.0 第一批：批量标签。整批只写一次配置，撤销用本次变更的 before 快照。
+  const {
+    applyTag: applyBatchTag,
+    cancel: cancelBatchTags,
+    isApplying: isApplyingBatchTags,
+    progress: batchTagsProgress,
+    rankedTags,
+  } = useBatchTags({ photos, selectedIds, tagsRef, setPhotos, showToast });
+
+  /** 侧栏标签：点击即筛，再点取消；与筛选面板共用同一份 filters.tags */
+  const handleSelectTag = useCallback(
+    (name: string) => {
+      const current = filters.tags;
+      updateFilters({
+        tags: current.includes(name) ? current.filter((item) => item !== name) : [...current, name],
+      });
+    },
+    [filters.tags, updateFilters]
+  );
 
   // 已导入路径集合与 forgetImportedPaths 已迁至 hooks/usePersistedLibraryData
 
@@ -955,6 +976,9 @@ const App: React.FC = () => {
           onSelectMap={handleSelectMap}
           isMapActive={isMapOpen}
           onCheckDuplicates={handleCheckDuplicatesClick}
+          rankedTags={rankedTags}
+          activeTags={filters.tags}
+          onSelectTag={handleSelectTag}
           onRequestReset={handleRequestClearList}
           hasPhotos={photos.length > 0}
           onOpenShortcuts={handleOpenShortcuts}
@@ -1182,6 +1206,15 @@ const App: React.FC = () => {
         >
           <DetailsPane
             selectedPhotos={selectedPhotos}
+            batchTags={{
+              rankedTags,
+              isApplying: isApplyingBatchTags,
+              progress: batchTagsProgress,
+              onApply: (op) => {
+                void applyBatchTag(op);
+              },
+              onCancel: cancelBatchTags,
+            }}
             onUpdatePhoto={handleUpdatePhoto}
             onRenamePhoto={handleRenamePhoto}
             isDetailsPaneOpen={isDetailsPaneOpen}

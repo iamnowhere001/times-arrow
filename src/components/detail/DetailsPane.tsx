@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import BatchTagsPanel, { type BatchTagsPanelProps } from './BatchTagsPanel';
 import { Photo } from '@/types';
 import {
   extOfName,
@@ -69,6 +70,8 @@ interface DetailsPaneProps {
   onNotify?: (message: string, type: 'success' | 'info' | 'error' | 'warning') => void;
   /** 打开「AI 分析设置」弹窗（配置 DeepSeek API Key 等） */
   onOpenAiSettings?: () => void;
+  /** v0.7.0：多选时的批量标签能力；不传则保持只读 */
+  batchTags?: Omit<BatchTagsPanelProps, 'selectedPhotos'>;
 }
 
 interface ExportSettings {
@@ -83,6 +86,7 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({
   isDetailsPaneOpen,
   onNotify,
   onOpenAiSettings,
+  batchTags,
 }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
@@ -974,9 +978,10 @@ const DetailsPane: React.FC<DetailsPaneProps> = ({
         )}
 
         {isMulti && (
-          <div className="p-5">
+          <div className="p-5 space-y-3">
+            {batchTags && <BatchTagsPanel selectedPhotos={selectedPhotos} {...batchTags} />}
             <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-              对多张照片的操作用图库上方的操作条完成：收藏、重命名、移动到文件夹、导出或移入回收站。
+              其它批量操作用图库上方的操作条完成：收藏、重命名、移动到文件夹、导出或移入回收站。
             </p>
             <div className="mt-4 p-4 bg-[var(--bg-glass)] rounded-lg border border-[var(--border-subtle)]">
               <div className="flex justify-between mb-2">

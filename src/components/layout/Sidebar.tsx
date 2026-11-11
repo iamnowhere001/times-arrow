@@ -4,6 +4,7 @@ import { PlusIcon, RefreshIcon } from '@/components/icons';
 import { DotPinIcon } from '@/components/common/DotField';
 import { Stat } from '@/components/common/Stat';
 import { navItemActive } from '@/lib/filter/viewContext';
+import type { RankedTag } from '@/lib/tags/tagOperations';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -32,6 +33,11 @@ interface SidebarProps {
   onRenameAlbum: (id: string, name: string) => boolean;
   /** 打开「存为智能相簿」弹窗 */
   onRequestSaveAlbum: () => void;
+  /** v0.7.0：全库标签频次（与批量标签面板同源） */
+  rankedTags: RankedTag[];
+  /** 当前作为筛选条件生效的标签 */
+  activeTags: string[];
+  onSelectTag: (name: string) => void;
   activeCategory: string;
   /** 当前媒体类型筛选：与分类共同决定哪一项处于选中态 */
   mediaFilter: MediaFilter;
@@ -603,6 +609,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   onDeleteAlbum,
   onRenameAlbum,
   onRequestSaveAlbum,
+  rankedTags,
+  activeTags,
+  onSelectTag,
   directorySources,
   fileSources,
   unavailableSourcePaths,
@@ -825,6 +834,35 @@ const Sidebar: React.FC<SidebarProps> = ({
               ))}
             </ul>
           </div>
+
+          {/* v0.7.0：标签按使用频次排序，点击即筛（与筛选面板共用 filters.tags） */}
+          {rankedTags.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-[var(--border-subtle)]">
+              <SectionLabel>标签</SectionLabel>
+              <ul className="space-y-[3px]">
+                {rankedTags.slice(0, 8).map((item) => {
+                  const active = activeTags.includes(item.name);
+                  return (
+                    <li key={item.name}>
+                      <button
+                        type="button"
+                        onClick={() => onSelectTag(item.name)}
+                        title={`${item.count} 张照片使用；点击${active ? '取消筛选' : '按此标签筛选'}`}
+                        className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${
+                          active
+                            ? 'bg-[rgba(var(--accent-blue-rgb),0.16)] text-[var(--accent-blue)]'
+                            : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)]'
+                        }`}
+                      >
+                        <span className="truncate">#{item.name}</span>
+                        <span className="tabular-nums shrink-0">{item.count}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
           {/* 智能相簿：从这里开始是「你的内容」，不再是系统分类，
             所以分隔线继续保留，但内部不再切段 */}
