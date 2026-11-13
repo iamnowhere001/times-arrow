@@ -151,4 +151,13 @@ describe('布局常量与渲染层的一致性（静态断言）', () => {
     expect(source).toContain('<div ref={contentRef} style={{ position:');
     expect(source).toContain('e.target === e.currentTarget || e.target === contentRef.current');
   });
+
+  it('悬停微交互：内层媒体 1.03 倍缩放、加深落影与相机标识接入', () => {
+    const source = readGrid();
+    const css = readFileSync(resolve(ROOT, 'src/styles/styles.css'), 'utf8');
+    expect(source).toContain('group-hover:scale-[1.03]');
+    expect(source).toContain('group-hover:shadow-[var(--shadow-photo-hover)]');
+    expect(source).toContain('cameraKeyOf(photo)');
+    expect(css).toContain('--shadow-photo-hover:');
+  });
 });

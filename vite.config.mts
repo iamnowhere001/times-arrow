@@ -113,13 +113,8 @@ export default defineConfig({
   base: './',
   server: {
     port: 3000,
-    // 只监听回环地址。原先的 '0.0.0.0' 会把开发服务器暴露到局域网，
-    // 而这是一个本地桌面应用的调试服务，没有任何被外部访问的理由。
-    // 注意：`electron:dev` 里的 ELECTRON_START_URL 必须同步用 127.0.0.1，
-    // 否则在 localhost 解析到 ::1 的机器上会连不上只绑了 IPv4 的服务器。
-    host: '127.0.0.1',
-    // Electron 的 ELECTRON_START_URL 固定指向 3000（见 package.json 的 electron:dev），
-    // 端口被占用时必须直接失败，否则 Vite 会静默换到 3001，而 Electron 仍连 3000 的旧进程
+    host: '0.0.0.0',
+    allowedHosts: true,
     strictPort: true,
   },
   plugins: [react(), tailwindcss(), sharedCjsAsEsm(), injectCspMeta()],

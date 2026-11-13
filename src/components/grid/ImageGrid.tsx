@@ -13,6 +13,7 @@ import type { ImageGridHandle } from '@/types/grid';
 import { formatBytes, formatDate, formatVideoDuration, isVideoPhoto } from '@/utils';
 // 时间语义统一入口：本文件原先内联了 `dateTaken || lastModified`
 import { photoTakenTime } from '@/lib/media/photoTime';
+import { cameraKeyOf } from '@/lib/filter/filters';
 import { useThumbnailSrc } from '@/hooks/useThumbnailSrc';
 import { useVideoPoster } from '@/hooks/useVideoPoster';
 import { ThumbImage } from '@/components/grid/ThumbnailImage';
@@ -808,6 +809,23 @@ const OVERLAY_BTN =
 /** 图标盒子统一 16px：几何上对齐，视觉重量再靠 strokeWidth 微调 */
 const OVERLAY_ICON = 'w-4 h-4';
 
+/** 卡片角落与浮层共用的极简相机轮廓 */
+const CameraGlyph = ({ className = 'w-3.5 h-3.5' }: { className?: string }) => (
+  <svg
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+    strokeWidth="1.9"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+    <circle cx="12" cy="13" r="4" />
+  </svg>
+);
+
 const ImageCard = React.memo(
   ({
     photo,
@@ -869,6 +887,8 @@ const ImageCard = React.memo(
 
     // 视频时长角标：元数据只能由播放器加载后上报，未就绪时不显示（而不是显示 0:00）
     const durationLabel = isVideo ? formatVideoDuration(photo.duration) : '';
+    // 统一相机标识（厂商 + 机型，自动去重前缀）；缺省 EXIF 时返回 null
+    const cameraLabel = cameraKeyOf(photo);
 
     return (
       <div
@@ -880,15 +900,15 @@ const ImageCard = React.memo(
           isExiting
             ? 'opacity-0 scale-[0.92] pointer-events-none'
             : isSelected
-              ? 'shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.2)]'
-              : 'hover:bg-[var(--bg-glass)] hover:-translate-y-0.5 hover:scale-[1.005]'
+              ? 'shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.2)] hover:-translate-y-0.5'
+              : 'hover:bg-[var(--bg-glass)] hover:-translate-y-0.5'
         }`}
       >
         <div
-          className={`relative flex-1 min-h-0 w-full rounded-md overflow-hidden bg-[var(--bg-card)] border transition-[border-color,box-shadow] duration-200 ease-entrance ${
+          className={`relative flex-1 min-h-0 w-full rounded-md overflow-hidden bg-[var(--bg-card)] border shadow-[var(--shadow-photo)] transition-[border-color,box-shadow] duration-200 ease-entrance ${
             isSelected
-              ? 'border-transparent ring-2 ring-inset ring-[var(--accent-blue)]'
-              : 'border-[var(--border-subtle)] group-hover:border-[var(--border-hover)]'
+              ? 'border-transparent ring-2 ring-inset ring-[var(--accent-blue)] group-hover:shadow-[var(--shadow-photo-hover)]'
+              : 'border-[var(--border-subtle)] group-hover:border-[var(--border-hover)] group-hover:shadow-[var(--shadow-photo-hover)]'
           }`}
         >
           {/* 选择圈：入场做淡入 + 轻微放大，与右侧两个按钮同尺寸、同顶边对齐 */}
@@ -1029,8 +1049,8 @@ const ImageCard = React.memo(
               preload="metadata"
               muted
               playsInline
-              className={`w-full h-full object-contain transition-[opacity,transform] duration-500 ease-out ${
-                loaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
+              className={`w-full h-full object-contain transition-[opacity,transform] duration-300 ease-entrance ${
+                loaded ? 'opacity-100 scale-100 group-hover:scale-[1.03]' : 'opacity-0 scale-105'
               }`}
               onLoadedData={handleImageLoad}
               onError={handleImageError}
@@ -1040,8 +1060,8 @@ const ImageCard = React.memo(
               ref={imgRef}
               src={mediaSrc ?? undefined}
               alt={photo.name}
-              className={`w-full h-full object-contain transition-[opacity,transform] duration-500 ease-out ${
-                loaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
+              className={`w-full h-full object-contain transition-[opacity,transform] duration-300 ease-entrance ${
+                loaded ? 'opacity-100 scale-100 group-hover:scale-[1.03]' : 'opacity-0 scale-105'
               }`}
               loading="lazy"
               decoding="async"
@@ -1070,20 +1090,47 @@ const ImageCard = React.memo(
             </div>
           )}
 
-          {/* 文件名浮层：不再占卡片高度，悬停（或选中）时贴在图底渐显。
-            加载失败时不盖住重试按钮。 */}
+          {/* 右下角常驻相机图标：仅当照片或视频携带 EXIF 相机信息时微显，悬停提亮并提示机型 */}
+          {cameraLabel && !loadError && loaded && (
+            <div
+              title={cameraLabel}
+              aria-label={`拍摄设备：${cameraLabel}`}
+              className={`absolute bottom-1.5 right-1.5 z-[7] flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 ease-entrance ${
+                isSelected
+                  ? 'border-[rgba(255,255,255,0.3)] bg-[rgba(0,0,0,0.6)] text-white'
+                  : 'border-[rgba(255,255,255,0.18)] bg-[rgba(0,0,0,0.44)] text-[rgba(255,255,255,0.72)] group-hover:border-[rgba(255,255,255,0.34)] group-hover:bg-[rgba(0,0,0,0.65)] group-hover:text-white'
+              }`}
+            >
+              <CameraGlyph className="w-3.5 h-3.5" />
+            </div>
+          )}
+
+          {/* 文件名与相机型号浮层：悬停或选中时贴在图底渐显，左右预留角落图标安全边距 */}
           {!loadError && (
             <div
-              className={`pointer-events-none absolute inset-x-0 bottom-0 z-[6] ${durationLabel ? 'pl-14 pr-2' : 'px-2'} pt-5 pb-1.5 bg-[linear-gradient(to_top,rgba(0,0,0,0.78),rgba(0,0,0,0.45)_55%,transparent)] transition-opacity duration-200 ease-entrance ${
+              className={`pointer-events-none absolute inset-x-0 bottom-0 z-[6] ${
+                durationLabel ? 'pl-14' : 'pl-2.5'
+              } ${
+                cameraLabel ? 'pr-9' : 'pr-2.5'
+              } pt-6 pb-1.5 bg-[linear-gradient(to_top,rgba(0,0,0,0.82),rgba(0,0,0,0.48)_58%,transparent)] transition-opacity duration-200 ease-entrance ${
                 isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
               }`}
             >
               <p
                 title={photo.name}
-                className="text-[11px] leading-tight font-medium truncate text-white"
+                className="text-xs leading-tight font-medium truncate text-white"
               >
                 {photo.name}
               </p>
+              {cameraLabel && (
+                <p
+                  title={cameraLabel}
+                  className="mt-0.5 flex items-center gap-1 text-xs leading-tight text-[rgba(255,255,255,0.78)] truncate"
+                >
+                  <CameraGlyph className="w-3 h-3 shrink-0 opacity-85" />
+                  <span className="truncate">{cameraLabel}</span>
+                </p>
+              )}
             </div>
           )}
         </div>
