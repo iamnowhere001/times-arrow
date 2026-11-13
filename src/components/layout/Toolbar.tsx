@@ -292,9 +292,13 @@ const Toolbar: React.FC<ToolbarProps> = ({
   );
   const advancedFilterCount = countAdvancedFilters(filters);
 
+  const hasMacTrafficLights = typeof window !== 'undefined' && Boolean(window.electronAPI);
+
   return (
     <header
-      className={`app-drag h-10 shrink-0 bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] shadow-[var(--shadow-toolbar)] z-20 sticky top-0 ${isLeftPaneOpen ? 'px-3' : 'pl-[78px] pr-3'}`}
+      className={`app-drag h-10 shrink-0 bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] shadow-[var(--shadow-toolbar)] z-20 sticky top-0 ${
+        !isLeftPaneOpen && hasMacTrafficLights ? 'pl-[78px] pr-3' : 'px-3'
+      }`}
     >
       <div className="app-no-drag flex items-center gap-2 h-full">
         {/* ===== 左：主要导航与常用操作 ===== */}
