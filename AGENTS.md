@@ -225,6 +225,8 @@ build/      # electron-builder 资源与打包钩子
 | 检查更新 / 下载 DMG | `electron/main/updater.cjs`、`src/hooks/useUpdateChecker.ts`、`src/components/modal/UpdateModal.tsx` |
 | 主题 / 视觉 | `src/styles/styles.css`、`src/components/common/`、`src/components/icons/` |
 | 打包 / 体积 | `package.json` 的 `build` 字段、`build/afterPack.js`、`build/recompressDmg.js` |
+| 应用菜单能触发什么 | `electron/main/menu.cjs`（发送端）+ `src/hooks/useAppMenuEvents.ts`（订阅端），两处对照 |
+| 加一个弹窗 / 改整页视图 | `src/components/layout/AppOverlays.tsx`（全部弹层）/ `AppViews.tsx`（四个整页视图） |
 | 安全边界 | `electron/main/authorization.cjs`、`electron/lib/csp.cjs`、`CODE_REVIEW.md` 附录 A / B |
 
 **新增一类东西**（整页视图 / hook / IPC 通道 / 持久化字段 / 纯逻辑与测试 / 主进程测试 / 文件操作 / 主题）的分步清单，见 [`docs/architecture.md`](./docs/architecture.md) §6。

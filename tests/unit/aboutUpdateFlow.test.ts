@@ -40,9 +40,11 @@ describe('更新信息格式化', () => {
 
 describe('关于页更新流程护栏', () => {
   it('整页的「检查更新」就地检查，不再中转弹窗', () => {
-    const app = read('src/App.tsx');
-    expect(app).toContain('onCheckUpdate={updateChecker.checkNow}');
-    expect(app).not.toContain('onCheckUpdate={updateChecker.openPanel}');
+    // about 的 props 装配已抽到 AppViews（App 只做状态装配），因此扫这两个文件；
+    // 写法也容忍两种：JSX 属性 `onCheckUpdate={...}` 与对象字面量 `onCheckUpdate: ...`。
+    const wiring = [read('src/App.tsx'), read('src/components/layout/AppViews.tsx')].join('\n');
+    expect(wiring).toMatch(/onCheckUpdate\s*[:=]\s*\{?\s*updateChecker\.checkNow/);
+    expect(wiring).not.toMatch(/onCheckUpdate\s*[:=]\s*\{?\s*updateChecker\.openPanel/);
   });
 
   it('整页具备完整的下载与安装操作', () => {

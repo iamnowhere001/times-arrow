@@ -49,13 +49,22 @@ function declaredMethods() {
 }
 
 /** src 实际调用：window.electronAPI?.method / window.electronAPI.method */
+/**
+ * 去掉注释再做静态扫描。
+ *
+ * 文档与说明性注释里会写 `window.electronAPI.onXxx` 这种形状来指代「事件订阅接口」，
+ * 那不是真实调用。扫进来会报「src 有调用、preload 无」的假失败 ——
+ * 守卫要守的是调用，不是注释里的示例。
+ */
+const stripComments = (source) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
 function usedMethods() {
   const files = walk(path.join(APP_ROOT, 'src'), /\.(ts|tsx)$/);
   const used = new Map();
   for (const file of files) {
-    for (const m of fs
-      .readFileSync(file, 'utf8')
-      .matchAll(/window\.electronAPI\??\.([A-Za-z][\w]*)/g)) {
+    const source = stripComments(fs.readFileSync(file, 'utf8'));
+    for (const m of source.matchAll(/window\.electronAPI\??\.([A-Za-z][\w]*)/g)) {
       if (!used.has(m[1])) used.set(m[1], path.relative(APP_ROOT, file).split(path.sep).join('/'));
     }
   }

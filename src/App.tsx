@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import DataAssetsModal from '@/components/modal/DataAssetsModal';
 import { assetKeyOf } from '@/lib/media/photoIdentity';
 import { MediaFilter, Photo, PhotoFilters, SortConfig, ViewMode, SortKey } from '@/types';
 import { isVideoPhoto, clearImageHashCache } from '@/utils';
@@ -19,36 +18,26 @@ import { useBatchTags } from '@/hooks/useBatchTags';
 import { createEmptyFilters } from '@/lib/filter/filters';
 import { deriveEmptyStateCopy } from '@/lib/filter/libraryViewState';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
-import { basenameOfPath, isPathInLibrary } from '@/lib/persistence/sources';
+import { isPathInLibrary } from '@/lib/persistence/sources';
 import Sidebar from '@/components/layout/Sidebar';
 import Toolbar from '@/components/layout/Toolbar';
+// 整页视图路由与全部弹层各自成文件：App 只负责状态装配与布局骨架
+import AppViews from '@/components/layout/AppViews';
+import AppOverlays from '@/components/layout/AppOverlays';
+import { useAppMenuEvents } from '@/hooks/useAppMenuEvents';
 import ImageGrid from '@/components/grid/ImageGrid';
 import type { ImageGridHandle } from '@/types/grid';
 import DetailsPane from '@/components/detail/DetailsPane';
-import RenameModal from '@/components/modal/RenameModal';
-import DeleteConfirmModal from '@/components/modal/DeleteConfirmModal';
-import ClearListConfirmModal from '@/components/modal/ClearListConfirmModal';
-import QuickLook from '@/components/detail/QuickLook';
-import ToastStack from '@/components/layout/ToastStack';
 import ViewErrorFallback from '@/components/common/ViewErrorFallback';
-import ContextMenu from '@/components/common/ContextMenu';
 import type { ContextMenuItem } from '@/types/contextMenu';
-import DuplicateDetector from '@/components/duplicate/DuplicateDetector';
+// 仍以类型身份使用：handleExportFinish 的回调签名由它推导
 import ExportModal from '@/components/modal/ExportModal';
-import TimelineGallery from '@/components/timeline/TimelineGallery';
-import LocationMap from '@/components/map/LocationMap';
-import AboutView from '@/components/about/AboutView';
 import { clearThumbnailCache } from '@/lib/cache/thumbCache';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import DragOverlay from '@/components/common/DragOverlay';
 import LoadingOverlay from '@/components/common/LoadingOverlay';
 import ActiveFiltersBar from '@/components/layout/ActiveFiltersBar';
-import AdjustDateModal, { type DateAdjustment } from '@/components/modal/AdjustDateModal';
-import SaveAlbumModal from '@/components/modal/SaveAlbumModal';
-import RestoreLibraryModal from '@/components/modal/RestoreLibraryModal';
-import AiSettingsModal from '@/components/modal/AiSettingsModal';
-import UpdateModal from '@/components/modal/UpdateModal';
-import ShortcutsOverlay from '@/components/common/ShortcutsOverlay';
+import type { DateAdjustment } from '@/components/modal/AdjustDateModal';
 import { useAppConfig } from '@/hooks/useAppConfig';
 import { useCollapseAnimation } from '@/hooks/useCollapseAnimation';
 import { useDragAndDrop } from '@/hooks/useDragAndDrop';
@@ -918,31 +907,25 @@ const App: React.FC = () => {
     setIsDeleteModalOpen,
   });
 
-  // ⌘O 应用菜单「导入图片或文件夹」：主进程弹出选择框后回传分类好的路径
-  useEffect(() => {
-    if (!window.electronAPI) return;
-    return window.electronAPI.onImportPaths((picked: PickedPaths) => {
+  // 应用菜单 → 渲染层的事件桥（导入 / AI 设置 / 数据资产 / 撤销），见 hooks/useAppMenuEvents。
+  // 三个入口包一层 useCallback：内联箭头会让订阅每次渲染重建，漏掉时会累积多个监听。
+  const handleImportPaths = useCallback(
+    (picked: PickedPaths) => {
       void importPickedPaths(picked);
-    });
-  }, [importPickedPaths]);
-
-  // 应用菜单「AI 分析设置…」（⌘,）：任意视图下都能唤出配置弹窗
-  useEffect(() => {
-    return window.electronAPI?.onOpenAiSettings?.(handleOpenAiSettings);
-  }, [handleOpenAiSettings]);
-
-  // 应用菜单「数据资产…」（⌘⇧D）：配置 / 路径 / 操作日志 / 备份统一入口
-  useEffect(() => {
-    return window.electronAPI?.onOpenDataAssets?.(() => setIsDataAssetsOpen(true));
-  }, []);
-
-  // 应用菜单「编辑 → 撤销上次文件操作」（⌥⌘Z）：⌘Z 仍归 Chromium 原生文本撤销
-  useEffect(() => {
-    if (!window.electronAPI) return;
-    return window.electronAPI.onUndoLastOperation?.(() => {
-      void undoLast();
-    });
+    },
+    [importPickedPaths]
+  );
+  const handleOpenDataAssets = useCallback(() => setIsDataAssetsOpen(true), []);
+  const handleUndoLastOperation = useCallback(() => {
+    void undoLast();
   }, [undoLast]);
+
+  useAppMenuEvents({
+    onImportPaths: handleImportPaths,
+    onOpenAiSettings: handleOpenAiSettings,
+    onOpenDataAssets: handleOpenDataAssets,
+    onUndoLastOperation: handleUndoLastOperation,
+  });
 
   // ---------------------------------------------------------------------------
   // 拖放导入（遮罩进出场 / 文件与文件夹分流 / 内存预览降级）见 hooks/useDragAndDrop
@@ -966,6 +949,61 @@ const App: React.FC = () => {
     });
 
   // 空状态 / 情境条文案的派生（isEmptyLibrary / gridViewTitle 等）已并入 hooks/useLibraryDerived
+
+  /** 整页视图返回图库：供 AppViews 的返回按钮与 ErrorBoundary 兜底共用 */
+  const handleBackToLibrary = useCallback(() => setMainView('library'), []);
+
+  /**
+   * 导出完成后的汇总判定与 Toast。
+   *
+   * 这段留在 App 而不是塞进 AppOverlays：它是**决策**（哪些算可重试失败、
+   * 文件消失怎么分流、重试集合怎么构造），不是「开关 → 渲染」的映射。
+   * AppOverlays 只接收决好的结果。
+   */
+  const handleExportFinish = useCallback<
+    NonNullable<React.ComponentProps<typeof ExportModal>['onFinish']>
+  >(
+    ({ succeeded, failed, cancelled, firstError, targetDir, gonePhotos }) => {
+      setIsExportModalOpen(false);
+      // 源文件已被外部删除 / 移动的条目：剔除出列表，且不进「重新导出」集合
+      const gone = gonePhotos ?? [];
+      if (gone.length > 0) fsGuard.reportGone(gone);
+      // 重试必须带着目标重新打开弹层：只开弹层会得到一个空的「已选择 0 张照片」
+      const goneIds = new Set(gone.map((p) => p.id));
+      const retryTargets = exportTargets.filter((p) => !goneIds.has(p.id));
+      setExportTargets([]);
+      const retryExport = {
+        label: '重新导出',
+        onClick: () => {
+          setExportTargets(retryTargets);
+          setIsExportModalOpen(true);
+        },
+      };
+      // 失败原因不再一律归咎于重名：实际原因（解码失败 / 无权限 / 磁盘满）由弹层回传
+      const reason = firstError ? `：${firstError}` : '';
+      const dirName = targetDir.split(/[\\/]/).filter(Boolean).pop() ?? '';
+      const where = dirName ? `到「${dirName}」` : '';
+      // 汇总里的「失败」只算真正可重试的：文件消失的条目已单独提示并剔除
+      const retriableFailed = failed - gone.length;
+      if (cancelled) {
+        showToast(
+          `导出已取消：完成 ${succeeded} 张${retriableFailed > 0 ? `，失败 ${retriableFailed} 张${reason}` : ''}`,
+          'warning'
+        );
+      } else if (retriableFailed === 0) {
+        showToast(`已导出 ${succeeded} 张${where}`, 'success');
+      } else if (succeeded > 0) {
+        showToast(
+          `已导出 ${succeeded} 张，${retriableFailed} 张失败${reason}`,
+          'warning',
+          retryExport
+        );
+      } else {
+        showToast(`导出失败：${retriableFailed} 张照片均未成功${reason}`, 'error', retryExport);
+      }
+    },
+    [exportTargets, fsGuard, showToast]
+  );
 
   return (
     <div
@@ -1037,105 +1075,54 @@ const App: React.FC = () => {
       )}
       {/* v0.6.2：主内容区用语义化 main，补上此前 Lighthouse 唯一的结构性无障碍缺口 */}
       <main className="main-content flex-1 flex flex-col bg-transparent">
-        {/* 重复检测：整页接管主内容区；左栏在整页视图里不渲染（见 isLeftPaneVisible） */}
-        {mainView === 'duplicates' ? (
-          <ErrorBoundary
-            label="重复检测"
-            fallback={
-              <ViewErrorFallback
-                title="相似检测视图出错"
-                description="图库内容仍然完好，可返回图库继续整理。"
-                onAction={() => setMainView('library')}
-              />
-            }
-          >
-            <DuplicateDetector
-              onBack={handleExitDuplicates}
-              duplicateGroups={duplicateGroups}
-              onDeleteDuplicates={handleDeleteDuplicates}
-              isProcessing={isProcessingDuplicates}
-              isRepartitioning={isRepartitioningDuplicates}
-              progress={duplicateProgress}
-              onQuickLook={setQuickLookPhoto}
-              onRecheck={() => handleCheckDuplicates()}
-              onCancel={handleCancelDuplicates}
-              similarity={duplicateSimilarity}
-              onSimilarityChange={setDuplicateSimilarity}
-              scope={duplicateScope}
-              onScopeChange={setDuplicateScope}
-              isLeftPaneOpen={isLeftPaneVisible}
-              selectedCount={duplicateSelectedCount}
-              onIgnoreGroup={handleIgnoreGroup}
-              ignoredGroups={ignoredGroups}
-              onRestoreIgnored={handleRestoreIgnoredGroup}
-              scanReport={scanReport}
-            />
-          </ErrorBoundary>
-        ) : mainView === 'timeline' ? (
-          <ErrorBoundary
-            label="时光画廊"
-            fallback={
-              <ViewErrorFallback
-                title="时光画廊渲染出错"
-                description="图库内容仍然完好，可返回图库继续浏览。"
-                onAction={() => setMainView('library')}
-              />
-            }
-          >
-            <TimelineGallery
-              photos={timelinePhotos}
-              onQuickLook={setQuickLookPhoto}
-              onBack={() => setMainView('library')}
-              isLeftPaneOpen={isLeftPaneVisible}
-            />
-          </ErrorBoundary>
-        ) : mainView === 'map' ? (
-          <ErrorBoundary
-            label="按地点浏览"
-            fallback={
-              <ViewErrorFallback
-                title="地图视图出错"
-                description="图库内容仍然完好，可返回图库继续浏览。"
-                onAction={() => setMainView('library')}
-              />
-            }
-          >
-            {/* 与时光画廊同源：非隐藏的全部照片（带 GPS 的会落成光点） */}
-            <LocationMap
-              photos={timelinePhotos}
-              onQuickLook={handleMapQuickLook}
-              onBack={() => setMainView('library')}
-              isLeftPaneOpen={isLeftPaneVisible}
-            />
-          </ErrorBoundary>
-        ) : mainView === 'about' ? (
-          <ErrorBoundary
-            label="关于与更新"
-            fallback={
-              <ViewErrorFallback
-                title="关于页渲染出错"
-                description="图库内容仍然完好，可返回图库继续整理。"
-                onAction={() => setMainView('library')}
-              />
-            }
-          >
-            <AboutView
-              currentVersion={updateChecker.currentVersion}
-              autoCheck={updateChecker.autoCheck}
-              isChecking={updateChecker.isChecking}
-              checkResult={updateChecker.checkResult}
-              error={updateChecker.error}
-              download={updateChecker.download}
-              onBack={handleExitToLibrary}
-              onCheckUpdate={updateChecker.checkNow}
-              onToggleAutoCheck={updateChecker.setAutoCheck}
-              onOpenRelease={updateChecker.openReleasePage}
-              onStartDownload={updateChecker.startDownload}
-              onCancelDownload={updateChecker.cancelDownload}
-              onOpenDownload={updateChecker.openDownloaded}
-              onRevealDownload={updateChecker.revealDownloaded}
-            />
-          </ErrorBoundary>
+        {/* 整页视图（重复检测 / 时光画廊 / 按地点 / 关于更新）由 AppViews 接管。
+            图库视图留在下方：它与 App 状态有六十余处直接耦合，抽出去只是一次同规模的
+            props 转发，行数不减、维护点翻倍 —— 真正的减负要靠「状态下沉」。 */}
+        {mainView !== 'library' ? (
+          <AppViews
+            view={mainView}
+            onBackToLibrary={handleBackToLibrary}
+            isLeftPaneOpen={isLeftPaneVisible}
+            duplicates={{
+              onBack: handleExitDuplicates,
+              duplicateGroups,
+              onDeleteDuplicates: handleDeleteDuplicates,
+              isProcessing: isProcessingDuplicates,
+              isRepartitioning: isRepartitioningDuplicates,
+              progress: duplicateProgress,
+              onQuickLook: setQuickLookPhoto,
+              onRecheck: () => handleCheckDuplicates(),
+              onCancel: handleCancelDuplicates,
+              similarity: duplicateSimilarity,
+              onSimilarityChange: setDuplicateSimilarity,
+              scope: duplicateScope,
+              onScopeChange: setDuplicateScope,
+              selectedCount: duplicateSelectedCount,
+              onIgnoreGroup: handleIgnoreGroup,
+              ignoredGroups,
+              onRestoreIgnored: handleRestoreIgnoredGroup,
+              scanReport,
+            }}
+            timelinePhotos={timelinePhotos}
+            onTimelineQuickLook={setQuickLookPhoto}
+            onMapQuickLook={handleMapQuickLook}
+            about={{
+              currentVersion: updateChecker.currentVersion,
+              autoCheck: updateChecker.autoCheck,
+              isChecking: updateChecker.isChecking,
+              checkResult: updateChecker.checkResult,
+              error: updateChecker.error,
+              download: updateChecker.download,
+              onCheckUpdate: updateChecker.checkNow,
+              onToggleAutoCheck: updateChecker.setAutoCheck,
+              onOpenRelease: updateChecker.openReleasePage,
+              onStartDownload: updateChecker.startDownload,
+              onCancelDownload: updateChecker.cancelDownload,
+              onOpenDownload: updateChecker.openDownloaded,
+              onRevealDownload: updateChecker.revealDownloaded,
+            }}
+            onExitAbout={handleExitToLibrary}
+          />
         ) : (
           <>
             {/* 工具栏单独兜底：它挂掉时图库与快捷键仍应可用，
@@ -1279,179 +1266,72 @@ const App: React.FC = () => {
           />
         </ErrorBoundary>
       )}
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          onClose={() => setContextMenu(null)}
-          actions={contextMenuActions}
-        />
-      )}
-      {/* Toast 队列：底部居中堆叠，避免遮挡工具栏（渲染见 ToastStack） */}
-      <ToastStack toasts={toasts} onDismiss={dismissToast} />
-      {isRenameModalOpen && (
-        <RenameModal
-          isOpen={isRenameModalOpen}
-          onClose={() => setIsRenameModalOpen(false)}
-          onConfirm={handleBatchRename}
-          photos={photos.filter((p) => selectedIds.has(p.id))}
-          count={selectedIds.size}
-          isBusy={isFileOpBusy}
-        />
-      )}
-      {isDeleteModalOpen && (
-        <DeleteConfirmModal
-          isOpen={isDeleteModalOpen}
-          count={selectedIds.size}
-          isDiskOperation={true}
-          onClose={() => setIsDeleteModalOpen(false)}
-          onConfirm={handleConfirmDelete}
-          isBusy={isFileOpBusy}
-        />
-      )}
-      {/* 清空照片列表二次确认：侧栏底部入口与右键菜单都走这里 */}
-      <ClearListConfirmModal
-        isOpen={isClearListConfirmOpen}
-        count={photos.length}
-        onClose={() => setIsClearListConfirmOpen(false)}
-        onConfirm={handleConfirmClearList}
-      />
-      {/* 「恢复上次的图库」确认框（N8）：启动时存在常驻来源才出现 */}
-      <RestoreLibraryModal
-        isOpen={isRestorePromptOpen}
-        sourceCount={sources.length}
-        directoryCount={directorySources.length}
-        fileCount={fileSources.length}
-        directoryNames={directorySources.map((source) => basenameOfPath(source.path))}
-        unavailableCount={unavailableSourceCount}
-        onClose={() => {
+      {/* 全部弹层与浮层：右键菜单 / Toast / 13 个业务弹窗 / 全屏预览，见 AppOverlays */}
+      <AppOverlays
+        contextMenu={contextMenu}
+        contextMenuActions={contextMenuActions}
+        onCloseContextMenu={() => setContextMenu(null)}
+        toasts={toasts}
+        onDismissToast={dismissToast}
+        isRenameModalOpen={isRenameModalOpen}
+        onCloseRenameModal={() => setIsRenameModalOpen(false)}
+        onRenameConfirm={handleBatchRename}
+        photos={photos}
+        selectedIds={selectedIds}
+        isFileOpBusy={isFileOpBusy}
+        isDeleteModalOpen={isDeleteModalOpen}
+        onCloseDeleteModal={() => setIsDeleteModalOpen(false)}
+        onDeleteConfirm={handleConfirmDelete}
+        isClearListConfirmOpen={isClearListConfirmOpen}
+        onCloseClearListConfirm={() => setIsClearListConfirmOpen(false)}
+        onClearListConfirm={handleConfirmClearList}
+        isRestorePromptOpen={isRestorePromptOpen}
+        onCloseRestorePrompt={() => {
           setIsRestorePromptOpen(false);
           showToast('可在侧栏「文件夹」中随时重新打开来源', 'info');
         }}
-        onConfirm={() => {
+        onConfirmRestore={() => {
           setIsRestorePromptOpen(false);
           void restoreLibrary(sourcesRef.current);
         }}
-      />
-      {/* AI 分析设置：应用内配置 DeepSeek API Key / 接口地址 / 模型 */}
-      <AiSettingsModal
-        isOpen={isAiSettingsOpen}
-        onClose={() => setIsAiSettingsOpen(false)}
+        sources={sources}
+        directorySources={directorySources}
+        fileSources={fileSources}
+        unavailableSourceCount={unavailableSourceCount}
+        isAiSettingsOpen={isAiSettingsOpen}
+        onCloseAiSettings={() => setIsAiSettingsOpen(false)}
         onNotify={showToast}
+        isDataAssetsOpen={isDataAssetsOpen}
+        onCloseDataAssets={() => setIsDataAssetsOpen(false)}
+        isShortcutsOpen={isShortcutsOpen}
+        onCloseShortcuts={() => setIsShortcutsOpen(false)}
+        isSaveAlbumModalOpen={isSaveAlbumModalOpen}
+        onCloseSaveAlbum={() => setIsSaveAlbumModalOpen(false)}
+        onSaveAlbum={handleSaveAlbumAndClose}
+        filters={filters}
+        albums={albums}
+        isAdjustDateModalOpen={isAdjustDateModalOpen}
+        onCloseAdjustDate={() => setIsAdjustDateModalOpen(false)}
+        onApplyDateAdjustment={handleApplyDateAdjustment}
+        selectedPhotos={selectedPhotos}
+        updateChecker={updateChecker}
+        isExportModalOpen={isExportModalOpen}
+        onCloseExport={() => {
+          setIsExportModalOpen(false);
+          setExportTargets([]);
+        }}
+        exportTargets={exportTargets}
+        onExportFinish={handleExportFinish}
+        quickLookPhoto={quickLookPhoto}
+        onCloseQuickLook={() => setQuickLookPhoto(null)}
+        quickLookList={quickLookList}
+        quickLookIndex={quickLookIndex}
+        quickLookPreloadSources={quickLookPreloadSources}
+        onQuickLookNext={handleQuickLookNext}
+        onQuickLookPrev={handleQuickLookPrev}
+        onQuickLookJump={setQuickLookPhoto}
+        onToggleFavorite={toggleFavorite}
       />
-      {/* 检查更新：GitHub Releases 检查 / 下载 DMG / 引导安装（见 hooks/useUpdateChecker） */}
-      <UpdateModal
-        isOpen={updateChecker.isOpen}
-        onClose={updateChecker.closePanel}
-        currentVersion={updateChecker.currentVersion}
-        checkResult={updateChecker.checkResult}
-        isChecking={updateChecker.isChecking}
-        error={updateChecker.error}
-        download={updateChecker.download}
-        onCheck={updateChecker.checkNow}
-        onDownload={updateChecker.startDownload}
-        onCancelDownload={updateChecker.cancelDownload}
-        onOpenDownload={updateChecker.openDownloaded}
-        onRevealDownload={updateChecker.revealDownloaded}
-        onOpenRelease={updateChecker.openReleasePage}
-      />
-      {/* 数据资产：配置导出导入 / 路径重连 / 操作日志与撤销 / 增量备份 */}
-      <DataAssetsModal
-        isOpen={isDataAssetsOpen}
-        onClose={() => setIsDataAssetsOpen(false)}
-        onNotify={showToast}
-      />
-      {/* Export Modal */}
-      {isExportModalOpen && (
-        <ExportModal
-          isOpen={isExportModalOpen}
-          photos={exportTargets}
-          onClose={() => {
-            setIsExportModalOpen(false);
-            setExportTargets([]);
-          }}
-          onFinish={({ succeeded, failed, cancelled, firstError, targetDir, gonePhotos }) => {
-            setIsExportModalOpen(false);
-            // 源文件已被外部删除 / 移动的条目：剔除出列表，且不进「重新导出」集合
-            const gone = gonePhotos ?? [];
-            if (gone.length > 0) fsGuard.reportGone(gone);
-            // 重试必须带着目标重新打开弹层：只开弹层会得到一个空的「已选择 0 张照片」
-            const goneIds = new Set(gone.map((p) => p.id));
-            const retryTargets = exportTargets.filter((p) => !goneIds.has(p.id));
-            setExportTargets([]);
-            const retryExport = {
-              label: '重新导出',
-              onClick: () => {
-                setExportTargets(retryTargets);
-                setIsExportModalOpen(true);
-              },
-            };
-            // 失败原因不再一律归咎于重名：实际原因（解码失败 / 无权限 / 磁盘满）由弹层回传
-            const reason = firstError ? `：${firstError}` : '';
-            const dirName = targetDir.split(/[\\/]/).filter(Boolean).pop() ?? '';
-            const where = dirName ? `到「${dirName}」` : '';
-            // 汇总里的「失败」只算真正可重试的：文件消失的条目已单独提示并剔除
-            const retriableFailed = failed - gone.length;
-            if (cancelled) {
-              showToast(
-                `导出已取消：完成 ${succeeded} 张${retriableFailed > 0 ? `，失败 ${retriableFailed} 张${reason}` : ''}`,
-                'warning'
-              );
-            } else if (retriableFailed === 0) {
-              showToast(`已导出 ${succeeded} 张${where}`, 'success');
-            } else if (succeeded > 0) {
-              showToast(
-                `已导出 ${succeeded} 张，${retriableFailed} 张失败${reason}`,
-                'warning',
-                retryExport
-              );
-            } else {
-              showToast(
-                `导出失败：${retriableFailed} 张照片均未成功${reason}`,
-                'error',
-                retryExport
-              );
-            }
-          }}
-        />
-      )}
-      {/* 调整日期与时间 */}
-      {isAdjustDateModalOpen && (
-        <AdjustDateModal
-          isOpen={isAdjustDateModalOpen}
-          photos={selectedPhotos}
-          onClose={() => setIsAdjustDateModalOpen(false)}
-          onApply={handleApplyDateAdjustment}
-        />
-      )}
-      {/* 存为智能相簿 */}
-      {isSaveAlbumModalOpen && (
-        <SaveAlbumModal
-          isOpen={isSaveAlbumModalOpen}
-          filters={filters}
-          existingNames={albums.map((album) => album.name)}
-          onClose={() => setIsSaveAlbumModalOpen(false)}
-          onSave={handleSaveAlbumAndClose}
-        />
-      )}
-      {/* 快捷键总览层 */}
-      {isShortcutsOpen && <ShortcutsOverlay onClose={() => setIsShortcutsOpen(false)} />}
-      {/* QuickLook Component */}
-      {quickLookPhoto && (
-        <QuickLook
-          photo={quickLookPhoto}
-          onClose={() => setQuickLookPhoto(null)}
-          onNext={handleQuickLookNext}
-          onPrev={handleQuickLookPrev}
-          onFirst={quickLookList.length > 0 ? () => setQuickLookPhoto(quickLookList[0]) : undefined}
-          hasNext={quickLookIndex >= 0 && quickLookIndex < quickLookList.length - 1}
-          hasPrev={quickLookIndex > 0}
-          currentIndex={quickLookIndex}
-          totalCount={quickLookList.length}
-          onToggleFavorite={toggleFavorite}
-          preloadSources={quickLookPreloadSources}
-        />
-      )}
     </div>
   );
 };

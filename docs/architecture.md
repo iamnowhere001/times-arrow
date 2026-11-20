@@ -158,7 +158,8 @@ src/
 ├── App.tsx                 # 组合 hooks + 视图路由
 ├── main.tsx                # 挂载入口
 ├── components/             # 按域分组的 UI
-│   ├── layout/             #   Sidebar / Toolbar / ActiveFiltersBar / ToastStack
+│   ├── layout/             #   Sidebar / Toolbar / ActiveFiltersBar / ToastStack /
+│   │                       #   AppViews（整页视图路由）/ AppOverlays（全部弹层与浮层）
 │   ├── grid/               #   ImageGrid（工具栏与组合）/ VirtualGrid / VirtualList / ImageCard /
 │   │                       #   ThumbnailImage / EmptyStates
 │   ├── timeline/           #   TimelineGallery
@@ -392,7 +393,7 @@ Electron 默认配置偏松，下面九个面是逐项收紧后的现状。规�
 | --- | --- | --- | --- | --- | --- |
 | ~~P1~~ | ~~`electron/main.js` 组合根过大~~ | ✅ **已完成（2026-11-20）**：拆出 `window` / `menu` / `protocol` / `security` / `watch` / `fs-ops` / `memory-watchdog` 与 `ipc/`（registry / files / dialog）；`main.js` 只剩装配与生命周期 | — | 已用 `test:main` 与 `verify` 全绿验证；行为零变化 | `ipc-contract` 全绿；`main.js` 不含业务逻辑 |
 | ~~P2~~ | ~~`ImageGrid.tsx` 同时含网格与列表两套虚拟化~~ | ✅ **已完成（2026-11-20）**：拆为 `VirtualGrid` / `VirtualList` / `ImageCard`，`ImageGrid` 只留工具栏与组合；滚动位置记忆随各自组件下沉，清空时由 `reset*ScrollMemory()` 统一丢弃 | — | 已用 `verify` + 构建 + 真实冒烟验证（`#root` 内容长度与拆分前一致） | 滚动 / 键盘 / 选择行为未改动；`gridLayout.test.ts` 的静态断言改为扫描整个 `grid/` 目录 |
-| P3 | `App.tsx` 仍承担较多跨域连线 | 1.4k 行 | 抽视图路由 `AppViews` 与跨域事件订阅 | 中低 | 行为零变化；依赖方向不变 |
+| ~~P3~~ | ~~`App.tsx` 仍承担较多跨域连线~~ | ✅ **已完成（2026-11-20）**：抽出 `AppViews`（四个整页视图路由）、`AppOverlays`（右键菜单 / Toast / 业务弹窗 / 全屏预览）、`useAppMenuEvents`（四个菜单事件订阅） | — | 已用 `verify` + 构建 + 真实冒烟验证（`#root` 长度不变） | **图库视图刻意未抽**：它与 App 状态有六十余处直接耦合，抽出去只是一次同规模的 props 转发；真正减负要靠「状态下沉」，属结构性改动 |
 | P4 | `services/` 只有 AI 一个用例 | 组件直接调 IPC 的额度见 `layering.test.cjs` 的 `BASELINE` | 按域补 service，逐步下调棘轮基线 | 低 | 每次只迁一个域；基线只降不升 |
 | P5 | `strictNullChecks` 未开 | `noImplicitAny` 已 0 新增错误 | 分目录开启并修 | 中 | 每个 project 单独通过 |
 | P6 | 无 CI | 本地手工跑 | 个人自用定位下暂不做；保持 `npm run verify` 一条命令 | 低 | 换机器一条命令可复现 |
