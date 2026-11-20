@@ -16,7 +16,7 @@
 | 主进程 | Node.js / CommonJS（`electron/**/*.cjs`、`electron/main.js`、`electron/preload.js`） |
 | 渲染进程 | React + TypeScript ESM（`src/`） |
 | 数据目录 | macOS：`~/Library/Application Support/PhotoMinder/` |
-| 当前版本 | `0.6.3`（2026-11-20 开发完成，待发版；发版需创建 tag 并上传 DMG） |
+| 当前版本 | `0.6.3`（2026-11-20 已发布：tag `v0.6.3`，GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`） |
 | 质量基线 | typecheck / lint / 单测 380 项 / 主进程 286 项 / Electron 冒烟 全绿 |
 
 **产品判断与优先级以 `ROADMAP.md` 为准；任务级状态以 `TODO.md` 为准；行为描述以 `README.md` 为准；历史技术结论以 `CODE_REVIEW.md` 为准。**
