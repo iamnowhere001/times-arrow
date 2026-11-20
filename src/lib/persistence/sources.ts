@@ -17,6 +17,49 @@ export const SOURCE_LIMIT = 200;
 export const basenameOfPath = (path: string): string =>
   path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
+/**
+ * 目录路径归一化：统一分隔符、去掉末尾分隔符。
+ *
+ * 只用于「判断包含关系」，不要拿它当展示路径 —— 它会把 `C:\a\b` 变成 `C:/a/b`。
+ */
+export function normalizeDirPath(input: string): string {
+  const unified = input.replace(/\\/g, '/');
+  const trimmed = unified.replace(/\/+$/, '');
+  return trimmed === '' ? '/' : trimmed;
+}
+
+/**
+ * `target` 是否等于 `root` 或位于 `root` 之下。
+ *
+ * 用**路径段边界**判断，不是裸 `startsWith`：否则 `/photos-2023` 会被当成
+ * `/photos` 的子目录，移动后的条目去留就会判错。
+ */
+export function isSameOrInsideDir(target: string, root: string): boolean {
+  const t = normalizeDirPath(target);
+  const r = normalizeDirPath(root);
+  if (t === r) return true;
+  return t.startsWith(r === '/' ? '/' : `${r}/`);
+}
+
+/**
+ * 路径是否仍会被图库扫描到（落在任一**文件夹**来源之下）。
+ *
+ * 移动操作的「条目去留」依赖这个判断：
+ * - 落在来源内 → 文件仍会被递归扫描到，条目只需跟随新路径；
+ * - 落在来源外 → 文件已离开图库，条目必须从列表摘掉，
+ *   否则用户会对着一个点开就 404 的条目继续操作。
+ *
+ * 单文件来源（`kind === 'file'`）不构成目录范围，移动目标不可能落在它「之下」。
+ */
+export function isPathInLibrary(
+  target: string,
+  sources: Array<Pick<LibrarySource, 'path' | 'kind'>>
+): boolean {
+  return sources.some(
+    (source) => source.kind === 'directory' && isSameOrInsideDir(target, source.path)
+  );
+}
+
 /** 单个来源的结构校验：路径非空、类型合法、时间戳可兜底 */
 function normalizeSource(raw: unknown): LibrarySource | null {
   if (!raw || typeof raw !== 'object') return null;

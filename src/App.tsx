@@ -19,7 +19,7 @@ import { useBatchTags } from '@/hooks/useBatchTags';
 import { createEmptyFilters } from '@/lib/filter/filters';
 import { deriveEmptyStateCopy } from '@/lib/filter/libraryViewState';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
-import { basenameOfPath } from '@/lib/persistence/sources';
+import { basenameOfPath, isPathInLibrary } from '@/lib/persistence/sources';
 import Sidebar from '@/components/layout/Sidebar';
 import Toolbar from '@/components/layout/Toolbar';
 import ImageGrid from '@/components/grid/ImageGrid';
@@ -721,6 +721,16 @@ const App: React.FC = () => {
   // 批量文件操作（重命名 / 删除 / 移动）见 hooks/useFileOperations —— 提交锁、
   // 回环登记、路径迁移、失败分流与 K19 进度反馈都在 Hook 内实现。
   // ---------------------------------------------------------------------------
+  // 移动后条目去留的依据：目标目录是否仍落在图库来源范围内。
+  // 不能用「等 watcher 报 removed」兜底 —— 移动前源路径已被 markPathsTouched 登记
+  // 用于回环防护，那批 removed 事件会被主动吃掉，等不到。
+  // 依赖 sourcesRef（引用恒定）而不是 sources：回调要读到最新的来源列表，
+  // 列出 sources 会让它每次来源变化都重建，进而让依赖它的 Hook 全部失效。
+  const isTargetInLibrary = useCallback(
+    (dir: string) => isPathInLibrary(dir, sourcesRef.current),
+    [sourcesRef]
+  );
+
   const { handleRenamePhoto, handleBatchRename, handleConfirmDelete, handleMoveSelected } =
     useFileOperations({
       photos,
@@ -741,6 +751,7 @@ const App: React.FC = () => {
       pruneDuplicateGroups,
       rekeyImportedPaths,
       forgetImportedPaths,
+      isTargetInLibrary,
       makeUndoAction,
     });
 

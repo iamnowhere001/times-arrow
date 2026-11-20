@@ -49,6 +49,17 @@ export interface UseFileOperationsParams {
   // 按路径存储的数据迁移 / 清理
   rekeyImportedPaths: (from: string, to: string) => void;
   forgetImportedPaths: (paths: Iterable<string>) => void;
+  /**
+   * 目标目录是否仍在图库来源范围内。
+   *
+   * 决定「移动后条目去哪」：库内移动只改路径（文件仍会被扫描到）；
+   * 移到库外则文件已离开图库，条目必须从列表移除 —— 否则用户会对着
+   * 一个点开就 404 的条目继续操作。
+   *
+   * 这个判断不能靠 watcher：移动前源路径已被 `markPathsTouched` 登记（回环防护），
+   * 源目录的 removed 事件会被主动吃掉，指望监听来兜底是等不到的。
+   */
+  isTargetInLibrary: (dir: string) => boolean;
   /** 成功 Toast 的「撤销」按钮；批量场景由调用方传 label 说明只撤 1 项 */
   makeUndoAction: (label?: string) => ToastAction;
 }
@@ -83,6 +94,7 @@ export function useFileOperations({
   pruneDuplicateGroups,
   rekeyImportedPaths,
   forgetImportedPaths,
+  isTargetInLibrary,
   makeUndoAction,
 }: UseFileOperationsParams): FileOperationsResult {
   // Handle single photo rename
@@ -623,6 +635,10 @@ export function useFileOperations({
     markPathsTouched([...moved.map((r) => r.to), ...Object.values(partialRetryTargets)]);
     let conflictCount = 0;
 
+    // 目标是否仍在图库范围内：决定条目跟随还是移出列表，也决定 Toast 措辞。
+    // 只算一次：这一批的移动目标只有一个。
+    const staysInLibrary = isTargetInLibrary(targetDir);
+
     if (moved.length > 0) {
       // 旧路径 → 新路径；条目 id → 新路径与新文件名
       const pathMap = new Map<string, string>();
@@ -640,26 +656,52 @@ export function useFileOperations({
         }
       }
 
-      // 1) 列表条目跟随到新路径：pm:// 原图地址同步替换，缩略图按新路径重新生成
-      setPhotos((prev) =>
-        prev.map((p) => {
-          const next = updates.get(p.id);
-          return next
-            ? {
-                ...p,
-                path: next.path,
-                name: next.name,
-                url: pmFileUrl(next.path),
-                thumbnail: undefined,
-              }
-            : p;
-        })
-      );
+      // 移动完成的条目 id：后续无论是「跟随新路径」还是「移出列表」，
+      // 都不该继续保持选中 —— 选中态描述的是「我现在能对这个条目做什么」，
+      // 条目已经换了位置或离开图库，这个前提就不成立了。
+      const movedIds = new Set(updates.keys());
 
-      // 2) 标注资产按内容指纹关联，移动后自动跟随；只需同步会话级去重集合
-      for (const [from, to] of pathMap) {
-        rekeyImportedPaths(from, to);
+      if (staysInLibrary) {
+        // 1) 库内移动：列表条目跟随到新路径。pm:// 原图地址同步替换，
+        //    缩略图按新路径重新生成（旧缓存按路径分键，留着会读不到）。
+        setPhotos((prev) =>
+          prev.map((p) => {
+            const next = updates.get(p.id);
+            return next
+              ? {
+                  ...p,
+                  path: next.path,
+                  name: next.name,
+                  url: pmFileUrl(next.path),
+                  thumbnail: undefined,
+                }
+              : p;
+          })
+        );
+
+        // 2) 标注资产按内容指纹关联，移动后自动跟随；只需同步会话级去重集合
+        for (const [from, to] of pathMap) {
+          rekeyImportedPaths(from, to);
+        }
+      } else {
+        // 移到图库之外：文件已经不会被任何来源扫描到，继续留在列表里就是死条目。
+        // 与删除走同一套收敛：摘会话级路径映射 → 淡出移除 → 同步重复分组。
+        // 标注资产（收藏 / 标签 / 时间修正 / AI 结果）按 fileId 保留，
+        // 文件哪天被重新导入，标注会自动续上。
+        forgetImportedPaths(moved.map((r) => r.from));
+        removeWithCollapse(movedIds);
+        pruneDuplicateGroups(movedIds);
       }
+
+      // 3) 收窄选中集（只摘被移动的那些，保留用户其他选择）
+      setSelectedIds((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const id of movedIds) {
+          if (next.delete(id)) changed = true;
+        }
+        return changed ? next : prev;
+      });
     }
 
     // 失败项映射回条目，供 Toast「重试」继续移动到同一目标
@@ -673,6 +715,9 @@ export function useFileOperations({
     if (conflictCount > 0) notes.push(`${conflictCount} 项重名已自动加序号`);
     if (skipped.length > 0) notes.push(`${skipped.length} 项已在该文件夹中`);
     if (pathlessCount > 0) notes.push(`${pathlessCount} 项无磁盘路径已跳过`);
+    // 移到图库之外时条目会被摘掉，必须说清楚「为什么照片不见了」，
+    // 否则用户以为照片被删了 —— 这个提示比移动成功本身更重要。
+    if (moved.length > 0 && !staysInLibrary) notes.push('已移出图库');
     const noteText = notes.length > 0 ? `（${notes.join('，')}）` : '';
 
     // 重试集合 = 普通失败（正常重走移动）+ partial（回传 priorTargets 只补删源）；
