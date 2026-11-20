@@ -8,7 +8,7 @@
 | 定位 | **个人自用**的本地照片 / 视频整理工具，macOS 优先；不对外分发，不做签名 / 公证；更新检查是唯一的可选联网能力，只下载更新包、不静默安装 |
 | 隐私 | 全部本地处理；AI 分析与可关闭的更新检查是仅有的联网功能。AI 密钥由主进程读取并代理请求、在本机明文存储（界面只读到尾号掩码）；更新检查只请求 GitHub Releases，不上报任何使用数据 |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
-| 当前版本 | **v0.6.3**（2026-11-20 发布，tag `v0.6.3`；GitHub Release 含 `PhotoMinder-0.6.3-arm64.dmg`，应用内更新检查可直接发现）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
+| 当前版本 | **v0.6.4**（2026-11-20 发布，tag `v0.6.4`；修复浏览器下载安装包被判「已损坏」，GitHub Release 含 `PhotoMinder-0.6.4-arm64.dmg`）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
 | 产品路线 | 定位、优先级与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；任务清单见 [`TODO.md`](./TODO.md) |
 | 质量护栏 | ESLint + oxlint 0 problems · 单测 380 项 · 主进程集成测试 286 项 · Electron 冒烟 1 项 |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
@@ -384,6 +384,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 
 - **AI 密钥以明文落盘**：`ai-config.json` 未用 `safeStorage` 加密（见 TODO X1）。这是「个人自用、单机本地」定位下的既定取舍；已收紧的是读取方向 —— `ai-config-get` 只回 `hasApiKey` + 尾号掩码，渲染层读不回完整值。若日后要分发给他人，此项应重新评估。
 - **更新包未签名 / 未公证**：应用内更新只负责检查与下载 DMG，安装仍是「打开磁盘映像 → 拖入应用程序」。首次启动如被 Gatekeeper 拦截，需在「应用程序」中右键应用选择「打开」。不做静默覆盖安装，避免替换 `/Applications` 失败后留下不可用安装。
+- **浏览器下载的安装包需要放行**：打包只做 ad-hoc 签名（无开发者证书、未公证），从浏览器下载会带隔离属性，首次启动会提示「无法验证开发者」，右键「打开」即可。若系统给出「已损坏」（0.6.3 及更早版本的包会遇到），执行一次 `xattr -cr /Applications/PhotoMinder.app` 后再打开；应用内更新器下载的包不带隔离属性，不受影响。
 - **更新检查依赖 GitHub 匿名 API**：限流为每 IP 60 次/小时；启动只检查一次，手动检查才会追加。仓库没有 Release 时面板显示「暂无发布」，不视为错误。
 
 **功能缺口**

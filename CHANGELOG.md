@@ -2,7 +2,7 @@
 
 本文件记录**用户可感知的变化**（功能、行为、修复、安全），格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **发布状态**：**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
+> **发布状态**：**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
 > v0.6.1 于 2026-11-06 发布（tag `v0.6.1`）。工作区另有 v0.8.0 / v1.0.0 的提前交付，尚未发版，见下方 `[Unreleased]`。
 > 历史版本的日期为开发完成日期，不一定等于发布日；本文件只记录已交付事实。
 >
@@ -64,6 +64,22 @@
 #### Security
 
 - 崩溃日志只留本机 `userData`，不上传、不埋点；消息与堆栈截断到固定长度，日志与 pending 文件均有条数上限。
+
+---
+
+## [0.6.4] — 2026-11-20
+
+主题：**安装修复**。让从浏览器下载的安装包不再被 macOS 判成「已损坏」。
+
+### Fixed
+
+- **浏览器下载后提示「PhotoMinder 已损坏」**：打包瘦身（删无用语言包与 SwiftShader）会破坏 Electron Framework 自带的 ad-hoc 签名，叠加浏览器写入的隔离属性后 Gatekeeper 直接报「已损坏」，右键「打开」也无效。现在在瘦身后重新做一次 ad-hoc 签名，系统回到正常的「无法验证开发者」提示，右键「打开」即可完成安装。
+
+### 说明
+
+- 只是让签名重新合法：仍然没有开发者证书、没有公证，首次启动照旧需要右键「打开」或在「系统设置 → 隐私与安全性」里放行。
+- 已被 0.6.3 判成「已损坏」的机器，执行一次 `xattr -cr /Applications/PhotoMinder.app` 即可恢复启动。
+- 应用内更新器下载的包由 Node 直接写盘、不带隔离属性，不受此问题影响。
 
 ---
 
