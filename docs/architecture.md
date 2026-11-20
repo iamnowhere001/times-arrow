@@ -39,10 +39,13 @@
                                     │ IpcResult<T>：{ok:true,data} / {ok:false,error,code?}
 ┌───────────────────────────────────┴─────────────────────────────────────────────┐
 │ 主进程（Node / CommonJS）                                                        │
-│  electron/main.js             组合根：窗口、菜单、协议、IPC 注册、生命周期        │
-│    ├─ main/*.cjs              领域服务：ai / authorization / media-pipeline /     │
-│    │                          store / data-assets / migrations / updater /        │
-│    │                          crash-report / health                               │
+│  electron/main.js             组合根：装配依赖、生命周期、崩溃上报              │
+│    ├─ main/*.cjs              领域服务：window / menu / protocol / security /   │
+│    │                          watch / fs-ops / memory-watchdog / ai /          │
+│    │                          authorization / media-pipeline / store /         │
+│    │                          data-assets / migrations / updater /             │
+│    │                          crash-report / health                            │
+│    ├─ main/ipc/               registry（ok / fail / handle）+ 按域通道注册      │
 │    └─ lib/*.cjs               基础设施：csp / fingerprint / dhash / logger        │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -64,8 +67,9 @@
 
 | 层 | 路径 | 负责 |
 | --- | --- | --- |
-| 组合根 | `electron/main.js` | 窗口 / 菜单 / `pm://` / IPC 注册 / 生命周期 / 看门狗 |
-| 领域服务 | `electron/main/*.cjs` | 授权、存储、媒体管线、AI、更新、数据资产、迁移、崩溃、健康 |
+| 组合根 | `electron/main.js` | 装配依赖、`app` 生命周期、崩溃上报；**不放业务逻辑** |
+| 领域服务 | `electron/main/*.cjs` | 授权、存储、媒体管线、AI、更新、数据资产、迁移、崩溃、健康、窗口、菜单、协议、安全、监听、落盘工具 |
+| IPC 注册 | `electron/main/ipc/` | `registry.cjs` 提供 `ok` / `fail` / `handle`（全进程唯一）；通道按域分组注册 |
 | 基础设施 | `electron/lib/*.cjs` | CSP、内容指纹、dHash、日志 |
 | 契约桥 | `electron/preload.js` | `contextBridge` 暴露 `window.electronAPI` |
 
@@ -120,9 +124,16 @@ electron/main.js ──→ electron/main/*.cjs ──→ electron/lib/*.cjs
 
 ```text
 electron/
-├── main.js                 # 组合根（窗口 / 菜单 / 协议 / IPC / 生命周期）
+├── main.js                 # 组合根：装配依赖 + 生命周期 + 崩溃上报（只装配，不放业务）
 ├── preload.js              # contextBridge → window.electronAPI
 ├── main/                   # 领域服务（CommonJS）
+│   ├── window.cjs          #   主窗口创建 / 尺寸记忆 / 多屏保护 / send
+│   ├── menu.cjs            #   应用菜单（只把点击翻译成窗口事件）
+│   ├── protocol.cjs        #   pm:// 协议（流式 + HTTP Range + 每次请求的授权校验）
+│   ├── security.cjs        #   CSP 安装（响应头那一半；meta 那一半在构建期）
+│   ├── watch.cjs           #   目录监听（扩展名过滤 + 防抖聚合）
+│   ├── fs-ops.cjs          #   落盘工具：不覆盖 / 原子占位 / 跨卷移动
+│   ├── memory-watchdog.cjs #   内存看门狗（两级回收 + 广播冷却）
 │   ├── ai.cjs              #   DeepSeek 代理、AI 配置读写、密钥掩码
 │   ├── authorization.cjs   #   会话级路径白名单
 │   ├── crash-report.cjs    #   主进程异常落盘与下次启动提示
@@ -131,7 +142,11 @@ electron/
 │   ├── media-pipeline.cjs  #   扫描 / EXIF / 缩略图 / HEIC / dHash
 │   ├── migrations.cjs      #   config / ai-cache 的 v1→v2 迁移
 │   ├── store.cjs           #   JSON 存储、原子写、损坏备份
-│   └── updater.cjs         #   GitHub Release 检查 / DMG 下载 / 安装引导
+│   ├── updater.cjs         #   GitHub Release 检查 / DMG 下载 / 安装引导
+│   └── ipc/                #   IPC 通道注册（按域拆分）
+│       ├── registry.cjs    #     ok / fail / handle：全进程唯一实例
+│       ├── files.cjs       #     重命名 / 删除 / 移动 / 导出 / 系统开放
+│       └── dialog.cjs      #     导入 / 选择目录 / 授权 / stat / read-file
 └── lib/
     ├── csp.cjs             #   CSP 唯一定义（响应头与构建期 meta 共用）
     ├── dhash.cjs           #   dHash 唯一实现（主进程与渲染层共用）
@@ -373,7 +388,7 @@ Electron 默认配置偏松，下面九个面是逐项收紧后的现状。规�
 
 | 优先级 | 债务 | 现状 | 目标 | 风险 | 验收 |
 | --- | --- | --- | --- | --- | --- |
-| P1 | `electron/main.js` 组合根过大 | 窗口 / 菜单 / 协议 / 全部 IPC 通道注册 / 文件操作都在一个文件 | 按域拆 `window.cjs` / `menu.cjs` / `protocol.cjs` / `ipc/<domain>.cjs` | 中：启动路径无单测，靠 `test:main` + 冒烟 | 行为零变化；`ipc-contract` 全绿；`main.js` 只做装配 |
+| ~~P1~~ | ~~`electron/main.js` 组合根过大~~ | ✅ **已完成（2026-11-20）**：拆出 `window` / `menu` / `protocol` / `security` / `watch` / `fs-ops` / `memory-watchdog` 与 `ipc/`（registry / files / dialog）；`main.js` 只剩装配与生命周期 | — | 已用 `test:main` 与 `verify` 全绿验证；行为零变化 | `ipc-contract` 全绿；`main.js` 不含业务逻辑 |
 | P2 | `ImageGrid.tsx` 同时含网格与列表两套虚拟化 | 单文件 1.8k 行 | 抽 `components/grid/virtual/`，共用滚动 / 测量逻辑 | 中：滚动与选择回归 | 滚动位置 / 键盘导航 / 选择不回归；单测覆盖布局纯逻辑 |
 | P3 | `App.tsx` 仍承担较多跨域连线 | 1.4k 行 | 抽视图路由 `AppViews` 与跨域事件订阅 | 中低 | 行为零变化；依赖方向不变 |
 | P4 | `services/` 只有 AI 一个用例 | 组件直接调 IPC 的额度见 `layering.test.cjs` 的 `BASELINE` | 按域补 service，逐步下调棘轮基线 | 低 | 每次只迁一个域；基线只降不升 |

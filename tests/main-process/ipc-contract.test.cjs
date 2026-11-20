@@ -174,9 +174,16 @@ check(
 );
 
 section('3. pm:// 协议 handler 恰好一个');
-const mainSrc = read('electron/main.js');
-const pmHandlers = [...mainSrc.matchAll(/protocol\.handle\(\s*'pm'/g)].length;
-check("protocol.handle('pm') 仅出现一次", pmHandlers === 1, `实际 ${pmHandlers}`);
+// 协议实现已抽到 main/protocol.cjs，因此断言扫描**主进程全部源码**：
+// 只盯 main.js 的话，「挪到另一个文件再复制一份」不会被发现。
+const mainSources = [
+  path.join(APP_ROOT, 'electron/main.js'),
+  ...walk(path.join(APP_ROOT, 'electron/main'), /\.cjs$/),
+]
+  .map((file) => fs.readFileSync(file, 'utf8'))
+  .join('\n');
+const pmHandlers = [...mainSources.matchAll(/protocol\.handle\(\s*'pm'/g)].length;
+check("protocol.handle('pm') 全仓仅出现一次", pmHandlers === 1, `实际 ${pmHandlers}`);
 
 section('4. 形参对齐（moveFiles 曾漏传 priorTargets，2026-11-06 修复）');
 const firstGroup = (match) => (match ? match[1] : '');
@@ -200,7 +207,9 @@ section('5. 主进程 → 渲染层事件契约（v0.6.2 批次 2）');
 // 新增事件不是 invoke 通道，不进 CHANNELS，但同样要四处对齐，否则菜单点了没反应
 // 却没有任何测试会发现。这里钉住 v0.6.2 新增的「撤销上次文件操作」链路。
 const undoEvent = {
-  main: read('electron/main.js'),
+  // 菜单已抽到 main/menu.cjs：事件的发送方可能是任一主进程模块，
+  // 因此用 §3 收集的全量源码，而不是只看入口文件。
+  main: mainSources,
   preload: read('electron/preload.js'),
   types: read('src/types/global.d.ts'),
   app: read('src/App.tsx'),

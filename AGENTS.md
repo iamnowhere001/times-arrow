@@ -45,7 +45,7 @@ npm run electron:build # macOS arm64 DMG
 ## 3. 代码地图
 
 ```text
-electron/   # 主进程：main.js 组合根 + main/ 领域模块 + lib/ 基础设施
+electron/   # 主进程：main.js 组合根 + main/ 领域模块 + main/ipc/ 通道注册 + lib/ 基础设施
 src/        # 渲染进程：App.tsx 组合 + components / hooks / services / lib / types
 tests/      # 三层验证：unit / main-process / smoke
 docs/       # 分层文档：架构 / 数据模型 / IPC / 外部依赖 / 质量 / 决策

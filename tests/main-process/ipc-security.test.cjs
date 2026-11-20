@@ -262,7 +262,22 @@ function isResult(r) {
   check('未在上级目录生成 escape.txt', !fs.existsSync(path.join(path.dirname(wDir), 'escape.txt')));
 
   section('8. 沙箱开关（静态断言）');
-  const src = fs.readFileSync(MAIN_ENTRY, 'utf8');
+  // 窗口创建已抽到 main/window.cjs，因此静态断言统一覆盖**主进程全部源码**。
+  // 只盯 main.js 会让「把代码挪走」变成绕过守卫的手段。
+  const mainDir = path.dirname(MAIN_ENTRY);
+  const collectMainSources = (dir, acc = []) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) collectMainSources(full, acc);
+      else if (entry.name.endsWith('.cjs')) acc.push(full);
+    }
+    return acc;
+  };
+  const mainSources = [MAIN_ENTRY, ...collectMainSources(path.join(mainDir, 'main'))]
+    .map((file) => fs.readFileSync(file, 'utf8'))
+    .join('\n');
+
+  const src = mainSources;
   for (const flag of ['no-sandbox', 'disable-setuid-sandbox', 'disable-gpu-sandbox']) {
     // 用 ^ 锚定「顶格」= 无条件调用；缩进的（在 SANDBOX_DISABLED 分支内）不算
     check(
@@ -277,31 +292,38 @@ function isResult(r) {
   ).length;
   check('三个开关都收敛在条件分支内（计数 3）', guarded === 3, '实际 ' + guarded);
   check('存在 PHOTOMINDER_DISABLE_SANDBOX 逃生口', /PHOTOMINDER_DISABLE_SANDBOX/.test(src));
-  check('webPreferences.sandbox 与开关联动', /sandbox:\s*!SANDBOX_DISABLED/.test(src));
+  check(
+    'webPreferences.sandbox 与开关联动',
+    /sandbox:\s*!sandboxDisabled/.test(mainSources),
+    '未找到 sandbox: !sandboxDisabled'
+  );
 
   section('9. IPC 注册纪律（静态断言）');
-  // 只允许 wrapHandler 内部调用 ipcMain.handle，其余一律走 handle()
-  const rawCalls = src.match(/^\s*ipcMain\.handle\(/gm) || [];
+  // 注册实现已抽到 main/ipc/registry.cjs，mainSources 在 §8 已收集（全目录）。
+  // 只允许注册器内部调用 ipcMain.handle，其余一律走 handle()
+  const rawCalls = mainSources.match(/^\s*ipcMain\.handle\(/gm) || [];
   check(
-    '除 wrapHandler 外没有直接调用 ipcMain.handle',
+    '全仓只有注册器调用 ipcMain.handle',
     rawCalls.length === 1,
     '实际 ' + rawCalls.length + ' 处'
   );
-  check('所有 handler 都经 handle() 注册', /function handle\(channel, handler\)/.test(src));
+  check('所有 handler 都经 handle() 注册', /function handle\(channel, handler\)/.test(mainSources));
   check(
-    'wrapHandler 捕获异常并转成 fail()',
-    /catch \(error\) \{[\s\S]{0,200}?return fail\(/.test(src)
+    '注册器捕获异常并转成 fail()',
+    /catch \(error\) \{[\s\S]{0,200}?return fail\(/.test(mainSources)
   );
 
   section('10. CSP 已装（静态断言）');
-  check('主进程安装了 onHeadersReceived CSP', /onHeadersReceived/.test(src));
-  // 注意要比的是**调用点**而不是定义点：`function setupContentSecurityPolicy() {` 里
-  // 也含有 `setupContentSecurityPolicy()`，直接 indexOf 会比到函数定义上。
-  // 另外源码注释里也出现过 "app.on('ready')"，因此必须锚定到真正的注册语句。
+  // 安装器已抽到 main/security.cjs：断言同样覆盖主进程全部源码，
+  // 否则「挪走即失守」。
+  check('主进程安装了 onHeadersReceived CSP', /onHeadersReceived/.test(mainSources));
+  // CSP 必须早于建窗口：晚于首次导航就会漏掉第一个文档。
+  // 注意要比的是**调用点**而不是定义点：源码注释里也出现过 "app.on('ready')"，
+  // 因此必须锚定到真正的注册语句。
   const readyStart = src.indexOf("app.on('ready', () => {");
   const readyBlock = src.slice(readyStart, src.indexOf('\n});', readyStart));
-  const cspCallAt = readyBlock.indexOf('\n  setupContentSecurityPolicy();');
-  const windowCallAt = readyBlock.indexOf('createWindow()');
+  const cspCallAt = readyBlock.indexOf('cspInstaller.install()');
+  const windowCallAt = readyBlock.indexOf('win.create()');
   check(
     'CSP 在创建窗口之前安装（同一 ready 回调内）',
     cspCallAt >= 0 && windowCallAt >= 0 && cspCallAt < windowCallAt,
