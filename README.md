@@ -24,7 +24,7 @@
 git clone <仓库地址> photominder && cd photominder
 npm install
 
-npm run dev           # 仅 Web（http://localhost:3000）
+npm run dev           # 仅 Web（http://127.0.0.1:3000）
 npm run electron:dev  # Electron 桌面应用
 ```
 
@@ -40,25 +40,11 @@ npm run electron:dev  # Electron 桌面应用
 
 DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB。已做的瘦身：`build/afterPack.js` 剔除 200+ 套无用语言包与 SwiftShader；`build.files` 只保留实际加载的 libheif wasm 并去掉 `exifreader` 的源码与 bin；`build/recompressDmg.js` 把 UDZO 重压为 ULMO（同一样本压缩率 zlib 49.8% / **lzma 31.8%**，再降约 24%）。
 
-**开发与校验**
+**验证**
 
-| 命令 | 说明 |
-| --- | --- |
-| `npm run verify` | 一条命令：typecheck + lint + format:check + test（提交前默认） |
-| `npm run verify:full` | verify + build（改构建 / 入口 / 主进程时） |
-| `npm run typecheck` | `tsc --noEmit`（渲染进程 + 构建配置 + tests 三个 project） |
-| `npm run lint` / `lint:fix` | ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware；当前均为 0 problems） |
-| `npm run format` / `format:check` | Prettier（已全量格式化，`format:check` 通过） |
-| `npm run test` | `test:main` + `test:unit` |
-| `npm run test:unit` | Vitest 纯函数单测（自动发现 `tests/unit/*.test.ts`） |
-| `npm run test:main` | 打桩 electron 的主进程集成测试（自动发现 `tests/main-process/*.test.cjs`；`-- <关键字>` 可只跑匹配文件） |
-| `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
+提交前只需记住一条：`npm run verify`（typecheck + lint + format:check + test）。
 
-> 测试数量不写死在文档里，以命令输出为准；当前基线与分层说明见 [`docs/quality.md`](./docs/quality.md)。
-
-> **两个环境注意事项**
-> 1. **lint 分两层**：`lint:js` 用 ESLint 检查 JS/CJS（主进程、构建脚本），`lint:ts` 用 oxlint（type-aware）检查 TS/TSX。这样绕开了 `typescript-eslint` 对 TypeScript 7 的 peer 限制（该包已从 devDependencies 移除），同时让 TS 侧重新获得静态检查。
-> 2. **本机无法初始化 Chromium 沙箱**，直接跑 `test:smoke` 会 `FATAL: GPU process isn't usable` 崩溃（退出码 133）。本环境请用 `npm run test:smoke:no-sandbox`。默认脚本保持不带逃生口，以免在正常机器上白白跳过沙箱路径。
+完整命令、测试分层、lint 为什么分两层、本机沙箱限制见 [`docs/quality.md`](./docs/quality.md)。测试数量不写死在文档里，以命令输出为准。
 
 ---
 
@@ -126,7 +112,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - **清理报告**：右栏统一给出「扫描 N 张 / 成组 M 组 / 可清理 K 张 / 可释放 X / 本次已清理 Y 张」，数字全部由同一份结果算出；删除后带现场撤销
 - **组成员变化会让忽略失效**：增删照片或调阈值改变组成员后，被忽略的组会重新出现 —— 刻意不做模糊续接，避免把「不是重复」套到另一组照片上
 - **批量重命名预览即落盘结果**：预览会按当前磁盘状态预演同名占用，直接显示最终会追加的 `-1` 序号；预演只读、不写盘，路径需通过会话白名单
-- **弹层键盘可达**：9 个弹窗统一初始焦点、Tab 焦点陷阱、Esc 与关闭后焦点归还；EXIF / 计数 / 时间等可读信息不低于 12px
+- **弹层键盘可达**：所有弹窗统一初始焦点、Tab 焦点陷阱、Esc 与关闭后焦点归还；EXIF / 计数 / 时间等可读信息不低于 12px
 
 ### 详情面板与 AI
 
@@ -239,72 +225,24 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 ## 技术架构
 
-| 分类 | 选型 |
+一句话：主进程承担扫描 / EXIF / HEIC / 哈希 / 缩略图等重活，渲染进程只拿地址与元数据；原图与视频走自定义 `pm://` 流式协议（支持 HTTP Range），大图不以 base64 常驻内存。
+
+| 想了解 | 看 |
 | --- | --- |
-| 桌面壳 | Electron 44（主进程 `electron/main.js` 组合根 + `electron/main/` 9 个领域模块 + 预加载 `electron/preload.js`） |
-| 前端 | React 19、TypeScript 7 |
-| 构建 | Vite 8（`@vitejs/plugin-react`） |
-| 样式 | Tailwind CSS 4（CSS-first `@theme`）+ `src/styles/styles.css` 的 CSS 变量 |
-| 元数据 | exifreader（主进程解析） |
-| 内容指纹 | `sha256(size + 头尾各 64KB)` 截 128 bit，主进程计算；渲染层只持有 id |
-| 图片格式 | heic-convert（HEIC/HEIF → JPEG，带磁盘缓存） |
-| AI | DeepSeek 视觉模型，主进程代理，无第三方 SDK |
-
-**关键设计**
-
-- **自定义 `pm://` 协议**：原图、原视频与缩略图以流方式从主进程提供，渲染进程只持有地址，避免整图 base64 常驻内存（OOM 根因）；视频请求实现 HTTP Range（`206 Partial Content`），支持边下边播与拖动进度条。
-- **主进程承担重活**：目录扫描（含取消）、文件头解析尺寸、EXIF/GPS 解析（只读前 512KB）、感知哈希、HEIC 转换与缩略图生成，全部主进程并发限流完成。
-- **按需缩略图层**：`src/lib/cache/thumbCache.ts`（框架无关）+ `src/components/grid/ThumbnailImage.tsx`（React 绑定），并发上限 12、同 key 去重、先预加载解码再替换避免闪烁。
-- **滚动虚拟化**：网格 `VirtualGrid` 与列表行只渲染视口内元素（含 overscan），滚动事件 rAF 节流。
-- **网格几何唯一入口**：`src/lib/grid/justifiedLayout.ts` 定义卡片内边距 / 间距常量、justified 行布局与行定位。铺行宽度必须是滚动容器**扣除横向 padding 后的内容区宽度**（不是 `clientWidth`），否则最右一列会越界并撑出横向滚动条；`CARD_PADDING` 与 `ImageCard` 的 className 内边距必须成对修改，有静态断言守着。
-- **统一内存治理**：`src/lib/cache/cacheManager.ts` 提供真 LRU（命中刷新 + 逐项淘汰）与 `volatile` / `sticky` 分级；主进程按 RSS 广播内存压力，渲染进程另有堆占用巡检兜底。
-- **统一日志器**：渲染进程 `src/lib/logger.ts`、主进程 `electron/lib/logger.cjs`，调试日志仅开发构建输出。
-
-### 安全边界
-
-Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.md` 附录 A / B）：
-
-| 面 | 做法 |
-| --- | --- |
-| 沙箱 | **默认开启**。仅当未打包 **且** 显式设置 `PHOTOMINDER_DISABLE_SANDBOX=1` 时才关闭，供受限环境开发用；打包产物永远强制开启 |
-| 路径授权 | 主进程维护**会话级** `authorizedRoots` / `authorizedFiles`。只有 6 个入口能产生授权（导入对话框、选择目录、扫描目录、监听目录、路径探测、拖放授权），其余一律拒绝 |
-| 协议 | `pm://file/<base64url>` 每次请求都做白名单校验，未授权返回 403 |
-| IPC | 所有文件类 handler 入口调用 `isPathAuthorized()`；返回协议统一为 `{ok:true,data}` / `{ok:false,error,code?}` |
-| CSP | 策略**唯一定义**在 `electron/lib/csp.cjs`，主进程 `onHeadersReceived` 与构建期注入的 `<meta>` 共用同一份字符串；生产 `script-src` 不含 `unsafe-inline` |
-| 体积闸门 | 设在读取之前（先 `stat` 再决定是否读）：`read-file` 64MB、`ai-analyze` 20MB base64 |
-| 写盘 | `reserveUniquePath()` 用 `open(path,'wx')` 原子占位，消除「探测存在性 → 再写」的 TOCTOU；`write-file-unique` 的 `fileName` 经 `path.basename()` 归一化 |
-| AI 密钥 | 主进程读取本机明文配置并代理请求；`ai-config-get` 只回 `hasApiKey` + 尾号掩码，渲染层读不回完整值；写入仍允许（用户在设置里填新 Key） |
-| 更新检查 | 只由主进程请求 GitHub API；下载地址必须来自 API 返回且 host 在 `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com` 白名单内。更新类 IPC **不接收渲染层路径**，下载目录与文件名由主进程决定，因此不经过路径授权；Release 说明按纯文本渲染，不注入 HTML |
-| 数据资产 IPC | 导出 / 导入 / 重连 / 备份涉及的路径全部在入口调用 `isPathAuthorized()`；备份只读来源、只写用户刚通过系统对话框选定的目标目录 |
-
-> 这层防的是**内容级攻击**（被当作图片加载的 SVG、将来的远程内容等 —— 它们能构造 `pm://` 请求但无法调用 IPC）。渲染进程若被完全攻破，攻击者天然拥有全部 IPC 能力，需要靠 CSP 与沙箱收敛。
-
-### 代码组织约定
-
-| 约束 | 唯一入口 | 说明 |
-| --- | --- | --- |
-| 文件名规则 | `src/lib/fs/pathUtils.ts` | 校验（`validateFilename`）与落盘规范化（`sanitizeFilename`）成对，不变式「校验通过 ⟹ 规范化后原样不变」由测试守住；组件内不另写非法字符正则 |
-| 照片时间语义 | `src/lib/media/photoTime.ts` | `photoTakenTime`（2 级链，面向展示）与 `photoOriginalTime`（3 级链，面向原图判定）分开命名；`calendarDayKey` 用本地日历日，不用 UTC 日界。调用点不得内联回退链（有静态断言扫描全 `src`） |
-| 感知哈希 | `electron/lib/dhash.cjs` | 主进程与渲染层共用唯一实现。渲染层只在主进程解不了时降级使用 |
-| 搜索匹配 | `matchesSearch`（`src/lib/filter/filters.ts`） | 内部用 `WeakMap` 缓存预小写索引；相机标识整体入索引，不可拆成厂商 / 机型两段 |
-| 进程内缓存 | `createLruCache`（`src/lib/cache/cacheManager.ts`） | 不写「普通 Map + 满了 `clear()`」；跨天失效（`dateKeyCache`）与容量淘汰是两回事，前者该 clear |
-| IPC 返回 | `IpcResult<T>`（`src/types/global.d.ts`） | 注册必须走 `handle()` 而非 `ipcMain.handle`，提供异常兜底与重复注册检测。「用户取消」是 `ok:true` + `data:null`，不是失败 |
-| `@/utils` | 纯再导出 barrel（86 行） | 新代码直接 import 具体模块；不要往 barrel 里加实现（`tests/unit/utilsBarrel.test.ts` 会失败） |
-| 通用图标 | `src/components/icons/index.tsx` | 只收「图形相同且已被两处以上使用」的图标；尺寸 / 线宽差异由**调用点**传 `size` / `strokeWidth`，不在图标库里写死，也不把语义强绑定的图形塞进来 |
+| 技术选型、分层、依赖方向、核心数据流 | [`docs/architecture.md`](./docs/architecture.md) |
+| 安全边界（沙箱 / 路径授权 / CSP / 体积闸门 / 密钥） | [`docs/architecture.md`](./docs/architecture.md) §4.6 |
+| 唯一入口与代码组织约定 | [`docs/architecture.md`](./docs/architecture.md) §5 |
+| 数据存哪、以什么为键 | [`docs/data-model.md`](./docs/data-model.md) |
+| IPC 契约怎么改 | [`docs/ipc.md`](./docs/ipc.md) |
+| 能连哪些外部服务 | [`docs/external.md`](./docs/external.md) |
 
 ---
 
 ## 目录结构
 
-```text
-electron/                 # 主进程：main.js 组合根 + main/ 领域模块 + lib/ 基础设施
-src/                      # 渲染进程：App 组合 + components / hooks / services / lib / types
-tests/                    # 三层验证：unit / main-process / smoke
-docs/                     # 架构 / 质量 / 决策 / 文档地图 / 历史存档
-build/                    # electron-builder 资源与打包钩子
-```
+`electron/`（主进程）· `src/`（渲染进程）· `tests/`（三层验证）· `docs/`（分层文档）· `build/`（打包资源）。
 
-完整模块地图、分层职责、依赖方向与扩展手册见 [`docs/architecture.md`](./docs/architecture.md)。
+完整模块地图、分层职责、依赖方向与扩展手册见 [`docs/architecture.md`](./docs/architecture.md) §3。
 
 ---
 

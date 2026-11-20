@@ -112,9 +112,12 @@ function injectCspMeta(): Plugin {
 export default defineConfig({
   base: './',
   server: {
+    // 只监听回环地址：这个应用的核心承诺是「纯本地」，dev server 没有理由出现在局域网里。
+    // 2026-11-20 复核发现此处曾被设为 0.0.0.0 + allowedHosts: true（自 Electron 44 迁移起），
+    // 与文档声明的「已改回 127.0.0.1」不符；现复位并加静态守卫（tests/unit/devServerConfig.test.ts）。
+    // 需要本机以外的设备访问时，请临时用 `npm run dev -- --host <ip>`，不要改这里的默认值。
+    host: '127.0.0.1',
     port: 3000,
-    host: '0.0.0.0',
-    allowedHosts: true,
     strictPort: true,
   },
   plugins: [react(), tailwindcss(), sharedCjsAsEsm(), injectCspMeta()],

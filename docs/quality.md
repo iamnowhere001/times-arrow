@@ -1,5 +1,8 @@
 # 质量基线
 
+> **最后更新**：2026-11-20 · **适用版本**：0.6.5
+> **事实源**：`package.json` 的 `scripts`、`tests/`、`vitest.config.mts`
+>
 > **一条命令证明没改坏：`npm run verify`。**
 > 本文只写「怎么验证、验证什么、什么算完成」，不写会漂移的测试数量 —— 数字以命令输出为准。
 
@@ -26,6 +29,18 @@
 
 ESLint 只检查 JS/CJS（主进程、构建脚本），TS/TSX 交给 oxlint（type-aware）。
 原因是 `typescript-eslint` 的 peer 范围与 TypeScript 7 不兼容。**不要把 TS 重新纳入 ESLint。**
+
+### 文档守卫也在 verify 里
+
+`tests/unit/docsConsistency.test.ts` 随 `test:unit` 运行，所以 `npm run verify` 天然覆盖文档：
+
+- 版本号在 README / AGENTS / ROADMAP / CHANGELOG 一致；
+- 所有 Markdown 链接可解析；
+- 文档中反引号引用的仓库路径真实存在；
+- `docs/` 每篇分层文档都有「最后更新 / 适用版本」；
+- 架构文档覆盖 `electron/main`、`electron/lib` 的全部模块与 `src/lib` 的领域目录。
+
+**不需要额外加 `verify:docs` 脚本**——多一条命令就多一个被遗忘的入口。
 
 ---
 

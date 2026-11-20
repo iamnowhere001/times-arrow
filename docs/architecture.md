@@ -1,5 +1,8 @@
 # 架构说明
 
+> **最后更新**：2026-11-20 · **适用版本**：0.6.5
+> **事实源**：`electron/main.js`、`electron/main/`、`electron/lib/`、`src/`（分层与依赖方向由 `tests/main-process/layering.test.cjs` 断言）
+>
 > 这是「系统怎么分层、依赖往哪走、改一处要动哪些地方」的唯一技术地图。
 > 产品方向看 [`ROADMAP.md`](../ROADMAP.md)，任务状态看 [`TODO.md`](../TODO.md)，用户行为看 [`README.md`](../README.md)。
 > **标了「守卫」的条目都有可执行测试，不是建议。**
@@ -85,18 +88,31 @@ electron/main.js ──→ electron/main/*.cjs ──→ electron/lib/*.cjs
 | lib | ❌ | ❌ | ❌ | ✅（同层跨域） | ✅ |
 | types | ❌ | ❌ | ❌ | ❌ | ✅ |
 
-**守卫**：`tests/main-process/layering.test.cjs`。现有违规只有一处棘轮基线（`components` 直连 `window.electronAPI`），只允许下调。
+**守卫**：`tests/main-process/layering.test.cjs`。现有唯一棘轮项是 `src/components` 直连 `window.electronAPI`——额度记在该文件的 `BASELINE`，**只允许下调**，不接受新增文件。
 
 ### 2.4 跨进程契约
 
-同一份 IPC 契约散落在四处，必须同步：
-
-1. `electron/preload.js` — 暴露方法
-2. `src/types/global.d.ts` — 类型声明
-3. `src/**` — 实际调用
-4. `electron/main.js` / `electron/main/*.cjs` — `handle()` 注册
+同一份 IPC 契约的五处同步点、返回语义、授权规则见 [`ipc.md`](./ipc.md)。这里只记结构事实：`preload.js` 是唯一暴露面，`global.d.ts` 是唯一类型面，注册只能在 `electron/main.js` / `main/*.cjs`。
 
 **守卫**：`tests/main-process/ipc-contract.test.cjs` 静态解析四处并比对冻结通道清单。新增 / 删除通道必须显式改清单 —— 这是刻意的变更成本。
+
+---
+
+### 2.5 技术选型
+
+| 分类 | 选型 | 落点 |
+| --- | --- | --- |
+| 桌面壳 | Electron 44 | `electron/main.js` 组合根 + `electron/main/` 领域模块 + `electron/preload.js` |
+| 前端 | React 19 · TypeScript 7 | `src/` |
+| 构建 | Vite 8（`@vitejs/plugin-react`） | `vite.config.mts` |
+| 样式 | Tailwind CSS 4（CSS-first `@theme`）+ CSS 变量 | `src/styles/styles.css` |
+| 元数据 | exifreader（只读前 512KB） | `electron/main/media-pipeline.cjs` |
+| 图片格式 | heic-convert（HEIC/HEIF → JPEG，带磁盘缓存） | `electron/main/media-pipeline.cjs` |
+| 内容指纹 | `sha256(size + 头尾各 64KB)` 截 128 bit | `electron/lib/fingerprint.cjs` |
+| AI | DeepSeek 视觉模型，无第三方 SDK，主进程代理 | `electron/main/ai.cjs` |
+| 测试 | Vitest + 自建主进程 runner + Electron 冒烟 | `tests/` |
+
+依赖边界（能连什么、不能连什么）见 [`external.md`](./external.md)。
 
 ---
 
@@ -135,10 +151,10 @@ src/
 │   ├── duplicate/          #   DuplicateDetector / DuplicateReportPanel
 │   ├── about/              #   AboutView
 │   ├── filter/             #   FilterPanel
-│   ├── modal/              #   9 个业务弹窗
+│   ├── modal/              #   业务弹窗（设置 / 导出 / 数据资产 / 关于更新 / 确认…）
 │   ├── common/             #   Toast / ErrorBoundary / ModalShell / ImmersiveView / Stat…
 │   └── icons/              #   跨文件复用的通用图标（唯一入口）
-├── hooks/                  # 功能域状态编排（25 个）
+├── hooks/                  # 功能域状态编排（导入 / 选择 / 文件操作 / 筛选 / 更新…）
 ├── services/               # aiService（经 IPC 走主进程）
 ├── lib/                    # 领域与基础设施
 │   ├── about/              #   关于页静态内容与更新文案
@@ -236,21 +252,56 @@ build/                      # electron-builder 资源与打包钩子
 
 ---
 
+### 4.6 安全边界
+
+Electron 默认配置偏松，下面九个面是逐项收紧后的现状。规则本体（不可破坏的约束）在 [`AGENTS.md`](../AGENTS.md) §4.1 / §4.2，本表只说明「收紧在哪一层」。
+
+| 面 | 做法 | 落点 |
+| --- | --- | --- |
+| 沙箱 | 默认开启；仅未打包且显式 `PHOTOMINDER_DISABLE_SANDBOX=1` 时关闭；打包产物强制开启 | `electron/main.js` |
+| 路径授权 | 会话级 `authorizedRoots` / `authorizedFiles`；只有 6 个入口能产生授权（列举见 [`AGENTS.md`](../AGENTS.md) §4.2） | `electron/main/authorization.cjs` |
+| 协议 | `pm://file/<base64url>` 每次请求校验白名单，未授权 403 | `electron/main.js` |
+| IPC | 文件类 handler 入口 `isPathAuthorized()`；统一返回 `IpcResult<T>` | `electron/main.js` + `main/*.cjs` |
+| CSP | 唯一定义，响应头与构建期 `<meta>` 共用；生产 `script-src` 不含 `unsafe-inline` | `electron/lib/csp.cjs` |
+| 体积闸门 | 读取前先 `stat`：`read-file` 64MB、`ai-analyze` 20MB base64 | `electron/main.js` |
+| 写盘 | `reserveUniquePath()` 用 `open(path,'wx')` 原子占位，消除 TOCTOU | `electron/main/data-assets.cjs` |
+| AI 密钥 | 主进程读取并代理；读取只回 `hasApiKey` + 尾号掩码 | `electron/main/ai.cjs` |
+| 更新检查 | 只由主进程请求 GitHub；下载 host 白名单；不静默安装；更新类 IPC 不收渲染层路径 | `electron/main/updater.cjs` |
+
+> 这层防的是**内容级攻击**（被当作图片加载的 SVG 等能构造 `pm://` 请求但无法调用 IPC）。渲染进程若被完全攻破，攻击者天然拥有全部 IPC 能力，需要靠 CSP 与沙箱收敛。
+
+---
+
+### 4.7 渲染层性能约定
+
+长列表的性能不是「优化项」，是正确性的一部分：做不到就会在万级图库上卡死。
+
+| 约定 | 做法 | 落点 |
+| --- | --- | --- |
+| 缩略图 | 按需生成（卡片进视口才请求），不在导入时批量预生成；并发上限 + 同 key 去重 + 先解码后替换避免闪烁 | `src/lib/cache/thumbCache.ts`、`src/components/grid/ThumbnailImage.tsx` |
+| 虚拟化 | 网格与列表只渲染视口内元素（含 overscan），滚动事件 rAF 节流 | `src/components/grid/ImageGrid.tsx`、`src/hooks/useVirtualViewport.ts` |
+| 内存治理 | 真 LRU（命中刷新 + 逐项淘汰）+ `volatile` / `sticky` 分级；主进程按 RSS 广播内存压力，渲染进程另有堆占用巡检 | `src/lib/cache/cacheManager.ts` |
+| 行内材质 | 长列表行避免 `backdrop-filter`，惯性滚动会掉帧 | 各卡片 / 行组件 |
+
+---
+
 ## 5. 唯一入口
 
-| 事项 | 唯一入口 | 守卫 |
-| --- | --- | --- |
-| 文件名校验 / 规范化 | `src/lib/fs/pathUtils.ts` | `tests/unit/pathUtils.test.ts`（校验通过 ⟹ 规范化后不变） |
-| 照片时间语义 | `src/lib/media/photoTime.ts` | `tests/unit/photoTime.test.ts` + 静态扫描（禁止内联回退链） |
-| 内容指纹 | `electron/lib/fingerprint.cjs` | 主进程测试 |
-| 感知哈希 | `electron/lib/dhash.cjs` | `tests/unit/dhash.test.ts`（跨入口一致） |
-| 搜索匹配 | `matchesSearch`（`src/lib/filter/filters.ts`） | `tests/unit/filters.test.ts` |
-| 进程内缓存 | `createLruCache`（`src/lib/cache/cacheManager.ts`） | 单测 + 代码审查 |
-| IPC 返回 | `IpcResult<T>`（`src/types/global.d.ts`） | `ipc-contract.test.cjs` |
-| 布局几何 | `src/lib/grid/justifiedLayout.ts` | `tests/unit/gridLayout.test.ts` + 静态断言 |
-| 主题令牌 | `src/styles/styles.css` 的 `@theme` + `:root` / `.light-theme` | `tests/unit/designTokens.test.ts` |
-| 通用图标 | `src/components/icons/index.tsx` | 代码审查（只收两处以上复用的同形图标） |
-| `@/utils` | 纯再导出 barrel | `tests/unit/utilsBarrel.test.ts` |
+| 事项 | 唯一入口 | 守卫 | 边界（为什么只留一份） |
+| --- | --- | --- | --- |
+| 文件名校验 / 规范化 | `src/lib/fs/pathUtils.ts` | `tests/unit/pathUtils.test.ts` | 校验（`validateFilename`）与落盘规范化（`sanitizeFilename`）成对；不变式「校验通过 ⟹ 规范化后原样不变」。组件内不另写非法字符正则 |
+| 照片时间语义 | `src/lib/media/photoTime.ts` | `tests/unit/photoTime.test.ts` + 静态扫描 | `photoTakenTime`（2 级链，面向展示）与 `photoOriginalTime`（3 级链，面向原图判定）分开命名；`calendarDayKey` 用本地日历日，不用 UTC 日界 |
+| 内容指纹 | `electron/lib/fingerprint.cjs` | 主进程测试 | 渲染层只持有 `fileId`，不重算 |
+| 感知哈希 | `electron/lib/dhash.cjs` | `tests/unit/dhash.test.ts` | 主进程与渲染层共用唯一实现；渲染层只在主进程解不了时降级使用 |
+| 搜索匹配 | `matchesSearch`（`src/lib/filter/filters.ts`） | `tests/unit/filters.test.ts` | 内部用 `WeakMap` 预小写索引；相机标识整体入索引，不拆成厂商 / 机型两段 |
+| 进程内缓存 | `createLruCache`（`src/lib/cache/cacheManager.ts`） | 单测 | 不写「普通 Map + 满了 `clear()`」；跨天失效（`dateKeyCache`）与容量淘汰是两回事，前者该 clear |
+| IPC 返回 | `IpcResult<T>`（`src/types/global.d.ts`） | `ipc-contract.test.cjs` | 注册走 `handle()`；「用户取消」是 `ok:true` + `data:null`，不是失败 |
+| CSP | `electron/lib/csp.cjs` | Electron 冒烟 | 响应头与构建期 `<meta>` 共用同一份字符串 |
+| 布局几何 | `src/lib/grid/justifiedLayout.ts` | `tests/unit/gridLayout.test.ts` + 静态断言 | 铺行宽度是滚动容器**扣除横向 padding 后**的内容区宽度，不是 `clientWidth`；`CARD_PADDING` 与 `ImageCard` 内边距必须成对修改 |
+| 主题令牌 | `src/styles/styles.css` 的 `@theme` + `:root` / `.light-theme` | `tests/unit/designTokens.test.ts` | 两处声明必须同步；组件里不写十六进制色值 |
+| 通用图标 | `src/components/icons/index.tsx` | 代码审查 | 只收「图形相同且被两处以上使用」的图标；尺寸 / 线宽由调用点传参，不在图标库里写死 |
+| `@/utils` | 纯再导出 barrel | `tests/unit/utilsBarrel.test.ts` | 不得加实现；新代码直接 import 具体模块 |
+| 日志器 | `src/lib/logger.ts`（渲染）/ `electron/lib/logger.cjs`（主进程） | 代码审查 | 两端**同构两份**实现，不是重复代码：进程隔离无法共享。接口固定 `debug` / `info` / `warn` / `error`，`debug` 与 `info` 仅开发构建输出。禁止出现第三份 |
 
 ---
 
@@ -272,15 +323,9 @@ build/                      # electron-builder 资源与打包钩子
 3. 需要 IPC 时经 `window.electronAPI`（现有惯例）或 `services/`；文件路径参数必须来自授权入口。
 4. 依赖数组写全，不关 `react-hooks/exhaustive-deps`。
 
-### 6.3 新增一个 IPC 通道（必须五处同步）
+### 6.3 新增一个 IPC 通道
 
-1. `electron/preload.js` 暴露方法。
-2. `src/types/global.d.ts` 声明方法。
-3. `electron/main.js` 或 `electron/main/*.cjs` 用 `handle('channel', ...)` 注册。
-4. `tests/main-process/ipc-contract.test.cjs` 的 `CHANNELS` 冻结清单加通道。
-5. 调用点。
-
-**文件类**：handler 入口必须 `isPathAuthorized()`；返回 `IpcResult<T>`；「用户取消」返回 `ok:true, data:null`。
+完整步骤、文件类通道的授权与返回要求见 [`ipc.md`](./ipc.md) §5。不要在这里维护第二份步骤清单。
 
 ### 6.4 新增持久化字段
 
@@ -328,10 +373,10 @@ build/                      # electron-builder 资源与打包钩子
 
 | 优先级 | 债务 | 现状 | 目标 | 风险 | 验收 |
 | --- | --- | --- | --- | --- | --- |
-| P1 | `electron/main.js` 组合根过大 | 窗口 / 菜单 / 协议 / 51 个 IPC 通道 / 文件操作都在一个文件 | 按域拆 `window.cjs` / `menu.cjs` / `protocol.cjs` / `ipc/<domain>.cjs` | 中：启动路径无单测，靠 `test:main` + 冒烟 | 行为零变化；`ipc-contract` 全绿；`main.js` 只做装配 |
+| P1 | `electron/main.js` 组合根过大 | 窗口 / 菜单 / 协议 / 全部 IPC 通道注册 / 文件操作都在一个文件 | 按域拆 `window.cjs` / `menu.cjs` / `protocol.cjs` / `ipc/<domain>.cjs` | 中：启动路径无单测，靠 `test:main` + 冒烟 | 行为零变化；`ipc-contract` 全绿；`main.js` 只做装配 |
 | P2 | `ImageGrid.tsx` 同时含网格与列表两套虚拟化 | 单文件 1.8k 行 | 抽 `components/grid/virtual/`，共用滚动 / 测量逻辑 | 中：滚动与选择回归 | 滚动位置 / 键盘导航 / 选择不回归；单测覆盖布局纯逻辑 |
 | P3 | `App.tsx` 仍承担较多跨域连线 | 1.4k 行 | 抽视图路由 `AppViews` 与跨域事件订阅 | 中低 | 行为零变化；依赖方向不变 |
-| P4 | `services/` 只有 AI 一个用例 | 组件直接调 IPC 的基线仍有 28 处 | 按域补 service，逐步下调棘轮基线 | 低 | 每次只迁一个域；基线只降不升 |
+| P4 | `services/` 只有 AI 一个用例 | 组件直接调 IPC 的额度见 `layering.test.cjs` 的 `BASELINE` | 按域补 service，逐步下调棘轮基线 | 低 | 每次只迁一个域；基线只降不升 |
 | P5 | `strictNullChecks` 未开 | `noImplicitAny` 已 0 新增错误 | 分目录开启并修 | 中 | 每个 project 单独通过 |
 | P6 | 无 CI | 本地手工跑 | 个人自用定位下暂不做；保持 `npm run verify` 一条命令 | 低 | 换机器一条命令可复现 |
 
@@ -367,18 +412,14 @@ build/                      # electron-builder 资源与打包钩子
 
 ---
 
-## 9. 变更影响矩阵
+## 9. 技术变更同步矩阵
 
-| 你改了 | 必须同步 |
+> 本表只管**代码侧必须一起改的位置**。文档之间的职责边界与冲突裁决见 [`docs/README.md`](./README.md) §2 / §3，不在这里重复。
+
+| 你改了 | 必须同步（代码 / 守卫） |
 | --- | --- |
-| 功能 / 快捷键 / 配置 / 已知限制 | `README.md` |
-| 任务开始 / 完成 / 拆分 | `TODO.md`（完成后移入 `docs/archive/`） |
-| 用户可感知变化 | `CHANGELOG.md` |
-| 方向 / 优先级 / 版本主题 | `ROADMAP.md` |
-| 架构 / 安全 / 重构结论 | `CODE_REVIEW.md` + 本文 |
-| 命令 / 测试分层 / DoD | `docs/quality.md` + `AGENTS.md` |
-| 关键取舍 | `docs/decisions.md` |
-| IPC 通道 | preload / global.d.ts / 注册 / 冻结清单 / 调用点（五处） |
-| 持久化结构 | `migrations.cjs` + 迁移守卫测试 + README 数据表 |
+| IPC 通道 | 见 [`ipc.md`](./ipc.md) §5 的五处清单 |
+| 持久化结构 | `migrations.cjs` + 迁移守卫测试 |
 | 主题令牌 | `styles.css` 两处 + `designTokens.test.ts` |
 | 品牌口径 | `branding.test.ts` 守住的三处标识 |
+| dev server 监听面 / 端口 | `vite.config.mts` + `electron:dev` + `devServerConfig.test.ts` |

@@ -105,6 +105,9 @@ describe('文档一致性', () => {
       'architecture.md',
       'quality.md',
       'decisions.md',
+      'data-model.md',
+      'ipc.md',
+      'external.md',
       'archive/todo-completed.md',
     ]) {
       expect(map, `docs/README.md 未引用 ${doc}`).toContain(doc);
@@ -116,5 +119,72 @@ describe('文档一致性', () => {
     );
     expect(existsSync(resolve(ROOT, 'tests/main-process/run.cjs'))).toBe(true);
     expect(statSync(resolve(ROOT, 'docs/archive/todo-completed.md')).isFile()).toBe(true);
+  });
+
+  /**
+   * 分层文档必须自报「最后更新 / 适用版本」。
+   * 没有这一行，读者无法判断手上这份文档是描述现在的代码，还是半年前的。
+   */
+  it('docs/ 每篇分层文档都标注了最后更新与适用版本', () => {
+    const layered = [
+      'docs/README.md',
+      'docs/architecture.md',
+      'docs/data-model.md',
+      'docs/ipc.md',
+      'docs/external.md',
+      'docs/quality.md',
+      'docs/decisions.md',
+    ];
+    const missing = layered.filter((doc) => {
+      const head = read(doc).slice(0, 600);
+      return (
+        !/最后更新\*\*：\d{4}-\d{2}-\d{2}/.test(head) || !/适用版本\*\*：\d+\.\d+\.\d+/.test(head)
+      );
+    });
+    expect(missing, `缺少「最后更新 / 适用版本」头：${missing.join(', ')}`).toEqual([]);
+  });
+
+  /**
+   * 反引号里的仓库内路径必须存在。
+   *
+   * agent 的导航几乎全靠这类内联路径（`src/lib/fs/pathUtils.ts` 之类），
+   * 而原来的守卫只校验 Markdown 链接——文件被移动 / 拆分后此处会静默失效，
+   * 表现为「文档指向一个不存在的文件」，比断链更隐蔽。
+   *
+   * 只检查相对仓库根的写法（白名单首段），跳过通配、目录、命令与别名。
+   */
+  it('文档中反引号引用的仓库路径都存在', () => {
+    const PREFIXES = ['src', 'electron', 'tests', 'docs', 'build'];
+    const docs = [...ROOT_DOCS, ...walkMarkdown(resolve(ROOT, 'docs'))];
+    const broken: string[] = [];
+
+    for (const doc of docs) {
+      const relativeDoc = isAbsolute(doc) ? doc.slice(ROOT.length + 1) : doc;
+      const source = stripCodeFences(read(relativeDoc));
+      for (const match of source.matchAll(/`([^`\n]+)`/g)) {
+        const span = match[1].trim();
+        if (!span.includes('/')) continue;
+        // 通配、占位符、目录、命令、含空格的说明性文字一律跳过
+        if (/[*(){}$<>|?=:,#\s]/.test(span) || span.endsWith('/')) continue;
+        if (!PREFIXES.includes(span.split('/')[0])) continue;
+        if (!existsSync(resolve(ROOT, span))) broken.push(`${relativeDoc} → ${span}`);
+      }
+    }
+
+    expect([...new Set(broken)], `反引号路径不存在：\n${[...new Set(broken)].join('\n')}`).toEqual(
+      []
+    );
+  });
+
+  /** 新增 `src/lib/<domain>` 目录却没进架构文档，是 agent 最容易踩的导航空洞。 */
+  it('架构文档覆盖 src/lib 的领域目录', () => {
+    const architecture = read('docs/architecture.md');
+    const domains = readdirSync(resolve(ROOT, 'src/lib'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    const missing = domains.filter((name) => !architecture.includes(`${name}/`));
+    expect(missing, `docs/architecture.md 未覆盖 src/lib 领域目录：${missing.join(', ')}`).toEqual(
+      []
+    );
   });
 });
