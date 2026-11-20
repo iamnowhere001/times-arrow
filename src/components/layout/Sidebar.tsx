@@ -70,6 +70,8 @@ interface SidebarProps {
   hasPhotos: boolean;
   /** 打开快捷键总览层：与外观同属底部全局区，不作用于当前视图 */
   onOpenShortcuts: () => void;
+  /** 打开「关于与更新」整页视图：功能介绍 / 技巧 / 迭代计划 / 更新记录 */
+  onOpenAbout: () => void;
   isOpen: boolean;
   /** 当前外观模式 */
   themeMode: Theme;
@@ -286,6 +288,24 @@ const DuplicateIcon = () => (
   >
     <rect x="8" y="8" width="12" height="12" rx="2"></rect>
     <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+  </svg>
+);
+
+/** 「关于与更新」入口图标：细描边圆环 + i，与视图类图标同一线宽 */
+const InfoIcon = () => (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="9"></circle>
+    <line x1="12" y1="11" x2="12" y2="16.5"></line>
+    <line x1="12" y1="7.6" x2="12.01" y2="7.6"></line>
   </svg>
 );
 
@@ -651,6 +671,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onRequestReset,
   hasPhotos,
   onOpenShortcuts,
+  onOpenAbout,
   isOpen,
   themeMode,
   onThemeModeChange,
@@ -822,6 +843,20 @@ const Sidebar: React.FC<SidebarProps> = ({
                 disabled={!hasPhotos}
                 chevron
                 title={hasPhotos ? '找出相似照片，逐组比对后清理' : '导入照片后可用'}
+              />
+            </div>
+          </section>
+
+          {/* 分组卡 · 应用：不是照片视图，而是应用自身的信息入口 */}
+          <section aria-label="应用" className={GROUP_CARD}>
+            <SectionLabel>应用</SectionLabel>
+            <div className="space-y-0.5">
+              <NavRow
+                icon={<InfoIcon />}
+                label="关于与更新"
+                onClick={onOpenAbout}
+                chevron
+                title="主要功能、特色、操作技巧、迭代计划、更新记录与版本检查"
               />
             </div>
           </section>

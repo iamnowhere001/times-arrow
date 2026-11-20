@@ -37,6 +37,7 @@ import DuplicateDetector from '@/components/duplicate/DuplicateDetector';
 import ExportModal from '@/components/modal/ExportModal';
 import TimelineGallery from '@/components/timeline/TimelineGallery';
 import LocationMap from '@/components/map/LocationMap';
+import AboutView from '@/components/about/AboutView';
 import { clearThumbnailCache } from '@/lib/cache/thumbCache';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import DragOverlay from '@/components/common/DragOverlay';
@@ -67,7 +68,7 @@ import { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import { useWatcherSync } from '@/hooks/useWatcherSync';
 
 /** 主内容区的顶层视图：图库 / 时光画廊 / 按地点浏览 / 重复图片检测（整页视图，而非弹窗） */
-type MainView = 'library' | 'timeline' | 'map' | 'duplicates';
+type MainView = 'library' | 'timeline' | 'map' | 'duplicates' | 'about';
 
 const App: React.FC = () => {
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -290,6 +291,8 @@ const App: React.FC = () => {
   const isTimelineOpen = mainView === 'timeline';
   /** 「按地点浏览」是否在前台 */
   const isMapOpen = mainView === 'map';
+  /** 「关于与更新」是否在前台（更新弹窗打开时让位，避免 Esc 同时关弹窗又退出页面） */
+  const isAboutOpen = mainView === 'about';
   /**
    * 左栏（侧边栏）是否真正占据左侧空间。
    *
@@ -828,6 +831,7 @@ const App: React.FC = () => {
   const handleOpenSaveAlbum = useCallback(() => setIsSaveAlbumModalOpen(true), []);
   const handleSelectTimeline = useCallback(() => setMainView('timeline'), []);
   const handleSelectMap = useCallback(() => setMainView('map'), []);
+  const handleOpenAbout = useCallback(() => setMainView('about'), []);
   /** 地图照片条 → QuickLook：翻页范围限定在该地点的照片内 */
   const handleMapQuickLook = useCallback((photo: Photo, scope: Photo[]) => {
     setQuickLookScope(scope);
@@ -889,6 +893,7 @@ const App: React.FC = () => {
     isDuplicateDetectorOpen,
     isTimelineOpen,
     isMapOpen,
+    isAboutOpen: isAboutOpen && !updateChecker.isOpen,
     onExitToLibrary: handleExitToLibrary,
     handleExitDuplicates,
     searchInputRef,
@@ -988,6 +993,7 @@ const App: React.FC = () => {
           onRequestReset={handleRequestClearList}
           hasPhotos={photos.length > 0}
           onOpenShortcuts={handleOpenShortcuts}
+          onOpenAbout={handleOpenAbout}
           isOpen={isLeftPaneOpen}
           themeMode={theme}
           onThemeModeChange={setTheme}
@@ -1084,6 +1090,27 @@ const App: React.FC = () => {
               onQuickLook={handleMapQuickLook}
               onBack={() => setMainView('library')}
               isLeftPaneOpen={isLeftPaneVisible}
+            />
+          </ErrorBoundary>
+        ) : mainView === 'about' ? (
+          <ErrorBoundary
+            label="关于与更新"
+            fallback={
+              <ViewErrorFallback
+                title="关于页渲染出错"
+                description="图库内容仍然完好，可返回图库继续整理。"
+                onAction={() => setMainView('library')}
+              />
+            }
+          >
+            <AboutView
+              currentVersion={updateChecker.currentVersion}
+              autoCheck={updateChecker.autoCheck}
+              isChecking={updateChecker.isChecking}
+              onBack={handleExitToLibrary}
+              onCheckUpdate={updateChecker.openPanel}
+              onToggleAutoCheck={updateChecker.setAutoCheck}
+              onOpenRelease={updateChecker.openReleasePage}
             />
           </ErrorBoundary>
         ) : (

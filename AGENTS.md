@@ -16,7 +16,7 @@
 | 主进程 | Node.js / CommonJS（`electron/**/*.cjs`、`electron/main.js`、`electron/preload.js`） |
 | 渲染进程 | React + TypeScript ESM（`src/`） |
 | 数据目录 | macOS：`~/Library/Application Support/PhotoMinder/` |
-| 当前版本 | `0.6.4`（2026-11-20 已发布：tag `v0.6.4`，GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`；修复浏览器下载安装包被判「已损坏」） |
+| 当前版本 | `0.6.5`（2026-11-20 开发完成，待发版：左栏「应用 → 关于与更新」整页视图） |
 | 质量基线 | typecheck / lint / 单测 380 项 / 主进程 286 项 / Electron 冒烟 全绿 |
 
 **产品判断与优先级以 `ROADMAP.md` 为准；任务级状态以 `TODO.md` 为准；行为描述以 `README.md` 为准；历史技术结论以 `CODE_REVIEW.md` 为准。**
@@ -77,7 +77,7 @@ electron/
 src/
 ├── App.tsx                 # 组合 hooks + 视图路由（不要再堆业务逻辑）
 ├── hooks/                  # 25 个功能域 hook：编排 / 数据 / 交互
-├── components/             # 按域分组：layout / grid / timeline / map / detail / duplicate / filter / modal / common / icons
+├── components/             # 按域分组：layout / grid / timeline / map / about / detail / duplicate / filter / modal / common / icons
 ├── services/               # aiService（经 IPC 走主进程）
 ├── lib/                    # 领域与基础设施：cache / media / filter / persistence / geo / fs / duplicate / format
 ├── types/                  # 领域类型 + global.d.ts（IpcResult / electronAPI）

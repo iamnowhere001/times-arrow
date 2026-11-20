@@ -2,7 +2,7 @@
 
 本文件记录**用户可感知的变化**（功能、行为、修复、安全），格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **发布状态**：**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
+> **发布状态**：**v0.6.5 已开发完成（2026-11-20），待发版** —— `package.json` `0.6.5`，尚未构建 DMG 与打 tag。**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
 > v0.6.1 于 2026-11-06 发布（tag `v0.6.1`）。工作区另有 v0.8.0 / v1.0.0 的提前交付，尚未发版，见下方 `[Unreleased]`。
 > 历史版本的日期为开发完成日期，不一定等于发布日；本文件只记录已交付事实。
 >
@@ -64,6 +64,24 @@
 #### Security
 
 - 崩溃日志只留本机 `userData`，不上传、不埋点；消息与堆栈截断到固定长度，日志与 pending 文件均有条数上限。
+
+---
+
+## [0.6.5] — 2026-11-20
+
+主题：**自我介绍**。把功能、技巧、计划与更新记录放到应用里，不用再翻仓库文档。
+
+### Added
+
+- **「关于与更新」整页视图**：左栏新增独立「应用」分区，一行「关于与更新」入口，打开后一页展示应用定位与三条承诺、8 项主要功能、4 项特色、6 条操作技巧、3 个版本的迭代计划、最近 5 个版本的更新记录。
+- **版本与更新区块**：展示当前版本，可直接「检查更新」（复用现有更新面板）、打开发布页、开关「启动后自动检查一次」，并说明未签名包首次启动的放行方式。
+- **内容随包内置**：功能 / 计划 / 更新记录以静态 TS 数据打包进 `dist`（`src/lib/about/aboutContent.ts`），运行时不读 `CHANGELOG.md` / `ROADMAP.md`（md 不在打包白名单内），因此离线也能看。
+
+### 说明
+
+- 更新记录第一条由单测强制与 `package.json` 版本一致（`tests/unit/aboutContent.test.ts`），发版时忘记补记录会直接失败。
+- 更新面板打开时 `Esc` 只关面板、不退出关于页；面板关闭后 `Esc` 才返回图库。
+- 本次只开发，未构建 DMG、未打 tag。
 
 ---
 
