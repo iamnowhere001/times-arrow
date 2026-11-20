@@ -147,6 +147,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('ai-open-settings', listener);
   },
 
+  // 更新检查（GitHub Releases）：检查与下载都由主进程执行，渲染层不直连
+  updateCheck: () => ipcRenderer.invoke('update-check'),
+  /** 当前版本 + 上次检查结果 + 下载状态（面板重开时恢复） */
+  updateStatus: () => ipcRenderer.invoke('update-status'),
+  /** 开始后台下载更新包；进度通过 onUpdateDownloadProgress 推送 */
+  updateDownload: () => ipcRenderer.invoke('update-download'),
+  updateCancelDownload: () => ipcRenderer.invoke('update-cancel-download'),
+  /** 打开已下载的 DMG（路径由主进程决定，渲染层不传参） */
+  updateOpenDownload: () => ipcRenderer.invoke('update-open-download'),
+  updateRevealDownload: () => ipcRenderer.invoke('update-reveal-download'),
+  /** 用系统浏览器打开发布页（仅允许 GitHub 域名） */
+  updateOpenRelease: () => ipcRenderer.invoke('update-open-release'),
+  /** 应用菜单「检查更新…」；返回取消订阅函数 */
+  onOpenUpdatePanel: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('update-open-panel', listener);
+    return () => ipcRenderer.removeListener('update-open-panel', listener);
+  },
+  /** 更新包下载进度；返回取消订阅函数 */
+  onUpdateDownloadProgress: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on('update-download-progress', listener);
+    return () => ipcRenderer.removeListener('update-download-progress', listener);
+  },
+
   // 从拖放的 File 对象解析真实磁盘路径
   getFilePath: (file) => {
     try {

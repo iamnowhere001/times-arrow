@@ -4,6 +4,7 @@ import { PlusIcon, RefreshIcon } from '@/components/icons';
 import { DotPinIcon } from '@/components/common/DotField';
 import { Stat } from '@/components/common/Stat';
 import { navItemActive } from '@/lib/filter/viewContext';
+import { isElectronRuntime } from '@/lib/platform/runtime';
 import type { RankedTag } from '@/lib/tags/tagOperations';
 
 type Theme = 'dark' | 'light' | 'system';
@@ -672,7 +673,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   /** 桌面端隐藏标题栏时左上角需为红绿灯留出 78px；Web 端无红绿灯，左齐更舒展 */
-  const hasMacTrafficLights = typeof window !== 'undefined' && Boolean(window.electronAPI);
+  const hasMacTrafficLights = isElectronRuntime();
   const visibleTags = showAllTags ? rankedTags : rankedTags.slice(0, 8);
 
   /** 单独文件来源：聚合成一行，计数与不可用数量都在这里算好 */

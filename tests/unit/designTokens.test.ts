@@ -97,10 +97,10 @@ describe('字号下限（D14）', () => {
 });
 
 describe('弹层基座统一（D17）', () => {
-  it('9 个 Modal 全部接入 ModalShell，基座保留 a11y 接线与 role=dialog / aria-modal', () => {
+  it('10 个 Modal 全部接入 ModalShell，基座保留 a11y 接线与 role=dialog / aria-modal', () => {
     const dir = resolve(process.cwd(), 'src/components/modal');
     const files = readdirSync(dir).filter((name) => name.endsWith('.tsx'));
-    expect(files).toHaveLength(9);
+    expect(files).toHaveLength(10);
     for (const name of files) {
       const source = readFileSync(resolve(dir, name), 'utf8');
       expect(source, `${name} 未接入基座`).toContain('<ModalShell');

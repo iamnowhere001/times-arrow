@@ -2,7 +2,7 @@
 
 本文件记录**用户可感知的变化**（功能、行为、修复、安全），格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **发布状态**：**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
+> **发布状态**：**v0.6.3 更新检查已交付代码（2026-11-20），待发版** —— `package.json` `0.6.3`，尚需创建 tag 与上传 DMG。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
 > v0.6.1 于 2026-11-06 发布（tag `v0.6.1`）。工作区另有 v0.8.0 / v1.0.0 的提前交付，尚未发版，见下方 `[Unreleased]`。
 > 历史版本的日期为开发完成日期，不一定等于发布日；本文件只记录已交付事实。
 >
@@ -64,6 +64,31 @@
 #### Security
 
 - 崩溃日志只留本机 `userData`，不上传、不埋点；消息与堆栈截断到固定长度，日志与 pending 文件均有条数上限。
+
+---
+
+## [0.6.3] — 2026-11-20（开发完成，待发布）
+
+主题：**更新版**。应用内发现、下载并引导安装新版本。
+
+### Added
+
+- **启动时检查更新**：启动 5 秒后静默请求 GitHub Releases，有新版本时用带「查看更新」的 Toast 提示；检查失败不打扰使用。
+- **检查更新面板**：「设置 → 检查更新…」显示当前 / 最新版本、发布日期、更新说明与安装包体积；可手动检查。
+- **应用内下载更新包**：下载 DMG 到「下载」目录，显示进度并可取消；已存在同版本且大小一致时直接复用。完成后打开磁盘映像，引导拖入「应用程序」覆盖旧版本。
+- **关闭自动检查**：面板内可关闭启动检查，偏好写入 `config.json` 的 `updatePrefs.autoCheck`，默认开启。
+
+### Security
+
+- 更新请求只由主进程发出；下载地址必须来自 GitHub API，且 host 在 `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com` 白名单内。
+- 更新类 IPC 不接收渲染层路径；下载目录与文件名由主进程决定；Release 说明按纯文本渲染，不注入 HTML。
+- 取消 / 失败会删除 `.download` 临时文件；下载完成后按 `content-length` 校验大小，不完整不落盘。
+
+### 说明
+
+- 不接入 electron-updater：项目未签名 / 未公证，macOS 的 Squirrel.Mac 无法安装更新。
+- 更新包未签名，首次启动如被 Gatekeeper 拦截需右键「打开」；安装仍需用户手动拖入「应用程序」。
+- 发版前需创建 GitHub Release `v0.6.3` 并上传 `PhotoMinder-0.6.3-arm64.dmg`，否则应用只能看到「暂无发布」。
 
 ---
 

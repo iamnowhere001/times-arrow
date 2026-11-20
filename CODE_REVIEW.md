@@ -367,6 +367,17 @@ ai-cache 缺失 / 损坏时 `readStore` 返回 `{}`，导致已是 v2 的 config
 
 ---
 
+### 2.14 v0.6.3 · 更新检查与应用内下载（2026-11-20，未发版）
+
+- **为什么不用 electron-updater**：macOS 的 Squirrel.Mac 要求应用带有效代码签名；本项目 `identity: null`、不公证，接入后更新会在安装阶段失败。因此采用「GitHub API 检查 → 主进程下载 DMG → 打开磁盘映像 → 用户拖入应用程序」，失败可重来，不静默覆盖 `/Applications`。
+- **网络边界**：新增 `electron/main/updater.cjs` 作为与 `ai.cjs` 并列的唯一出网模块。只请求 `repos/iamnowhere001/times-arrow/releases/latest`；资产下载 URL 必须来自 API 且 host 在 `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com` 白名单内，重定向后再校验最终地址。
+- **IPC 边界**：新增 7 个 `update-*` 通道与 2 个事件。所有通道**不接收渲染层路径**：下载目录取 `app.getPath('downloads')`，文件名取 `path.basename` 并强制 `.dmg`；打开 / 显示只使用模块内部记录的路径，因此不需要 `isPathAuthorized`。
+- **数据完整性**：写 `<file>.download` 临时文件，按 `content-length` 校验后 rename；取消 / 失败 / 大小不符都删除临时文件。已存在同大小 DMG 时直接复用，不重复消耗流量。
+- **渲染层**：`useUpdateChecker` 负责启动 5s 静默检查、Toast 与面板状态；`UpdateModal` 复用 `ModalShell`，Release 说明按纯文本渲染。自动检查偏好写入 `config.updatePrefs.autoCheck`（缺省开启，不改 `CONFIG_VERSION`）。
+- **验证**：`tests/main-process/updater.test.cjs` 35 项（版本比较 / 资产筛选 / 404 / 白名单 / 下载 / 复用 / 取消 / 大小校验 / 打开守卫 / 发布页）；typecheck / lint 0 / format / 单测 380 / 主进程 286。
+
+---
+
 ## 3. 仍未解决
 
 ### 3.1 P2 剩余（7 项 + 工程化收尾）

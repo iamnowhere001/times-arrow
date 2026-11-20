@@ -16,8 +16,8 @@
 | 主进程 | Node.js / CommonJS（`electron/**/*.cjs`、`electron/main.js`、`electron/preload.js`） |
 | 渲染进程 | React + TypeScript ESM（`src/`） |
 | 数据目录 | macOS：`~/Library/Application Support/PhotoMinder/` |
-| 当前版本 | `0.6.2`（2026-11-11 发布，git tag `v0.6.2`） |
-| 质量基线 | typecheck / lint / 单测 380 项 / 主进程 251 项 / Electron 冒烟 全绿 |
+| 当前版本 | `0.6.3`（2026-11-20 开发完成，待发版；发版需创建 tag 并上传 DMG） |
+| 质量基线 | typecheck / lint / 单测 380 项 / 主进程 286 项 / Electron 冒烟 全绿 |
 
 **产品判断与优先级以 `ROADMAP.md` 为准；任务级状态以 `TODO.md` 为准；行为描述以 `README.md` 为准；历史技术结论以 `CODE_REVIEW.md` 为准。**
 
@@ -66,6 +66,7 @@ electron/
 │   ├── media-pipeline.cjs  #   扫描 / EXIF / 缩略图 / HEIC / dHash
 │   ├── store.cjs           #   JSON 存储、原子写、损坏备份
 │   ├── data-assets.cjs     #   指纹 / 配置导入导出 / 重连 / 日志 / 备份
+│   ├── updater.cjs         #   GitHub Release 检查 / DMG 下载 / 安装引导
 │   └── migrations.cjs      #   config / ai-cache 的 v1→v2 迁移
 └── lib/
     ├── csp.cjs             # CSP 唯一定义
@@ -75,7 +76,7 @@ electron/
 
 src/
 ├── App.tsx                 # 组合 hooks + 视图路由（不要再堆业务逻辑）
-├── hooks/                  # 24 个功能域 hook：编排 / 数据 / 交互
+├── hooks/                  # 25 个功能域 hook：编排 / 数据 / 交互
 ├── components/             # 按域分组：layout / grid / timeline / map / detail / duplicate / filter / modal / common / icons
 ├── services/               # aiService（经 IPC 走主进程）
 ├── lib/                    # 领域与基础设施：cache / media / filter / persistence / geo / fs / duplicate / format
@@ -97,7 +98,8 @@ build/                      # electron-builder 资源 / afterPack / DMG 重压
 
 ### 4.1 本地与隐私
 
-- 除显式触发的 AI 分析外，**不引入任何网络请求**：不上报、不拉配置、不接第三方 SDK、不做遥测 / 崩溃收集 / 云同步。
+- 除显式触发的 AI 分析、可关闭的更新检查外，**不引入任何网络请求**：不上报、不拉配置、不接第三方 SDK、不做遥测 / 崩溃收集 / 云同步。
+- 更新检查只由主进程请求 GitHub Releases（`electron/main/updater.cjs`）；下载地址必须来自 API 且 host 在 `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com` 白名单内；只下载 DMG、由用户确认安装，不静默覆盖 `/Applications`；渲染层不得直连 GitHub。
 - AI 密钥只允许主进程读取。`ai-config-get` 只返回 `hasApiKey` + 尾号掩码，**不得**把明文回传给渲染层；不得把密钥写进日志、错误信息或导出的配置。
 - 导出的配置**不包含 AI 密钥**。
 
@@ -109,6 +111,7 @@ build/                      # electron-builder 资源 / afterPack / DMG 重压
 - IPC 注册必须走 `handle()`（统一异常兜底 + 重复注册检测），**不要**直接 `ipcMain.handle`。
 - 返回统一为 `IpcResult<T>`：`{ ok: true, data }` / `{ ok: false, error, code? }`。“用户取消”是 `{ ok: true, data: null }`，不是失败。
 - 改 IPC 时同步四处：`electron/preload.js`、`src/types/global.d.ts`、测试冻结清单（`tests/main-process/ipc-contract.test.cjs`）、调用点。
+- 更新类 IPC（`update-*`）**不接收渲染层路径**：下载目录与文件名由主进程决定，打开 / 显示也只使用主进程内部记录的路径。不要为了“方便”新增 path 参数。
 
 ### 4.3 身份与持久化
 
@@ -263,6 +266,7 @@ build/                      # electron-builder 资源 / afterPack / DMG 重压
 | 时光画廊 / 地图 | `src/components/timeline/TimelineGallery.tsx`、`src/components/map/LocationMap.tsx`、`src/lib/geo/` |
 | 重复检测 | `src/components/duplicate/DuplicateDetector.tsx`、`src/lib/duplicate/duplicateDetection.ts`、`electron/lib/dhash.cjs` |
 | AI | `electron/main/ai.cjs`、`src/services/aiService.ts`、`src/components/modal/AiSettingsModal.tsx` |
+| 检查更新 / 下载 DMG | `electron/main/updater.cjs`、`src/hooks/useUpdateChecker.ts`、`src/components/modal/UpdateModal.tsx` |
 | 主题 / 视觉 | `src/styles/styles.css`、`src/components/common/`、`src/components/icons/` |
 | 打包 / 体积 | `package.json` 的 `build` 字段、`build/afterPack.js`、`build/recompressDmg.js` |
 | 安全边界 | `electron/main/authorization.cjs`、`electron/lib/csp.cjs`、`CODE_REVIEW.md` 附录 A / B |

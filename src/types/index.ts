@@ -233,6 +233,62 @@ export interface AiConfigSnapshot {
   defaults: { baseUrl: string; model: string };
 }
 
+/** 更新检查的用户偏好：字段缺省时视为开启（默认自动检查） */
+export interface UpdatePreferences {
+  autoCheck?: boolean;
+}
+
+/** GitHub Release 里可下载的安装包资产 */
+export interface UpdateAsset {
+  name: string;
+  size: number;
+  url: string;
+}
+
+export type UpdateCheckStatus = 'available' | 'up-to-date' | 'no-release';
+
+/** 一次检查更新的结果；错误通过 IpcResult 的 ok:false 表达 */
+export interface UpdateCheckResult {
+  status: UpdateCheckStatus;
+  currentVersion: string;
+  latestVersion?: string;
+  releaseName?: string;
+  /** Release 正文（已由主进程截断）；只按纯文本渲染 */
+  releaseNotes?: string;
+  releaseUrl?: string;
+  publishedAt?: string;
+  /** 未提供 DMG 时为 null，界面降级为「前往发布页」 */
+  asset?: UpdateAsset | null;
+}
+
+/** 主进程记录的下载状态；面板重开时据此恢复进度 */
+export interface UpdateDownloadState {
+  state: 'idle' | 'downloading' | 'done' | 'error';
+  version: string | null;
+  percent: number;
+  received: number;
+  total: number;
+  filePath?: string;
+  error?: string;
+}
+
+/** 主进程 → 渲染层的下载进度事件 */
+export interface UpdateProgress {
+  phase: 'downloading' | 'done' | 'cancelled' | 'error';
+  version: string;
+  percent: number;
+  received: number;
+  total: number;
+  filePath?: string;
+  message?: string;
+}
+
+export interface UpdateStatus {
+  currentVersion: string;
+  latest: UpdateCheckResult | null;
+  download: UpdateDownloadState;
+}
+
 /** 持久化到 `userData/config.json` 的数据（全部为可 JSON 序列化的原始类型） */
 export interface PersistedConfig {
   /** 配置结构版本（v2 起标注数据以内容指纹为键） */
@@ -281,6 +337,8 @@ export interface PersistedConfig {
   /** 窗口尺寸与位置（仅由主进程读写） */
   windowBounds?: { x?: number; y?: number; width: number; height: number };
   windowMaximized?: boolean;
+  /** 更新检查偏好；缺省视为开启自动检查 */
+  updatePrefs?: UpdatePreferences;
 }
 
 export type RenameMode = 'sequence' | 'replace' | 'date' | 'repair';

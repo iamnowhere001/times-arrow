@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { PhotoFilters, ViewMode } from '@/types';
 import { countAdvancedFilters } from '@/lib/filter/filters';
+import { isElectronRuntime } from '@/lib/platform/runtime';
 import FilterPanel from '@/components/filter/FilterPanel';
 import { FunnelIcon } from '@/components/icons';
 
@@ -292,7 +293,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   );
   const advancedFilterCount = countAdvancedFilters(filters);
 
-  const hasMacTrafficLights = typeof window !== 'undefined' && Boolean(window.electronAPI);
+  const hasMacTrafficLights = isElectronRuntime();
 
   return (
     <header

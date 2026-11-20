@@ -354,6 +354,25 @@ declare global {
       /** 应用菜单「AI 分析设置…」（⌘,）；返回取消订阅函数 */
       onOpenAiSettings: (callback: () => void) => () => void;
 
+      /** 检查 GitHub Releases 是否有新版本 */
+      updateCheck: () => Promise<IpcResult<import('@/types').UpdateCheckResult>>;
+      /** 当前版本 + 上次检查结果 + 下载状态（面板重开时恢复） */
+      updateStatus: () => Promise<IpcResult<import('@/types').UpdateStatus>>;
+      /** 开始后台下载更新包；进度通过 onUpdateDownloadProgress 推送 */
+      updateDownload: () => Promise<IpcResult<{ started: boolean }>>;
+      updateCancelDownload: () => Promise<IpcResult<{ cancelled: boolean }>>;
+      /** 打开已下载的 DMG（路径由主进程决定，渲染层不传参） */
+      updateOpenDownload: () => Promise<IpcResult<{ opened: boolean }>>;
+      updateRevealDownload: () => Promise<IpcResult<boolean>>;
+      /** 用系统浏览器打开发布页（仅允许 GitHub 域名） */
+      updateOpenRelease: () => Promise<IpcResult<boolean>>;
+      /** 应用菜单「检查更新…」；返回取消订阅函数 */
+      onOpenUpdatePanel: (callback: () => void) => () => void;
+      /** 更新包下载进度；返回取消订阅函数 */
+      onUpdateDownloadProgress: (
+        callback: (progress: import('@/types').UpdateProgress) => void
+      ) => () => void;
+
       /** 注册 ⌘O 菜单导入事件；返回取消订阅函数 */
       onImportPaths: (callback: (picked: PickedPaths) => void) => () => void;
       /** 注册内存压力广播（主进程看门狗发出）；返回取消订阅函数 */

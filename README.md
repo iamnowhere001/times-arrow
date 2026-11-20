@@ -5,12 +5,12 @@
 | 项目 | 说明 |
 | --- | --- |
 | 名称口径 | 界面显示名「**时光画框**」；仓库 / 英文名 / `appId` / 数据目录 / DMG 文件名保留 `PhotoMinder`（改 `productName` 会迁移 `userData`，导致现有收藏 / 标签失联；导出文件里的 `payload.app` 同理是格式标识）。见 `ROADMAP.md` §1.4 |
-| 定位 | **个人自用**的本地照片 / 视频整理工具，macOS 优先；不对外分发，不做签名 / 公证 / 自动更新 |
-| 隐私 | 全部本地处理；AI 分析是唯一可选的联网功能，密钥由主进程读取并代理请求、在本机明文存储（界面只读到尾号掩码，见「已知限制」） |
+| 定位 | **个人自用**的本地照片 / 视频整理工具，macOS 优先；不对外分发，不做签名 / 公证；更新检查是唯一的可选联网能力，只下载更新包、不静默安装 |
+| 隐私 | 全部本地处理；AI 分析与可关闭的更新检查是仅有的联网功能。AI 密钥由主进程读取并代理请求、在本机明文存储（界面只读到尾号掩码）；更新检查只请求 GitHub Releases，不上报任何使用数据 |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
-| 当前版本 | **v0.6.2**（2026-11-11 发布，tag `v0.6.2`）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
+| 当前版本 | **v0.6.3**（2026-11-20 开发完成，待发版；DMG 需上传到 GitHub Release 后更新检查才有可下载目标）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
 | 产品路线 | 定位、优先级与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；任务清单见 [`TODO.md`](./TODO.md) |
-| 质量护栏 | ESLint + oxlint 0 problems · 单测 379 项 · 主进程集成测试 251 项 · Electron 冒烟 1 项 |
+| 质量护栏 | ESLint + oxlint 0 problems · 单测 380 项 · 主进程集成测试 286 项 · Electron 冒烟 1 项 |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
 | 协作手册 | AI 代理与新贡献者的操作约束见 [`AGENTS.md`](./AGENTS.md) |
 
@@ -48,8 +48,8 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `npm run lint` / `lint:fix` | ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware；当前均为 0 problems） |
 | `npm run format` / `format:check` | Prettier（已全量格式化，`format:check` 通过） |
 | `npm run test` | `test:main` + `test:unit` |
-| `npm run test:unit` | Vitest 纯函数单测（379 项） |
-| `npm run test:main` | 打桩 electron 的主进程集成测试（251 项 = 22 + 18 + 48 + 16 + 47 + 迁移守卫 30 + 重命名预演 20 + 崩溃记录 16 + 数据健康 18 + 分层依赖 6 + IPC 契约 10） |
+| `npm run test:unit` | Vitest 纯函数单测（380 项） |
+| `npm run test:main` | 打桩 electron 的主进程集成测试（286 项 = 22 + 18 + 48 + 16 + 47 + 迁移守卫 30 + 重命名预演 20 + 崩溃记录 16 + 数据健康 18 + 更新检查 35 + 分层依赖 6 + IPC 契约 10） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
 
 > **两个环境注意事项**
@@ -130,6 +130,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - **单张导出**：转 JPEG / PNG / WebP，可调质量，实时预览与体积估算
 - **视频**：内嵌播放器预览，展示时长 / 分辨率 / 容器格式；无法解码时说明原因并提供「在访达中显示」
 - **DeepSeek AI 分析**：生成图片描述与标签，结果参与搜索与筛选并持久化缓存。在「设置 → AI 分析设置…」（`⌘,`）配置 Key / 接口 / 模型，主进程读盘并代理请求；渲染层只能写入新密钥、读不回已保存的值（设置弹窗只显示尾号掩码）
+- **检查更新**：启动后 5 秒静默检查一次 GitHub Releases，有新版本时用 Toast 提示；「设置 → 检查更新…」可查看版本、更新说明并下载 DMG（带进度、可取消），下载完成后自动打开磁盘映像，把应用拖入「应用程序」即可完成更新。检查可关闭，只请求 GitHub、不上报任何数据；不静默覆盖安装
 
 ### 界面与体验
 
@@ -219,7 +220,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 | 文件 / 目录 | 内容 | 说明 |
 | --- | --- | --- |
-| `config.json` | 收藏、隐藏、标签、时间修正、智能相簿、视频元数据、常驻来源与视图偏好 | 标注数据**以内容指纹为键**；临时文件 + rename 原子写入；解析失败自动备份为 `config.json.corrupt-<时间戳>`，并在启动时 Toast 告知备份位置 |
+| `config.json` | 收藏、隐藏、标签、时间修正、智能相簿、视频元数据、常驻来源与视图偏好、更新检查偏好（`updatePrefs.autoCheck`） | 标注数据**以内容指纹为键**；临时文件 + rename 原子写入；解析失败自动备份为 `config.json.corrupt-<时间戳>`，并在启动时 Toast 告知备份位置 |
 | `config.json.bak` / `.bak.1` | 上一版 / 上两版配置 | 每次写盘前轮转；迁移或误写后可手工回退 |
 | `operation-log.jsonl` | 重命名 / 删除 / 移动 / 导出日志 | 追加式，上限 2000 条；撤销记录也写在这里 |
 | `ai-cache.json` | AI 分析结果缓存 | 上限 2000 条，超出淘汰最早 |
@@ -268,6 +269,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 | 体积闸门 | 设在读取之前（先 `stat` 再决定是否读）：`read-file` 64MB、`ai-analyze` 20MB base64 |
 | 写盘 | `reserveUniquePath()` 用 `open(path,'wx')` 原子占位，消除「探测存在性 → 再写」的 TOCTOU；`write-file-unique` 的 `fileName` 经 `path.basename()` 归一化 |
 | AI 密钥 | 主进程读取本机明文配置并代理请求；`ai-config-get` 只回 `hasApiKey` + 尾号掩码，渲染层读不回完整值；写入仍允许（用户在设置里填新 Key） |
+| 更新检查 | 只由主进程请求 GitHub API；下载地址必须来自 API 返回且 host 在 `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com` 白名单内。更新类 IPC **不接收渲染层路径**，下载目录与文件名由主进程决定，因此不经过路径授权；Release 说明按纯文本渲染，不注入 HTML |
 | 数据资产 IPC | 导出 / 导入 / 重连 / 备份涉及的路径全部在入口调用 `isPathAuthorized()`；备份只读来源、只写用户刚通过系统对话框选定的目标目录 |
 
 > 这层防的是**内容级攻击**（被当作图片加载的 SVG、将来的远程内容等 —— 它们能构造 `pm://` 请求但无法调用 IPC）。渲染进程若被完全攻破，攻击者天然拥有全部 IPC 能力，需要靠 CSP 与沙箱收敛。
@@ -381,6 +383,8 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 - **打包目前仅 macOS**；删除已用 `shell.trashItem` 支持三端。
 
 - **AI 密钥以明文落盘**：`ai-config.json` 未用 `safeStorage` 加密（见 TODO X1）。这是「个人自用、单机本地」定位下的既定取舍；已收紧的是读取方向 —— `ai-config-get` 只回 `hasApiKey` + 尾号掩码，渲染层读不回完整值。若日后要分发给他人，此项应重新评估。
+- **更新包未签名 / 未公证**：应用内更新只负责检查与下载 DMG，安装仍是「打开磁盘映像 → 拖入应用程序」。首次启动如被 Gatekeeper 拦截，需在「应用程序」中右键应用选择「打开」。不做静默覆盖安装，避免替换 `/Applications` 失败后留下不可用安装。
+- **更新检查依赖 GitHub 匿名 API**：限流为每 IP 60 次/小时；启动只检查一次，手动检查才会追加。仓库没有 Release 时面板显示「暂无发布」，不视为错误。
 
 **功能缺口**
 

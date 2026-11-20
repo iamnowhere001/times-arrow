@@ -46,6 +46,7 @@ import AdjustDateModal, { type DateAdjustment } from '@/components/modal/AdjustD
 import SaveAlbumModal from '@/components/modal/SaveAlbumModal';
 import RestoreLibraryModal from '@/components/modal/RestoreLibraryModal';
 import AiSettingsModal from '@/components/modal/AiSettingsModal';
+import UpdateModal from '@/components/modal/UpdateModal';
 import ShortcutsOverlay from '@/components/common/ShortcutsOverlay';
 import { useAppConfig } from '@/hooks/useAppConfig';
 import { useCollapseAnimation } from '@/hooks/useCollapseAnimation';
@@ -62,6 +63,7 @@ import { usePhotoActions } from '@/hooks/usePhotoActions';
 import { useQuickLook } from '@/hooks/useQuickLook';
 import { useSelection } from '@/hooks/useSelection';
 import { useSmartAlbums } from '@/hooks/useSmartAlbums';
+import { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import { useWatcherSync } from '@/hooks/useWatcherSync';
 
 /** 主内容区的顶层视图：图库 / 时光画廊 / 按地点浏览 / 重复图片检测（整页视图，而非弹窗） */
@@ -128,6 +130,9 @@ const App: React.FC = () => {
 
   // Toast 队列：支持多条同时展示，错误级常驻（见 hooks/useToasts）
   const { toasts, showToast, dismissToast } = useToasts();
+
+  // 更新检查与应用内下载：启动后静默检查一次，菜单「检查更新…」打开面板（见 hooks/useUpdateChecker）
+  const updateChecker = useUpdateChecker({ showToast });
 
   // v0.6.2 批次 2：现场撤销（成功 Toast 按钮与「编辑 → 撤销上次文件操作」共用同一条链路）。
   // IPC 不回传 operation id，所以只撤日志里最近一条未撤销记录；批量场景由调用点
@@ -874,6 +879,7 @@ const App: React.FC = () => {
     isDeleteModalOpen,
     isExportModalOpen,
     isAiSettingsOpen,
+    isUpdateModalOpen: updateChecker.isOpen,
     isAdjustDateModalOpen,
     isSaveAlbumModalOpen,
     isFilterPanelOpen,
@@ -1282,6 +1288,24 @@ const App: React.FC = () => {
         isOpen={isAiSettingsOpen}
         onClose={() => setIsAiSettingsOpen(false)}
         onNotify={showToast}
+      />
+      {/* 检查更新：GitHub Releases 检查 / 下载 DMG / 引导安装（见 hooks/useUpdateChecker） */}
+      <UpdateModal
+        isOpen={updateChecker.isOpen}
+        onClose={updateChecker.closePanel}
+        currentVersion={updateChecker.currentVersion}
+        checkResult={updateChecker.checkResult}
+        isChecking={updateChecker.isChecking}
+        error={updateChecker.error}
+        download={updateChecker.download}
+        autoCheck={updateChecker.autoCheck}
+        onCheck={updateChecker.checkNow}
+        onDownload={updateChecker.startDownload}
+        onCancelDownload={updateChecker.cancelDownload}
+        onOpenDownload={updateChecker.openDownloaded}
+        onRevealDownload={updateChecker.revealDownloaded}
+        onOpenRelease={updateChecker.openReleasePage}
+        onToggleAutoCheck={updateChecker.setAutoCheck}
       />
       {/* 数据资产：配置导出导入 / 路径重连 / 操作日志与撤销 / 增量备份 */}
       <DataAssetsModal

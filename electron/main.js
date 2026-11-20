@@ -63,6 +63,7 @@ const { createAuthorization } = require('./main/authorization.cjs');
 const { createStore } = require('./main/store.cjs');
 const { createMediaPipeline } = require('./main/media-pipeline.cjs');
 const { createAiService } = require('./main/ai.cjs');
+const { createUpdater } = require('./main/updater.cjs');
 const { createDataAssets } = require('./main/data-assets.cjs');
 const { migrateAllStores } = require('./main/migrations.cjs');
 const { createCrashReporter } = require('./main/crash-report.cjs');
@@ -455,6 +456,13 @@ function createMenu() {
           click: () => {
             // 由渲染进程弹出「AI 设置」弹窗（应用内配置 API Key 等）
             mainWindow?.webContents?.send('ai-open-settings');
+          },
+        },
+        {
+          label: '检查更新…',
+          click: () => {
+            // 由渲染进程弹出更新面板：查看版本、更新说明与下载进度
+            mainWindow?.webContents?.send('update-open-panel');
           },
         },
       ],
@@ -1338,6 +1346,16 @@ health.registerIpc({ handle, ok, fail });
 
 // AI 配置 / 分析 / 测试连接通道由 ./main/ai.cjs 提供
 registerAiIpc({ handle, ok, fail });
+
+// 更新检查 / 更新包下载由 ./main/updater.cjs 提供。
+// 网络请求全部在主进程发出；IPC 不接收渲染层路径，下载目录与文件名由主进程决定。
+const updater = createUpdater({
+  app,
+  shell,
+  logger,
+  send: (channel, payload) => mainWindow?.webContents?.send(channel, payload),
+});
+updater.registerUpdaterIpc({ handle, ok });
 const { recordOperation } = createDataAssets({
   handle,
   ok,
@@ -1521,6 +1539,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// 退出前中止未完成的更新包下载，避免在下载目录留下 .download 半截文件
+app.on('before-quit', () => {
+  void updater.dispose();
 });
 
 // 渲染进程崩溃（OOM、GPU 进程连带退出等）同样要留证据：

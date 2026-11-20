@@ -120,6 +120,13 @@ const CHANNELS = [
   'storage-notices',
   'undo-operation',
   'unwatch-directory',
+  'update-cancel-download',
+  'update-check',
+  'update-download',
+  'update-open-download',
+  'update-open-release',
+  'update-reveal-download',
+  'update-status',
   'watch-directory',
   'write-file-unique',
 ];

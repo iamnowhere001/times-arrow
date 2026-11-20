@@ -36,6 +36,8 @@ export interface UseKeyboardShortcutsParams {
   isDeleteModalOpen: boolean;
   isExportModalOpen: boolean;
   isAiSettingsOpen: boolean;
+  /** 检查更新面板打开时同样让行，避免在面板背后触发 Delete / ⌘A */
+  isUpdateModalOpen: boolean;
   isAdjustDateModalOpen: boolean;
   isSaveAlbumModalOpen: boolean;
   isFilterPanelOpen: boolean;
@@ -70,6 +72,7 @@ export function useKeyboardShortcuts({
   isDeleteModalOpen,
   isExportModalOpen,
   isAiSettingsOpen,
+  isUpdateModalOpen,
   isAdjustDateModalOpen,
   isSaveAlbumModalOpen,
   isFilterPanelOpen,
@@ -197,6 +200,7 @@ export function useKeyboardShortcuts({
         isDeleteModalOpen ||
         isExportModalOpen ||
         isAiSettingsOpen ||
+        isUpdateModalOpen ||
         isAdjustDateModalOpen ||
         isSaveAlbumModalOpen ||
         isFilterPanelOpen ||
@@ -299,6 +303,7 @@ export function useKeyboardShortcuts({
     isExportModalOpen,
     isShortcutsOpen,
     isAiSettingsOpen,
+    isUpdateModalOpen,
     isAdjustDateModalOpen,
     isSaveAlbumModalOpen,
     isFilterPanelOpen,
