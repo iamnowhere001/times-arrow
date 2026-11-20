@@ -616,12 +616,16 @@ const NavRow: React.FC<NavRowProps> = ({
 };
 
 /** 分段标题：只做「这一段是什么」，提亮暖调锚点色以区分组内层级 */
-const SectionLabel: React.FC<{ children: React.ReactNode; action?: React.ReactNode }> = ({
-  children,
-  action,
-}) => (
+const SectionLabel: React.FC<{
+  children: React.ReactNode;
+  action?: React.ReactNode;
+  title?: string;
+}> = ({ children, action, title }) => (
   <div className="flex items-center justify-between h-6 px-2 mb-1">
-    <h2 className="text-[11px] font-semibold tracking-[0.06em] text-[var(--text-group-heading)] transition-colors">
+    <h2
+      title={title}
+      className="text-[11px] font-semibold tracking-[0.06em] text-[var(--text-group-heading)] transition-colors"
+    >
       {children}
     </h2>
     {action}
@@ -629,17 +633,16 @@ const SectionLabel: React.FC<{ children: React.ReactNode; action?: React.ReactNo
 );
 
 /**
- * 左栏：视图入口 + 图库分类 + 媒体类型 + 智能相簿 + 文件夹来源，底部为全局设置。
+ * 左栏：按用户任务分为「浏览 / 回顾 / 整理 / 帮助」四组，底部为全局设置。
  *
  * 组织原则：
- * 1. 全栏只有「视图行」（去往整页视图，右端是箭头）与「筛选行」（留下并改变列表，
+ * 1. 分组名回答「我能做什么」（浏览、回顾、整理、帮助），不回答「这是什么模块」
+ *    （视图、应用、个人整理与来源）——后者是新用户建立心智模型的主要障碍。
+ * 2. 顺序按使用频率：浏览（每天）→ 回顾（偶尔）→ 整理（偶尔）→ 帮助（很少）。
+ * 3. 全栏只有「视图行」（去往整页视图，右端是箭头）与「筛选行」（留下并改变列表，
  *    右端是计数）两类行；相簿与文件夹来源沿用同一套行走法，只调密度不做新控件。
- * 2. 计数右对齐成等宽数字列，代替此前每行一颗的胶囊——胶囊是容器，数字才是信息。
- * 3. 分隔线只出现在「内容类型改变」处（视图→分类→媒体类型→我的内容），
- *    不再每段一条，避免把导航读成一串互不相干的清单。
- * 4. 彩色与体量只留给当前选中行，其余一律退到文字层级里。
- * 5. 底部收成一条全局工具带：外观、快捷键参考、清空列表都不作用于
- *    当前视图，同一行排开，不与导航争夺纵向空间。
+ * 4. 计数右对齐成等宽数字列；分隔线只出现在「内容类型改变」处，不再每段一条。
+ * 5. 彩色与体量只留给当前选中行；底部收成一条全局工具带，不与导航争夺纵向空间。
  */
 const Sidebar: React.FC<SidebarProps> = ({
   counts,
@@ -815,9 +818,48 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-2.5 custom-scrollbar">
-          {/* 分组卡 1 · 视图：整页沉浸式入口，右端箭头表示会离开当前列表 */}
-          <section aria-label="视图" className={GROUP_CARD}>
-            <SectionLabel>视图</SectionLabel>
+          {/* 分组卡 · 浏览：图库与媒体类型同卡承载，以极细暖调分割线区隔 */}
+          <section aria-label="浏览" className={GROUP_CARD}>
+            <div>
+              <SectionLabel title="按全部 / 收藏 / 隐藏浏览照片">图库</SectionLabel>
+              <ul className="space-y-0.5">
+                {libraryItems.map((item) => (
+                  <li key={item.id}>
+                    <NavRow
+                      icon={item.icon}
+                      label={item.label}
+                      count={item.count}
+                      active={navItemActive(item, activeCategory, mediaFilter)}
+                      onClick={() => onSelectNav(item.category, item.filter)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div aria-hidden="true" className={GROUP_DIVIDER} />
+
+            <div>
+              <SectionLabel title="只看某一类媒体">媒体类型</SectionLabel>
+              <ul className="space-y-0.5">
+                {mediaTypeItems.map((item) => (
+                  <li key={item.id}>
+                    <NavRow
+                      icon={item.icon}
+                      label={item.label}
+                      count={item.count}
+                      active={navItemActive(item, activeCategory, mediaFilter)}
+                      onClick={() => onSelectNav(item.category, item.filter)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+
+          {/* 分组卡 · 回顾：整页沉浸式入口，右端箭头表示会离开当前列表 */}
+          <section aria-label="回顾" className={GROUP_CARD}>
+            <SectionLabel title="按时间线、地图或相似度重新查看照片">回顾</SectionLabel>
             <div className="space-y-0.5">
               <NavRow
                 icon={<TimelineIcon />}
@@ -847,66 +889,13 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </section>
 
-          {/* 分组卡 · 应用：不是照片视图，而是应用自身的信息入口 */}
-          <section aria-label="应用" className={GROUP_CARD}>
-            <SectionLabel>应用</SectionLabel>
-            <div className="space-y-0.5">
-              <NavRow
-                icon={<InfoIcon />}
-                label="关于与更新"
-                onClick={onOpenAbout}
-                chevron
-                title="主要功能、特色、操作技巧、迭代计划、更新记录与版本检查"
-              />
-            </div>
-          </section>
-
-          {/* 分组卡 2 · 系统筛选：图库与媒体类型同卡承载，以极细暖调分割线区隔 */}
-          <section aria-label="图库与媒体类型" className={GROUP_CARD}>
-            <div>
-              <SectionLabel>图库</SectionLabel>
-              <ul className="space-y-0.5">
-                {libraryItems.map((item) => (
-                  <li key={item.id}>
-                    <NavRow
-                      icon={item.icon}
-                      label={item.label}
-                      count={item.count}
-                      active={navItemActive(item, activeCategory, mediaFilter)}
-                      onClick={() => onSelectNav(item.category, item.filter)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div aria-hidden="true" className={GROUP_DIVIDER} />
-
-            <div>
-              <SectionLabel>媒体类型</SectionLabel>
-              <ul className="space-y-0.5">
-                {mediaTypeItems.map((item) => (
-                  <li key={item.id}>
-                    <NavRow
-                      icon={item.icon}
-                      label={item.label}
-                      count={item.count}
-                      active={navItemActive(item, activeCategory, mediaFilter)}
-                      onClick={() => onSelectNav(item.category, item.filter)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
-
-          {/* 分组卡 3 · 个人整理内容与文件夹来源：卡内以极细暖调分割线串联各子组 */}
-          <section aria-label="个人整理与来源" className={GROUP_CARD}>
+          {/* 分组卡 · 整理：标签、相簿与文件夹来源，卡内以极细暖调分割线串联各子组 */}
+          <section aria-label="整理" className={GROUP_CARD}>
             {/* 标签按使用频次排序，点击即筛（与筛选面板共用 filters.tags） */}
             {rankedTags.length > 0 && (
               <>
                 <div>
-                  <SectionLabel>标签</SectionLabel>
+                  <SectionLabel title="按使用频次排列，点击即筛选">标签</SectionLabel>
                   <ul className="space-y-0.5">
                     {visibleTags.map((item) => {
                       const active = activeTags.includes(item.name);
@@ -963,6 +952,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             {/* 智能相簿 */}
             <div>
               <SectionLabel
+                title="按自己的规则把照片归组"
                 action={
                   <button
                     type="button"
@@ -1093,7 +1083,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             {/* 文件夹：常驻来源（N8） */}
             <div>
-              <SectionLabel>文件夹</SectionLabel>
+              <SectionLabel title="打开或拖入的文件夹，重启后可一键恢复">文件夹</SectionLabel>
               {directorySources.length === 0 && fileSourceCount === 0 ? (
                 <p className="px-2 pt-0.5 text-xs leading-relaxed text-[var(--text-tertiary)]">
                   打开或拖入文件夹后会记在这里，重启后可一键恢复。
@@ -1191,6 +1181,19 @@ const Sidebar: React.FC<SidebarProps> = ({
                   )}
                 </ul>
               )}
+            </div>
+          </section>
+          {/* 分组卡 · 帮助：应用自身的信息入口，与照片内容无关 */}
+          <section aria-label="帮助" className={GROUP_CARD}>
+            <SectionLabel title="功能介绍、操作技巧与版本更新">帮助</SectionLabel>
+            <div className="space-y-0.5">
+              <NavRow
+                icon={<InfoIcon />}
+                label="关于与更新"
+                onClick={onOpenAbout}
+                chevron
+                title="主要功能、特色、操作技巧、迭代计划、更新记录与版本检查"
+              />
             </div>
           </section>
         </nav>

@@ -10,7 +10,7 @@
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
 | 当前版本 | **v0.6.5**（2026-11-20 开发完成，待发版；新增「关于与更新」整页视图）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
 | 产品路线 | 定位、优先级与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；任务清单见 [`TODO.md`](./TODO.md) |
-| 质量护栏 | ESLint + oxlint 0 problems · 单测 380 项 · 主进程集成测试 286 项 · Electron 冒烟 1 项 |
+| 质量护栏 | ESLint + oxlint 0 problems · 单测 398 项 · 主进程集成测试 286 项 · Electron 冒烟 1 项 |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
 | 协作手册 | AI 代理与新贡献者的操作约束见 [`AGENTS.md`](./AGENTS.md) |
 
@@ -48,7 +48,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 | `npm run lint` / `lint:fix` | ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware；当前均为 0 problems） |
 | `npm run format` / `format:check` | Prettier（已全量格式化，`format:check` 通过） |
 | `npm run test` | `test:main` + `test:unit` |
-| `npm run test:unit` | Vitest 纯函数单测（380 项） |
+| `npm run test:unit` | Vitest 纯函数单测（398 项） |
 | `npm run test:main` | 打桩 electron 的主进程集成测试（286 项 = 22 + 18 + 48 + 16 + 47 + 迁移守卫 30 + 重命名预演 20 + 崩溃记录 16 + 数据健康 18 + 更新检查 35 + 分层依赖 6 + IPC 契约 10） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
 
@@ -73,7 +73,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 - **离线地名**：坐标自动翻成「这是哪儿」——25km 内直接报地名，150km 内算「附近」，更远给「距 敦煌 192 公里」；数据来自内嵌的约 1700 条城市库，不做在线逆地理编码
 - **QuickLook**：图片支持以光标为中心缩放、旋转、带边界平移；视频使用自定义播放器（缓冲区间、±10 秒、倍速 0.5×–2×、画质、音量、循环、画中画、全屏）；图片与视频共用翻页、收藏与**幻灯片**（2 / 3 / 5 / 8 / 12 秒可选，交叉淡入）
 - **缩略图按需生成**：卡片进入视口才请求，不在导入时逐张预生成；视频首帧由渲染进程抓取后落盘缓存；视频时长 / 分辨率由播放器上报回填，网格显示时长角标
-- **多选与侧栏**：⌘/Ctrl 多选、Shift 区间连选、方向键导航、Home / End 跳首尾；侧栏含图库分类、媒体类型、标签、智能相簿、文件夹来源、四个整页视图入口，以及独立的「应用」分区
+- **多选与侧栏**：⌘/Ctrl 多选、Shift 区间连选、方向键导航、Home / End 跳首尾；侧栏按用户任务分为「浏览 / 回顾 / 整理 / 帮助」四组（按使用频率排序），涵盖图库分类、媒体类型、整页视图、标签、智能相簿与文件夹来源
 - **关于与更新**：左栏「应用 → 关于与更新」一页看完主要功能、特色、操作技巧、迭代计划、最近 5 个版本的更新记录，并可就地检查更新、下载 DMG、开关启动时自动检查（内容随包内置，不联网读取文档）
 
 ### 搜索与筛选
@@ -352,8 +352,8 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 │   ├── utils/index.ts    #   纯再导出 barrel（86 行，实现已按领域拆到 lib/）
 │   └── styles/styles.css #   主题变量与基础样式（Tailwind v4 CSS-first）
 ├── tests/                # 三层验证
-│   ├── unit/             #   Vitest 纯函数单测（379 项 / 22 个文件）
-│   ├── main-process/     #   打桩 electron 的集成测试（251 项，含 rename-probe / crash-report / data-health / layering / ipc-contract）+ harness.cjs 脚手架
+│   ├── unit/             #   Vitest 纯函数单测（398 项 / 25 个文件）
+│   ├── main-process/     #   打桩 electron 的集成测试（286 项，含 rename-probe / crash-report / data-health / layering / ipc-contract）+ harness.cjs 脚手架
 │   └── smoke/            #   真启动 Electron 的端到端冒烟
 ├── build/                # electron-builder 资源（图标 / afterPack / DMG 重压钩子）
 ├── index.html            # Vite 入口 HTML
@@ -376,7 +376,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 - **拖放降级照片不可管理**：拿不到磁盘路径的拖放图片仅可预览。
 - **重命名遇同名加序号**：不做「交换」类批量改名（如 a↔b 会得到 `a` 与 `b-1`），避免丢文件风险。
 - **相似检测有边界**：近似匹配仅在体积 ±10% 的簇内进行，单簇超 150 张时只保留精确匹配（防 O(n²) 退化）。
-- **图库需确认后恢复**：不自动扫描磁盘。收藏 / 标签 / 时间修正 / AI 结果均按**文件路径**记录，文件重命名或移动后会失联（重新定位见 TODO N10）。
+- **图库需确认后恢复**：不自动扫描磁盘，重启时询问是否按常驻来源后台重扫。收藏 / 标签 / 时间修正 / AI 结果均按**内容指纹**记录，文件重命名或移动后重新导入即可续上，不会失联。
 - **配置记录不自动清理**：已不存在文件对应的收藏 / 标签 / AI 结果会保留在配置里，以免误删仍可能重新导入的记录。
 - **时间修正不写回原文件**：只改应用内记录，EXIF 未被改动（真实写回见 TODO F4）。
 - **智能相簿是条件相簿**：只能保存筛选条件，不能手动拖入照片（手动相簿见 TODO F1）。
