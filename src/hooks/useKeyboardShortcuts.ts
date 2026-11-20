@@ -43,7 +43,7 @@ export interface UseKeyboardShortcutsParams {
   isFilterPanelOpen: boolean;
   isClearListConfirmOpen: boolean;
   isShortcutsOpen: boolean;
-  setIsShortcutsOpen: Dispatch<SetStateAction<boolean>>;
+  setIsShortcutsOpen: (open: boolean) => void;
   isDuplicateDetectorOpen: boolean;
   isTimelineOpen: boolean;
   isMapOpen: boolean;
@@ -56,7 +56,7 @@ export interface UseKeyboardShortcutsParams {
   searchInputRef: RefObject<HTMLInputElement | null>;
   handleSelectAllVisible: () => void;
   handleFavoriteSelected: () => void;
-  setIsDeleteModalOpen: Dispatch<SetStateAction<boolean>>;
+  setIsDeleteModalOpen: (open: boolean) => void;
 }
 
 export function useKeyboardShortcuts({

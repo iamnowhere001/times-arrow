@@ -25,6 +25,8 @@ import Toolbar from '@/components/layout/Toolbar';
 import AppViews from '@/components/layout/AppViews';
 import AppOverlays from '@/components/layout/AppOverlays';
 import { useAppMenuEvents } from '@/hooks/useAppMenuEvents';
+import { useAppModals } from '@/hooks/useAppModals';
+import { useMainViewNavigation } from '@/hooks/useMainViewNavigation';
 import ImageGrid from '@/components/grid/ImageGrid';
 import type { ImageGridHandle } from '@/types/grid';
 import DetailsPane from '@/components/detail/DetailsPane';
@@ -57,16 +59,14 @@ import { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import { useWatcherSync } from '@/hooks/useWatcherSync';
 
 /** 主内容区的顶层视图：图库 / 时光画廊 / 按地点浏览 / 重复图片检测（整页视图，而非弹窗） */
-type MainView = 'library' | 'timeline' | 'map' | 'duplicates' | 'about';
-
 const App: React.FC = () => {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   // Default to dateTaken desc so the grouped view is active by default for new users
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dateTaken', direction: 'desc' });
   const [scale, setScale] = useState(1);
-  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  // 十个弹层 / 面板的开关集中管理：加一个弹窗只改 useAppModals，这里零改动
+  const modals = useAppModals();
   // 可组合筛选（N3）：统一承载收藏 / 隐藏 / 媒体类型 / 标签 / 日期 / 相机 / 格式 / 大小 / 时长
   const [filters, setFilters] = useState<PhotoFilters>(createEmptyFilters);
   /** 侧栏分类（全部 / 收藏 / 已隐藏）：由筛选状态派生，保持与筛选面板一致 */
@@ -91,23 +91,16 @@ const App: React.FC = () => {
 
   /** 事件回调需读取最新照片列表：用 ref 避免闭包过期与依赖抖动 */
   const photosRef = useRef<Photo[]>([]);
-  const [isAdjustDateModalOpen, setIsAdjustDateModalOpen] = useState(false);
-  const [isSaveAlbumModalOpen, setIsSaveAlbumModalOpen] = useState(false);
-  /** 清空照片列表二次确认：入口在侧栏底部，这里统一收口确认与执行 */
-  const [isClearListConfirmOpen, setIsClearListConfirmOpen] = useState(false);
   /**
    * 筛选面板是否展开（状态在 Toolbar 内，由其上报）。
    * 全局快捷键需要据此让行：面板里的胶囊是普通按钮，不隔离的话
    * 按 Delete 会在面板之上再叠一个「移至回收站」确认框，⌘A 还会静默改写选中集。
    */
-  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
-  const handleFilterOpenChange = useCallback((open: boolean) => setIsFilterPanelOpen(open), []);
-  /** AI 设置弹窗（配置 DeepSeek API Key / 接口地址 / 模型） */
-  const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
-  /** 数据资产面板（菜单「文件 → 数据资产…」） */
-  const [isDataAssetsOpen, setIsDataAssetsOpen] = useState(false);
-  // 快捷键总览层（? 唤出，Esc 关闭）
-  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const handleFilterOpenChange = useCallback(
+    (open: boolean) => (open ? modals.filterPanel.open() : modals.filterPanel.close()),
+    [modals.filterPanel]
+  );
+  // 调整日期 / 存为相簿 / 清空列表 / AI 设置 / 数据资产 / 快捷键总览的开关已收进 modals
   // 常驻来源的状态与增删（sources / unavailableSourcePaths / 恢复确认框）见 hooks/useLibrarySources
   /** 配置是否已读取完成：完成前不写偏好，避免用默认值覆盖已存配置 */
   const [isConfigLoaded, setIsConfigLoaded] = useState(false);
@@ -121,8 +114,8 @@ const App: React.FC = () => {
   // Toast 队列：支持多条同时展示，错误级常驻（见 hooks/useToasts）
   const { toasts, showToast, dismissToast } = useToasts();
 
-  // 主内容区当前视图：重复检测是独立整页，而非弹窗
-  const [mainView, setMainView] = useState<MainView>('library');
+  // 主内容区当前视图：重复检测是独立整页，而非弹窗。导航动作见 hooks/useMainViewNavigation
+  const { mainView, goTo, backToLibrary } = useMainViewNavigation();
 
   // 更新检查与应用内下载：启动后静默检查一次，菜单「检查更新…」打开面板（见 hooks/useUpdateChecker）
   // 关于页在前台时把标志传进去：结果就地可见，避免再叠一层「查看更新」Toast
@@ -138,9 +131,9 @@ const App: React.FC = () => {
     () => ({
       api: (window.electronAPI ?? undefined) as unknown as UndoDeps['api'],
       showToast,
-      openDataAssets: () => setIsDataAssetsOpen(true),
+      openDataAssets: modals.dataAssets.open,
     }),
-    [showToast]
+    [showToast, modals.dataAssets.open]
   );
   const makeUndoAction = useMemo(() => createUndoActionFactory(undoDeps), [undoDeps]);
   const undoLast = useCallback(() => undoLastOperation(undoDeps), [undoDeps]);
@@ -219,8 +212,7 @@ const App: React.FC = () => {
     removeIdsFromSelection,
   } = useSelection({ photos, visiblePhotos });
 
-  // 导出弹层
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  // 导出弹层（开关在 modals.exportModal，这里只保留实际进入导出的条目）
   /** 实际进入导出流程的条目（视频不走重编码导出，会被排除） */
   const [exportTargets, setExportTargets] = useState<Photo[]>([]);
 
@@ -300,8 +292,8 @@ const App: React.FC = () => {
   const isLeftPaneVisible = mainView === 'library' && isLeftPaneOpen;
 
   // 主视图切换回调需保持稳定：Hook 内 effect 依赖它，避免每次渲染重建导致防抖被反复重置
-  const enterDuplicatesView = useCallback(() => setMainView('duplicates'), []);
-  const exitDuplicatesView = useCallback(() => setMainView('library'), []);
+  const enterDuplicatesView = useCallback(() => goTo('duplicates'), [goTo]);
+  const exitDuplicatesView = backToLibrary;
 
   // 重复检测领域状态与流程（见 hooks/useDuplicateDetection）
   const {
@@ -515,7 +507,7 @@ const App: React.FC = () => {
         await savePersistedConfig({ dateOverrides: Object.fromEntries(dateOverridesRef.current) });
       }
 
-      setIsAdjustDateModalOpen(false);
+      modals.adjustDate.close();
 
       if (applied === 0) {
         showToast('所选项目没有磁盘路径，无法调整时间', 'warning');
@@ -534,9 +526,9 @@ const App: React.FC = () => {
     (name: string) => {
       // 重名 / 无效时 hook 返回 false，弹窗保持打开让用户改名字（K26）
       if (!handleSaveAlbum(name)) return;
-      setIsSaveAlbumModalOpen(false);
+      modals.saveAlbum.close();
     },
-    [handleSaveAlbum]
+    [handleSaveAlbum, modals.saveAlbum]
   );
 
   // clearLoading / showLoadingSoon / handleCancelLoading 等导入反馈已收口在 hooks/useIngestPipeline
@@ -584,11 +576,11 @@ const App: React.FC = () => {
 
   // 清空照片列表：入口只负责「请求」，确认与执行分开走。
   // 侧栏底部与右键菜单共用这一条路径，都会先停下来确认一次
-  const handleRequestClearList = useCallback(() => setIsClearListConfirmOpen(true), []);
+  const handleRequestClearList = modals.clearList.open;
   const handleConfirmClearList = useCallback(() => {
-    setIsClearListConfirmOpen(false);
+    modals.clearList.close();
     handleClearList();
-  }, [handleClearList]);
+  }, [handleClearList, modals.clearList]);
 
   // 元数据批量补齐（loadMetadata）与统一入库管线（ingestFiles）已迁至 hooks/useIngestPipeline
 
@@ -700,8 +692,8 @@ const App: React.FC = () => {
       showToast(`已跳过 ${selectedPhotos.length - targets.length} 个视频`, 'info');
     }
     setExportTargets(targets);
-    setIsExportModalOpen(true);
-  }, [selectedPhotos, showToast]);
+    modals.exportModal.open();
+  }, [selectedPhotos, showToast, modals.exportModal]);
 
   // Context Menu Actions 定义在 handleCheckDuplicates 之后（见下方），
   // 避免引用尚未初始化的函数。
@@ -726,8 +718,8 @@ const App: React.FC = () => {
       selectedIds,
       setSelectedIds,
       setPhotos,
-      setIsRenameModalOpen,
-      setIsDeleteModalOpen,
+      setIsRenameModalOpen: modals.rename.set,
+      setIsDeleteModalOpen: modals.deleteConfirm.set,
       showToast,
       fileOpLockRef,
       markPathsTouched,
@@ -776,9 +768,9 @@ const App: React.FC = () => {
         onOpenInEditor: openInEditor,
         onExportSelected: handleExportSelected,
         onMovePhotos: handleMoveSelected,
-        onOpenAdjustDate: () => setIsAdjustDateModalOpen(true),
-        onOpenRename: () => setIsRenameModalOpen(true),
-        onOpenDelete: () => setIsDeleteModalOpen(true),
+        onOpenAdjustDate: modals.adjustDate.open,
+        onOpenRename: modals.rename.open,
+        onOpenDelete: modals.deleteConfirm.open,
       }),
     // oxlint-disable-next-line react-hooks/exhaustive-deps — setQuickLookPhoto 是稳定 setter，不会因子组件重渲染而变化
     [
@@ -833,18 +825,18 @@ const App: React.FC = () => {
     [updateFilters]
   );
 
-  const handleOpenSaveAlbum = useCallback(() => setIsSaveAlbumModalOpen(true), []);
-  const handleSelectTimeline = useCallback(() => setMainView('timeline'), []);
-  const handleSelectMap = useCallback(() => setMainView('map'), []);
-  const handleOpenAbout = useCallback(() => setMainView('about'), []);
+  const handleOpenSaveAlbum = modals.saveAlbum.open;
+  const handleSelectTimeline = useCallback(() => goTo('timeline'), [goTo]);
+  const handleSelectMap = useCallback(() => goTo('map'), [goTo]);
+  const handleOpenAbout = useCallback(() => goTo('about'), [goTo]);
   /** 地图照片条 → QuickLook：翻页范围限定在该地点的照片内 */
   const handleMapQuickLook = useCallback((photo: Photo, scope: Photo[]) => {
     setQuickLookScope(scope);
     setQuickLookPhoto(photo);
     // oxlint-disable-next-line react-hooks/exhaustive-deps — 只调用两个稳定 setter，空依赖可保持回调身份稳定
   }, []);
-  const handleOpenShortcuts = useCallback(() => setIsShortcutsOpen(true), []);
-  const handleOpenAiSettings = useCallback(() => setIsAiSettingsOpen(true), []);
+  const handleOpenShortcuts = modals.shortcuts.open;
+  const handleOpenAiSettings = modals.aiSettings.open;
   const handleCheckDuplicatesClick = useCallback(() => {
     void handleCheckDuplicates();
   }, [handleCheckDuplicates]);
@@ -872,7 +864,7 @@ const App: React.FC = () => {
   // ---------------------------------------------------------------------------
   // 全局键盘交互（快捷键闭环 / 方向键导航 / 指针失焦）见 hooks/useKeyboardShortcuts
   // ---------------------------------------------------------------------------
-  const handleExitToLibrary = useCallback(() => setMainView('library'), []);
+  // 退出关于页 → 回图库（与 AppViews 的返回按钮同源，见 hooks/useMainViewNavigation）
   useKeyboardShortcuts({
     visiblePhotos,
     selectedIds,
@@ -884,27 +876,27 @@ const App: React.FC = () => {
     setContextMenu,
     quickLookPhoto,
     setQuickLookPhoto,
-    isRenameModalOpen,
-    isDeleteModalOpen,
-    isExportModalOpen,
-    isAiSettingsOpen,
+    isRenameModalOpen: modals.rename.isOpen,
+    isDeleteModalOpen: modals.deleteConfirm.isOpen,
+    isExportModalOpen: modals.exportModal.isOpen,
+    isAiSettingsOpen: modals.aiSettings.isOpen,
     isUpdateModalOpen: updateChecker.isOpen,
-    isAdjustDateModalOpen,
-    isSaveAlbumModalOpen,
-    isFilterPanelOpen,
-    isClearListConfirmOpen,
-    isShortcutsOpen,
-    setIsShortcutsOpen,
+    isAdjustDateModalOpen: modals.adjustDate.isOpen,
+    isSaveAlbumModalOpen: modals.saveAlbum.isOpen,
+    isFilterPanelOpen: modals.filterPanel.isOpen,
+    isClearListConfirmOpen: modals.clearList.isOpen,
+    isShortcutsOpen: modals.shortcuts.isOpen,
+    setIsShortcutsOpen: modals.shortcuts.set,
     isDuplicateDetectorOpen,
     isTimelineOpen,
     isMapOpen,
     isAboutOpen: isAboutOpen && !updateChecker.isOpen,
-    onExitToLibrary: handleExitToLibrary,
+    onExitToLibrary: backToLibrary,
     handleExitDuplicates,
     searchInputRef,
     handleSelectAllVisible,
     handleFavoriteSelected,
-    setIsDeleteModalOpen,
+    setIsDeleteModalOpen: modals.deleteConfirm.set,
   });
 
   // 应用菜单 → 渲染层的事件桥（导入 / AI 设置 / 数据资产 / 撤销），见 hooks/useAppMenuEvents。
@@ -915,7 +907,7 @@ const App: React.FC = () => {
     },
     [importPickedPaths]
   );
-  const handleOpenDataAssets = useCallback(() => setIsDataAssetsOpen(true), []);
+  const handleOpenDataAssets = modals.dataAssets.open;
   const handleUndoLastOperation = useCallback(() => {
     void undoLast();
   }, [undoLast]);
@@ -951,7 +943,6 @@ const App: React.FC = () => {
   // 空状态 / 情境条文案的派生（isEmptyLibrary / gridViewTitle 等）已并入 hooks/useLibraryDerived
 
   /** 整页视图返回图库：供 AppViews 的返回按钮与 ErrorBoundary 兜底共用 */
-  const handleBackToLibrary = useCallback(() => setMainView('library'), []);
 
   /**
    * 导出完成后的汇总判定与 Toast。
@@ -964,7 +955,7 @@ const App: React.FC = () => {
     NonNullable<React.ComponentProps<typeof ExportModal>['onFinish']>
   >(
     ({ succeeded, failed, cancelled, firstError, targetDir, gonePhotos }) => {
-      setIsExportModalOpen(false);
+      modals.exportModal.close();
       // 源文件已被外部删除 / 移动的条目：剔除出列表，且不进「重新导出」集合
       const gone = gonePhotos ?? [];
       if (gone.length > 0) fsGuard.reportGone(gone);
@@ -976,7 +967,7 @@ const App: React.FC = () => {
         label: '重新导出',
         onClick: () => {
           setExportTargets(retryTargets);
-          setIsExportModalOpen(true);
+          modals.exportModal.open();
         },
       };
       // 失败原因不再一律归咎于重名：实际原因（解码失败 / 无权限 / 磁盘满）由弹层回传
@@ -1002,7 +993,7 @@ const App: React.FC = () => {
         showToast(`导出失败：${retriableFailed} 张照片均未成功${reason}`, 'error', retryExport);
       }
     },
-    [exportTargets, fsGuard, showToast]
+    [exportTargets, fsGuard, showToast, modals.exportModal]
   );
 
   return (
@@ -1081,7 +1072,7 @@ const App: React.FC = () => {
         {mainView !== 'library' ? (
           <AppViews
             view={mainView}
-            onBackToLibrary={handleBackToLibrary}
+            onBackToLibrary={backToLibrary}
             isLeftPaneOpen={isLeftPaneVisible}
             duplicates={{
               onBack: handleExitDuplicates,
@@ -1121,7 +1112,7 @@ const App: React.FC = () => {
               onOpenDownload: updateChecker.openDownloaded,
               onRevealDownload: updateChecker.revealDownloaded,
             }}
-            onExitAbout={handleExitToLibrary}
+            onExitAbout={backToLibrary}
           />
         ) : (
           <>
@@ -1164,7 +1155,7 @@ const App: React.FC = () => {
               onResetFilters={resetFilters}
               onClearSearch={() => setSearchQuery('')}
               onResetAll={handleResetViewContext}
-              onSaveAsAlbum={() => setIsSaveAlbumModalOpen(true)}
+              onSaveAsAlbum={modals.saveAlbum.open}
               resultCount={visiblePhotos.length}
               totalCount={filters.hiddenOnly ? counts.hidden : counts.all}
             />
@@ -1205,8 +1196,8 @@ const App: React.FC = () => {
                   }
                   setContextMenu({ x: e.clientX, y: e.clientY, photo });
                 }}
-                onShowDeleteConfirm={() => setIsDeleteModalOpen(true)}
-                onBatchRename={() => setIsRenameModalOpen(true)}
+                onShowDeleteConfirm={modals.deleteConfirm.open}
+                onBatchRename={modals.rename.open}
                 onMoveSelected={() => handleMoveSelected()}
                 onExportSelected={handleExportSelected}
                 onFilterByDate={handleFilterByDate}
@@ -1266,24 +1257,19 @@ const App: React.FC = () => {
           />
         </ErrorBoundary>
       )}
-      {/* 全部弹层与浮层：右键菜单 / Toast / 13 个业务弹窗 / 全屏预览，见 AppOverlays */}
+      {/* 全部弹层与浮层：右键菜单 / Toast / 业务弹窗 / 全屏预览，见 AppOverlays */}
       <AppOverlays
+        modals={modals}
         contextMenu={contextMenu}
         contextMenuActions={contextMenuActions}
         onCloseContextMenu={() => setContextMenu(null)}
         toasts={toasts}
         onDismissToast={dismissToast}
-        isRenameModalOpen={isRenameModalOpen}
-        onCloseRenameModal={() => setIsRenameModalOpen(false)}
         onRenameConfirm={handleBatchRename}
         photos={photos}
         selectedIds={selectedIds}
         isFileOpBusy={isFileOpBusy}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onCloseDeleteModal={() => setIsDeleteModalOpen(false)}
         onDeleteConfirm={handleConfirmDelete}
-        isClearListConfirmOpen={isClearListConfirmOpen}
-        onCloseClearListConfirm={() => setIsClearListConfirmOpen(false)}
         onClearListConfirm={handleConfirmClearList}
         isRestorePromptOpen={isRestorePromptOpen}
         onCloseRestorePrompt={() => {
@@ -1298,26 +1284,15 @@ const App: React.FC = () => {
         directorySources={directorySources}
         fileSources={fileSources}
         unavailableSourceCount={unavailableSourceCount}
-        isAiSettingsOpen={isAiSettingsOpen}
-        onCloseAiSettings={() => setIsAiSettingsOpen(false)}
         onNotify={showToast}
-        isDataAssetsOpen={isDataAssetsOpen}
-        onCloseDataAssets={() => setIsDataAssetsOpen(false)}
-        isShortcutsOpen={isShortcutsOpen}
-        onCloseShortcuts={() => setIsShortcutsOpen(false)}
-        isSaveAlbumModalOpen={isSaveAlbumModalOpen}
-        onCloseSaveAlbum={() => setIsSaveAlbumModalOpen(false)}
         onSaveAlbum={handleSaveAlbumAndClose}
         filters={filters}
         albums={albums}
-        isAdjustDateModalOpen={isAdjustDateModalOpen}
-        onCloseAdjustDate={() => setIsAdjustDateModalOpen(false)}
         onApplyDateAdjustment={handleApplyDateAdjustment}
         selectedPhotos={selectedPhotos}
         updateChecker={updateChecker}
-        isExportModalOpen={isExportModalOpen}
         onCloseExport={() => {
-          setIsExportModalOpen(false);
+          modals.exportModal.close();
           setExportTargets([]);
         }}
         exportTargets={exportTargets}

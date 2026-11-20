@@ -155,7 +155,7 @@ electron/
     └── logger.cjs          #   主进程日志器
 
 src/
-├── App.tsx                 # 组合 hooks + 视图路由
+├── App.tsx                 # 组合根：状态装配 + 布局骨架（含图库视图内联）
 ├── main.tsx                # 挂载入口
 ├── components/             # 按域分组的 UI
 │   ├── layout/             #   Sidebar / Toolbar / ActiveFiltersBar / ToastStack /

@@ -29,8 +29,9 @@ export interface UseFileOperationsParams {
   selectedIds: Set<string>;
   setSelectedIds: Dispatch<SetStateAction<Set<string>>>;
   setPhotos: Dispatch<SetStateAction<Photo[]>>;
-  setIsRenameModalOpen: Dispatch<SetStateAction<boolean>>;
-  setIsDeleteModalOpen: Dispatch<SetStateAction<boolean>>;
+  /** 弹层开关的显式 setter：只用于「操作成功后关闭对应弹窗」，与 useState setter 同义 */
+  setIsRenameModalOpen: (open: boolean) => void;
+  setIsDeleteModalOpen: (open: boolean) => void;
   showToast: (message: string, type?: ToastType, action?: ToastAction) => void;
   /** 文件操作提交锁：防止确认按钮被连点导致同一批文件提交两次 */
   fileOpLockRef: RefObject<boolean>;

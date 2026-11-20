@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import type { LibrarySource, Photo, PhotoFilters, SmartAlbum } from '@/types';
 import type { ContextMenuItem } from '@/types/contextMenu';
 import type { ToastData } from '@/types/toast';
+import type { AppModals } from '@/hooks/useAppModals';
 import { basenameOfPath } from '@/lib/persistence/sources';
 import type { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import ContextMenu from '@/components/common/ContextMenu';
@@ -24,15 +25,25 @@ import ShortcutsOverlay from '@/components/common/ShortcutsOverlay';
  *
  * ## 为什么集中在一个文件
  *
- * 这些组件彼此没有依赖，共同点只有一个：**由 App 的某个布尔开关控制显隐**。
- * 散在 App 的 return 里时，加一个弹窗要在 1400 行文件里找插入点，
+ * 这些组件彼此没有依赖，共同点只有一个：**由某个布尔开关控制显隐**。
+ * 散在 App 的 return 里时，加一个弹窗要在千行文件里找插入点，
  * 而且「哪个开关对应哪个弹层」只能靠读 JSX 反推。集中之后：
  * 加弹层是往这里加一段，App 只负责把状态传进来。
  *
+ * ## 开关从哪来
+ *
+ * 十个本地开关走 `modals`（见 hooks/useAppModals），不再逐个作为 props 传递 ——
+ * 它们没有业务含义，只有 open / close，传一个对象就够了。
+ *
+ * 三个例外刻意保留为独立 props，因为它们不属于本地 state：
+ * - `isRestorePromptOpen` 由 useLibrarySources 拥有；
+ * - `updateChecker.isOpen` 由 useUpdateChecker 拥有；
+ * - 关闭导出要顺带清空 `exportTargets`、关闭恢复提示要弹 Toast，都带副作用。
+ *
  * ## 什么不该放在这里
  *
- * 带业务分支的流程（导出完成后的汇总判定、恢复图库的确认副作用）留在 App ——
- * 它们是决策，不是「开关 → 渲染」的映射。这里只接收已决好的回调。
+ * 带业务分支的流程（导出完成后的汇总判定）留在 App —— 它们是决策，
+ * 不是「开关 → 渲染」的映射。这里只接收已决好的回调。
  */
 
 type RenameConfirm = ComponentProps<typeof RenameModal>['onConfirm'];
@@ -44,6 +55,9 @@ type ExportFinish = ComponentProps<typeof ExportModal>['onFinish'];
 type ToastDismiss = ComponentProps<typeof ToastStack>['onDismiss'];
 
 export interface AppOverlaysProps {
+  /** 十个本地开关（useAppModals） */
+  modals: AppModals;
+
   // 右键菜单
   contextMenu: { x: number; y: number; photo?: Photo } | null;
   contextMenuActions: ContextMenuItem[];
@@ -53,24 +67,15 @@ export interface AppOverlaysProps {
   toasts: ToastData[];
   onDismissToast: ToastDismiss;
 
-  // 重命名 / 删除：都以「当前选中集」为作用对象
-  isRenameModalOpen: boolean;
-  onCloseRenameModal: () => void;
+  // 重命名 / 删除 / 清空：都以「当前选中集」为作用对象
   onRenameConfirm: RenameConfirm;
   photos: Photo[];
   selectedIds: Set<string>;
   isFileOpBusy: boolean;
-
-  isDeleteModalOpen: boolean;
-  onCloseDeleteModal: () => void;
   onDeleteConfirm: DeleteConfirm;
-
-  // 清空照片列表
-  isClearListConfirmOpen: boolean;
-  onCloseClearListConfirm: () => void;
   onClearListConfirm: ClearListConfirm;
 
-  // 恢复上次的图库
+  // 恢复上次的图库：开关与数据来自 useLibrarySources，关闭 / 确认都带副作用
   isRestorePromptOpen: boolean;
   onCloseRestorePrompt: () => void;
   onConfirmRestore: () => void;
@@ -79,33 +84,20 @@ export interface AppOverlaysProps {
   fileSources: LibrarySource[];
   unavailableSourceCount: number;
 
-  // 设置类
-  isAiSettingsOpen: boolean;
-  onCloseAiSettings: () => void;
+  // 设置类共用的提示通道
   onNotify: (message: string, type?: 'success' | 'info' | 'error' | 'warning') => void;
 
-  isDataAssetsOpen: boolean;
-  onCloseDataAssets: () => void;
-
-  isShortcutsOpen: boolean;
-  onCloseShortcuts: () => void;
-
-  isSaveAlbumModalOpen: boolean;
-  onCloseSaveAlbum: () => void;
   onSaveAlbum: SaveAlbumSave;
   filters: PhotoFilters;
   albums: SmartAlbum[];
 
-  isAdjustDateModalOpen: boolean;
-  onCloseAdjustDate: () => void;
   onApplyDateAdjustment: AdjustDateApply;
   selectedPhotos: Photo[];
 
-  // 检查更新与下载
+  // 检查更新与下载（开关与状态都在 useUpdateChecker 里）
   updateChecker: ReturnType<typeof useUpdateChecker>;
 
-  // 导出
-  isExportModalOpen: boolean;
+  // 导出：关闭时要清空 exportTargets，副作用留在 App
   onCloseExport: () => void;
   exportTargets: Photo[];
   onExportFinish: ExportFinish;
@@ -123,22 +115,17 @@ export interface AppOverlaysProps {
 }
 
 export default function AppOverlays({
+  modals,
   contextMenu,
   contextMenuActions,
   onCloseContextMenu,
   toasts,
   onDismissToast,
-  isRenameModalOpen,
-  onCloseRenameModal,
   onRenameConfirm,
   photos,
   selectedIds,
   isFileOpBusy,
-  isDeleteModalOpen,
-  onCloseDeleteModal,
   onDeleteConfirm,
-  isClearListConfirmOpen,
-  onCloseClearListConfirm,
   onClearListConfirm,
   isRestorePromptOpen,
   onCloseRestorePrompt,
@@ -147,24 +134,13 @@ export default function AppOverlays({
   directorySources,
   fileSources,
   unavailableSourceCount,
-  isAiSettingsOpen,
-  onCloseAiSettings,
   onNotify,
-  isDataAssetsOpen,
-  onCloseDataAssets,
-  isShortcutsOpen,
-  onCloseShortcuts,
-  isSaveAlbumModalOpen,
-  onCloseSaveAlbum,
   onSaveAlbum,
   filters,
   albums,
-  isAdjustDateModalOpen,
-  onCloseAdjustDate,
   onApplyDateAdjustment,
   selectedPhotos,
   updateChecker,
-  isExportModalOpen,
   onCloseExport,
   exportTargets,
   onExportFinish,
@@ -192,22 +168,22 @@ export default function AppOverlays({
       {/* Toast 队列：底部居中堆叠，避免遮挡工具栏（渲染见 ToastStack） */}
       <ToastStack toasts={toasts} onDismiss={onDismissToast} />
 
-      {isRenameModalOpen && (
+      {modals.rename.isOpen && (
         <RenameModal
-          isOpen={isRenameModalOpen}
-          onClose={onCloseRenameModal}
+          isOpen={modals.rename.isOpen}
+          onClose={modals.rename.close}
           onConfirm={onRenameConfirm}
           photos={photos.filter((p) => selectedIds.has(p.id))}
           count={selectedIds.size}
           isBusy={isFileOpBusy}
         />
       )}
-      {isDeleteModalOpen && (
+      {modals.deleteConfirm.isOpen && (
         <DeleteConfirmModal
-          isOpen={isDeleteModalOpen}
+          isOpen={modals.deleteConfirm.isOpen}
           count={selectedIds.size}
           isDiskOperation={true}
-          onClose={onCloseDeleteModal}
+          onClose={modals.deleteConfirm.close}
           onConfirm={onDeleteConfirm}
           isBusy={isFileOpBusy}
         />
@@ -215,9 +191,9 @@ export default function AppOverlays({
 
       {/* 清空照片列表二次确认：侧栏底部入口与右键菜单都走这里 */}
       <ClearListConfirmModal
-        isOpen={isClearListConfirmOpen}
+        isOpen={modals.clearList.isOpen}
         count={photos.length}
-        onClose={onCloseClearListConfirm}
+        onClose={modals.clearList.close}
         onConfirm={onClearListConfirm}
       />
 
@@ -234,7 +210,11 @@ export default function AppOverlays({
       />
 
       {/* AI 分析设置：应用内配置 DeepSeek API Key / 接口地址 / 模型 */}
-      <AiSettingsModal isOpen={isAiSettingsOpen} onClose={onCloseAiSettings} onNotify={onNotify} />
+      <AiSettingsModal
+        isOpen={modals.aiSettings.isOpen}
+        onClose={modals.aiSettings.close}
+        onNotify={onNotify}
+      />
 
       {/* 检查更新：GitHub Releases 检查 / 下载 DMG / 引导安装（见 hooks/useUpdateChecker） */}
       <UpdateModal
@@ -254,37 +234,41 @@ export default function AppOverlays({
       />
 
       {/* 数据资产：配置导出导入 / 路径重连 / 操作日志与撤销 / 增量备份 */}
-      <DataAssetsModal isOpen={isDataAssetsOpen} onClose={onCloseDataAssets} onNotify={onNotify} />
+      <DataAssetsModal
+        isOpen={modals.dataAssets.isOpen}
+        onClose={modals.dataAssets.close}
+        onNotify={onNotify}
+      />
 
-      {isExportModalOpen && (
+      {modals.exportModal.isOpen && (
         <ExportModal
-          isOpen={isExportModalOpen}
+          isOpen={modals.exportModal.isOpen}
           photos={exportTargets}
           onClose={onCloseExport}
           onFinish={onExportFinish}
         />
       )}
 
-      {isAdjustDateModalOpen && (
+      {modals.adjustDate.isOpen && (
         <AdjustDateModal
-          isOpen={isAdjustDateModalOpen}
+          isOpen={modals.adjustDate.isOpen}
           photos={selectedPhotos}
-          onClose={onCloseAdjustDate}
+          onClose={modals.adjustDate.close}
           onApply={onApplyDateAdjustment}
         />
       )}
 
-      {isSaveAlbumModalOpen && (
+      {modals.saveAlbum.isOpen && (
         <SaveAlbumModal
-          isOpen={isSaveAlbumModalOpen}
+          isOpen={modals.saveAlbum.isOpen}
           filters={filters}
           existingNames={albums.map((album) => album.name)}
-          onClose={onCloseSaveAlbum}
+          onClose={modals.saveAlbum.close}
           onSave={onSaveAlbum}
         />
       )}
 
-      {isShortcutsOpen && <ShortcutsOverlay onClose={onCloseShortcuts} />}
+      {modals.shortcuts.isOpen && <ShortcutsOverlay onClose={modals.shortcuts.close} />}
 
       {quickLookPhoto && (
         <QuickLook
