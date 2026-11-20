@@ -2,7 +2,7 @@
 
 本文件记录**用户可感知的变化**（功能、行为、修复、安全），格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **发布状态**：**v0.6.5 已于 2026-11-20 正式发布** —— `package.json` `0.6.5`、git tag `v0.6.5`、DMG `PhotoMinder-0.6.5-arm64.dmg`（GitHub Release 上传待维护者登录 `gh` 后补）。**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
+> **发布状态**：**v0.6.5 已于 2026-11-20 正式发布** —— `package.json` `0.6.5`、git tag `v0.6.5`、GitHub Release 资产 `PhotoMinder-0.6.5-arm64.dmg`（80.3MB，SHA256 与本地一致），`/releases/latest` 已指向该版本。**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
 > v0.6.1 于 2026-11-06 发布（tag `v0.6.1`）。工作区另有 v0.8.0 / v1.0.0 的提前交付，尚未发版，见下方 `[Unreleased]`。
 > 历史版本的日期为开发完成日期，不一定等于发布日；本文件只记录已交付事实。
 >
@@ -90,7 +90,7 @@
 - 更新记录第一条由单测强制与 `package.json` 版本一致（`tests/unit/aboutContent.test.ts`），发版时忘记补记录会直接失败。2026-11-20 已把 `package.json` / `package-lock.json` bump 到 `0.6.5`，护栏恢复绿。
 - 关于页在前台时检查结果就地展示，不再叠「发现新版本」Toast（否则点进去又会打开面板）；菜单更新面板打开时 `Esc` 仍只关面板、不退出关于页。
 - `tests/unit/aboutUpdateFlow.test.ts` 静态锁定交互决策：整页检查不走 `openPanel`、菜单面板不重复自动检查开关。
-- **发布结果（2026-11-20）**：`npm run verify:full` 全绿（单测 28 文件 422 项 / 主进程 12 文件），Electron 冒烟 CSP 违规 0、控制台错误 0；DMG `PhotoMinder-0.6.5-arm64.dmg` 已构建、tag `v0.6.5` 已打。GitHub Release 上传待维护者登录 `gh` 后补 —— 应用内更新检查依赖 `/releases/latest`，在此之前线上仍显示 v0.6.4 为最新。
+- **发布结果（2026-11-20）**：`npm run verify:full` 全绿（单测 28 文件 422 项 / 主进程 12 文件），Electron 冒烟 CSP 违规 0、控制台错误 0；DMG `PhotoMinder-0.6.5-arm64.dmg` 已构建（80.3MB）、tag `v0.6.5` 已打并推送；GitHub Release「时光画框 v0.6.5 · 自我介绍」已创建并上传该 DMG，远端资产 SHA256 `0f168a08…f11c9` 与本地一致，`/releases/latest` 与 API `latest` 均已指向 v0.6.5。
 
 ---
 

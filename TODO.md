@@ -22,7 +22,7 @@
 
 | 事项 | 状态 | 下一步 |
 | --- | --- | --- |
-| 当前版本 | `0.6.5` 已于 2026-11-20 发布（tag `v0.6.5`） | 上传 Release（需 `gh` 登录）；主线进入 v0.7.0 |
+| 当前版本 | `0.6.5` 已于 2026-11-20 发布（tag `v0.6.5` + GitHub Release） | 主线进入 v0.7.0 |
 | 主线 | v0.7.0 整理版 | 批量标签已完成；后续批次按 ROADMAP：手动相簿 → 文件夹树 → AI 出口 → 收件箱 |
 | 数据正确性 | K7–K10 未动 | 先补测试钉住现状，再逐项修；不要擅自改行为 |
 | 结构性债务 | `main.js` / `ImageGrid` / `App.tsx` | 按 [`docs/architecture.md`](./docs/architecture.md) §7 顺序，一次只拆一个模块 |
@@ -154,7 +154,7 @@
 | **F21** | 内容护栏：`tests/unit/aboutContent.test.ts` | 更新记录首条版本 = `package.json`；版本唯一降序；无 hex 色值 | ✅ |
 | **F22** | 交互优化：「版本与更新」就地完成检查 / 下载 / 安装引导，结果常驻可见；菜单面板移除重复的自动检查开关 | `tests/unit/aboutUpdateFlow.test.ts` 锁定交互决策；关于页在前台时抑制重复 Toast | ✅ |
 
-**发布收尾（2026-11-20）**：`package.json` 已 bump 到 `0.6.5`，版本护栏绿（`aboutContent.test.ts` 全绿）；质量护栏 `npm run verify:full` 全绿（单测 28 文件 422 项 / 主进程 12 文件），Electron 冒烟 CSP 违规 0、控制台错误 0；DMG `PhotoMinder-0.6.5-arm64.dmg` 已构建、tag `v0.6.5` 已打。**剩余**：上传 GitHub Release（需维护者先完成 `gh` 登录），应用内更新检查依赖 `/releases/latest`。
+**发布收尾（2026-11-20）**：`package.json` 已 bump 到 `0.6.5`，版本护栏绿（`aboutContent.test.ts` 全绿）；质量护栏 `npm run verify:full` 全绿（单测 28 文件 422 项 / 主进程 12 文件），Electron 冒烟 CSP 违规 0、控制台错误 0；DMG `PhotoMinder-0.6.5-arm64.dmg` 已构建（80.3MB）、tag `v0.6.5` 已打并推送，GitHub Release 已创建并上传该 DMG（SHA256 `0f168a08…f11c9` 与本地一致），`/releases/latest` 与 API `latest` 均已指向 v0.6.5，应用内更新检查可识别新版本。
 
 ---
 
