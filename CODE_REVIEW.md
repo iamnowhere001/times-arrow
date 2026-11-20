@@ -34,7 +34,7 @@
 
 | 维度 | 审查时 | 当前 | 说明 |
 |---|---|---|---|
-| 架构设计 | 7.0 | **8.6** | hooks + 视图路由 + 领域模块；剩余债务在组件层（两套虚拟化、Modal 基座） |
+| 架构设计 | 7.0 | **8.6** | hooks + 视图路由 + 领域模块；虚拟化 hook 与 Modal 基座已收敛（§2.13），组件层余布局常量 / 地图缓存 |
 | 代码质量与可读性 | 7.5 | **8.2** | 命名与注释优秀；空状态文案与单条目动作已从 App 抽出（§4） |
 | 性能 | 8.0 | **8.5** | 搜索索引、地名 LRU、地名拆包已落地，未见回退 |
 | 安全 | 4.5 | **8.5** | 沙箱 / CSP / 白名单 / 体积闸门 / 原子写盘全部到位；`safeStorage` 未做（X1，自用定位下可接受） |
@@ -265,7 +265,7 @@ src/components/*      UI 层（grid / detail / duplicate / timeline / map / layo
 - `places.data.json` 外置 + 动态 `import()`，独立 chunk 约 59KB。
 - 四个整页视图各挂 `ErrorBoundary` + 共用 `ViewErrorFallback`，详情面板内联降级。
 
-**仍未做**：ActionDescriptor、Modal 基座、虚拟化 hook、布局常量、受控并发、播放器状态机、导出分块、`useBatchOperation`、地图离屏缓存 —— 见 §3.1。
+**仍未做**：ActionDescriptor、布局常量、受控并发、播放器状态机、导出分块、`useBatchOperation`、地图离屏缓存 —— 见 §3.1。（Modal 基座与虚拟化 hook 已于 2026-11-20 完成，见 §2.13。）
 
 ### 2.4 冗余清理（2026-09-16）
 
@@ -358,15 +358,22 @@ ai-cache 缺失 / 损坏时 `readStore` 返回 `{}`，导致已是 v2 的 config
 
 **边界**：标签重命名 / 合并 / 删除、失败项重试（纯内存操作暂无失败路径，写盘失败沿用 persistence Toast）留待后续批次。
 
+### 2.13 组件层收敛 · 虚拟化 hook 与 Modal 基座（2026-11-20）
+
+- **虚拟化 hook**：`ImageGrid.tsx` 里 VirtualGrid / VirtualList 各自手写的「ResizeObserver 视口测量 + rAF 节流 scrollTop + 卸载清理」收进 `src/hooks/useVirtualViewport.ts`。网格开 `contentWidth`（扣横向 padding 铺行），列表只取高度；滚动位置记忆经 `onScroll` 回调留在各自组件。统一为「帧内最新值」语义（原网格取首个事件值），差异在一帧以内。时光画廊是 DOM 实测模式，不并入。
+- **Modal 基座**：新增 `src/components/common/ModalShell.tsx`，收敛 9 个弹窗逐字重复的遮罩 + `role="dialog"` 面板 + `useModalA11y` 接线。**只统一结构与行为，长相零变化**：面板样式整串经 `panelClassName` 传入，z-index 三档（60/70/80）用字面量映射（Tailwind 不扫动态拼接类名）；「点遮罩关闭」仅 RestoreLibraryModal 开启，其余维持不关。各弹窗的 Enter 确认 / 主按钮聚焦 effect 保留原位（子组件 effect 先于父级，焦点落点顺序不变）。
+- **静态断言随入口迁移**：`gridLayout.test.ts` 的 padding 扣减断言改盯 `useVirtualViewport.ts` + 网格 `contentWidth: true`；`designTokens.test.ts` 的 D17 断言改为「9 个 Modal 都含 `<ModalShell`，基座含 a11y 接线与 dialog 语义」。
+- **验证**：typecheck / lint 0 / format / build（三档 z-index 类确认生成）/ 单测 380 / 主进程全过 / 冒烟 0 违规 0 错误；另用临时 Electron 探针实测 RestoreLibrary / DataAssets / AiSettings 三个弹窗的 dialog 语义、焦点入 trap、Esc 关闭，全过（探针跑完即删）。
+
 ---
 
 ## 3. 仍未解决
 
-### 3.1 P2 剩余（9 项 + 工程化收尾）
+### 3.1 P2 剩余（7 项 + 工程化收尾）
 
 | 批次 | 项 | 说明 |
 |---|---|---|
-| 组件层 | Modal 基座（9 个）、虚拟化 hook、布局常量、地图离屏缓存、图标库剩余差异 | 都在 `components/`，可一次做完 |
+| 组件层 | 布局常量、地图离屏缓存、图标库剩余差异 | 都在 `components/`；Modal 基座与虚拟化 hook 已完成（§2.13） |
 | 交互 | `ActionDescriptor[]`、播放器 `useReducer`、`useBatchOperation` | 属行为收敛，需逐项手测 |
 | 性能 | 受控并发（`movePhotosToTrash` 仍串行）、导出大图分块 | 需要真实大库才能验证收益 |
 | 工程化 | CI、`strict: true` | 本机 `npm install` 与沙箱有环境限制；`noImplicitAny` 单独打开为 0 新增错误，代价集中在 `strictNullChecks` |

@@ -16,6 +16,7 @@ import { photoTakenTime } from '@/lib/media/photoTime';
 import { cameraKeyOf } from '@/lib/filter/filters';
 import { useThumbnailSrc } from '@/hooks/useThumbnailSrc';
 import { useVideoPoster } from '@/hooks/useVideoPoster';
+import { useVirtualViewport } from '@/hooks/useVirtualViewport';
 import { ThumbImage } from '@/components/grid/ThumbnailImage';
 // 空状态：首屏单独设计，其余五种共用模板但区分语气（K27）
 import { EmptyKind, QuietEmptyState, WelcomeEmptyState } from '@/components/grid/EmptyStates';
@@ -108,54 +109,13 @@ const VirtualGrid = forwardRef<
     const scrollRef = useRef<HTMLDivElement>(null);
     // 卡片之间的空白落在「布局容器」上，不是滚动容器本身；两者都算空白点击
     const contentRef = useRef<HTMLDivElement>(null);
-    const [viewport, setViewport] = useState({ width: 0, height: 0 });
-    const [scrollTop, setScrollTop] = useState(0);
-
-    // 监听容器尺寸变化，计算可用内容宽度
-    useLayoutEffect(() => {
-      const el = scrollRef.current;
-      if (!el) return;
-
-      const update = () => {
-        // 行宽必须按「内容区」算，不能直接用 clientWidth：滚动容器带 p-4 横向内边距，
-        // clientWidth 含这 32px，拿去铺行会让最右一张越出内容区，进而撑出横向滚动条。
-        const style = getComputedStyle(el);
-        const paddingX =
-          (Number.parseFloat(style.paddingLeft) || 0) +
-          (Number.parseFloat(style.paddingRight) || 0);
-        const width = Math.max(0, el.clientWidth - paddingX);
-        const height = el.clientHeight;
-        setViewport((prev) =>
-          prev.width === width && prev.height === height ? prev : { width, height }
-        );
-      };
-      update();
-
-      if (typeof ResizeObserver === 'undefined') return;
-      const observer = new ResizeObserver(update);
-      observer.observe(el);
-      return () => observer.disconnect();
-    }, []);
-
-    // rAF 节流：滚动事件触发频率远高于刷新率，直接 setState 会造成大量无效重渲染
-    const rafRef = useRef(0);
-    const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-      const top = e.currentTarget.scrollTop;
+    const { viewport, scrollTop, handleScroll } = useVirtualViewport(scrollRef, {
+      contentWidth: true,
       // 顺手记录最后位置：卸载时可能已读不到 DOM，这里持续写最稳
-      savedGridScrollTop = top;
-      if (rafRef.current) return;
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        setScrollTop(top);
-      });
-    }, []);
-
-    useEffect(
-      () => () => {
-        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      onScroll: (top) => {
+        savedGridScrollTop = top;
       },
-      []
-    );
+    });
 
     const layout = useMemo(
       () => buildGridLayout(items, viewport.width, targetRowHeight, gap),
@@ -578,22 +538,15 @@ const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(
     ref
   ) => {
     const scrollRef = useRef<HTMLDivElement>(null);
-    const [viewportHeight, setViewportHeight] = useState(0);
-    const [scrollTop, setScrollTop] = useState(0);
+    const { viewport, scrollTop, handleScroll } = useVirtualViewport(scrollRef, {
+      onScroll: (top) => {
+        savedListScrollTop = top;
+      },
+    });
+    const viewportHeight = viewport.height;
     const [rowHeight, setRowHeight] = useState(LIST_ROW_ESTIMATED_HEIGHT);
     const rowHeightRef = useRef(rowHeight);
     rowHeightRef.current = rowHeight;
-
-    // 视口高度跟随窗口变化
-    useLayoutEffect(() => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const update = () => setViewportHeight(el.clientHeight);
-      update();
-      const observer = new ResizeObserver(update);
-      observer.observe(el);
-      return () => observer.disconnect();
-    }, []);
 
     // 恢复上次离开图库时的列表滚动位置（占位行已给出内容高度，可直接落）
     const scrollRestoredRef = useRef(false);
@@ -603,26 +556,6 @@ const VirtualList = forwardRef<VirtualListHandle, VirtualListProps>(
       const el = scrollRef.current;
       if (el && savedListScrollTop > 0) el.scrollTop = savedListScrollTop;
     }, [items.length]);
-
-    // rAF 节流：滚动事件频率远高于刷新率，直接 setState 会产生无效重渲染
-    const rafRef = useRef(0);
-    const pendingTopRef = useRef(0);
-    const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-      pendingTopRef.current = e.currentTarget.scrollTop;
-      savedListScrollTop = pendingTopRef.current;
-      if (rafRef.current) return;
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        setScrollTop((prev) => (prev === pendingTopRef.current ? prev : pendingTopRef.current));
-      });
-    }, []);
-
-    useEffect(
-      () => () => {
-        if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      },
-      []
-    );
 
     /**
      * 窗口起点必须夹取到有效范围（K24）。

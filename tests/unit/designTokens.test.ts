@@ -97,16 +97,21 @@ describe('字号下限（D14）', () => {
 });
 
 describe('弹层基座统一（D17）', () => {
-  it('9 个 Modal 全部接入 useModalA11y 并保留 role=dialog / aria-modal', () => {
+  it('9 个 Modal 全部接入 ModalShell，基座保留 a11y 接线与 role=dialog / aria-modal', () => {
     const dir = resolve(process.cwd(), 'src/components/modal');
     const files = readdirSync(dir).filter((name) => name.endsWith('.tsx'));
     expect(files).toHaveLength(9);
     for (const name of files) {
       const source = readFileSync(resolve(dir, name), 'utf8');
-      expect(source, `${name} 未接入基座`).toContain('useModalA11y(');
-      expect(source, `${name} 缺 dialogRef`).toContain('dialogRef');
-      expect(source, `${name} 缺 role=dialog`).toContain('role="dialog"');
-      expect(source, `${name} 缺 aria-modal`).toContain('aria-modal');
+      expect(source, `${name} 未接入基座`).toContain('<ModalShell');
     }
+    // 行为基座（焦点陷阱 / Esc / 焦点归还）与 dialog 语义收在 ModalShell 一处
+    const shell = readFileSync(
+      resolve(process.cwd(), 'src/components/common/ModalShell.tsx'),
+      'utf8'
+    );
+    expect(shell).toContain('useModalA11y(');
+    expect(shell).toContain('role="dialog"');
+    expect(shell).toContain('aria-modal');
   });
 });

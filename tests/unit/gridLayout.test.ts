@@ -138,9 +138,11 @@ describe('布局常量与渲染层的一致性（静态断言）', () => {
 
   it('滚动容器扣掉横向 padding 后再铺行，并显式关掉横向滚动', () => {
     const source = readGrid();
-    expect(source).toContain('el.clientWidth - paddingX');
+    // padding 扣减收在共用视口 hook 里，网格必须显式开启 contentWidth
+    const viewportHook = readFileSync(resolve(ROOT, 'src/hooks/useVirtualViewport.ts'), 'utf8');
+    expect(viewportHook).toContain('width - paddingX');
+    expect(source).toContain('contentWidth: true');
     expect(source).toContain('overflow-y-auto overflow-x-hidden');
-    expect(source).not.toContain('setViewport({ width: el.clientWidth');
   });
 
   it('卡片间隙也算空白：布局容器绑定 contentRef 并参与空白点击判定', () => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useModalA11y } from '@/hooks/useModalA11y';
+import ModalShell from '@/components/common/ModalShell';
 import { Photo } from '@/types';
 import { logger } from '@/lib/logger';
 import { humanizeFsError, isFileGoneError } from '@/lib/fs/fileOperations';
@@ -126,8 +126,6 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
   const [progress, setProgress] = useState(0);
   const [currentFile, setCurrentFile] = useState('');
   const cancelRef = useRef(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useModalA11y({ isOpen, onClose, containerRef: dialogRef, disabled: isExporting });
 
   useEffect(() => {
     if (isOpen) {
@@ -209,162 +207,159 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, photos, onClose, onFi
   const percent = photos.length > 0 ? Math.round((progress / photos.length) * 100) : 0;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-md animate-fadeIn">
-      <div
-        className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[440px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] flex flex-col max-h-[90vh]"
-        role="dialog"
-        aria-modal="true"
-        ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-6 py-5 border-b border-[var(--border-subtle)]">
-          <h3 className="text-lg font-semibold text-[var(--text-primary)]">导出照片</h3>
-          <p className="text-sm text-[var(--text-tertiary)] mt-1">
-            {isExporting
-              ? `正在导出 ${progress} / ${photos.length}`
-              : `已选择 ${photos.length} 张照片`}
-          </p>
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onClose}
+      a11yDisabled={isExporting}
+      panelClassName="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[440px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] flex flex-col max-h-[90vh]"
+    >
+      <div className="px-6 py-5 border-b border-[var(--border-subtle)]">
+        <h3 className="text-lg font-semibold text-[var(--text-primary)]">导出照片</h3>
+        <p className="text-sm text-[var(--text-tertiary)] mt-1">
+          {isExporting
+            ? `正在导出 ${progress} / ${photos.length}`
+            : `已选择 ${photos.length} 张照片`}
+        </p>
+      </div>
+
+      <div className="p-6 space-y-5 overflow-y-auto">
+        {/* 格式选择 */}
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-2.5">
+            输出格式
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {formatOptions.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setFormat(opt.value)}
+                disabled={isExporting}
+                className={`px-3 py-2.5 rounded-xl border text-left transition-all disabled:opacity-60 ${
+                  format === opt.value
+                    ? 'border-[var(--accent-blue)] bg-[rgba(var(--accent-blue-rgb),0.12)]'
+                    : 'border-[var(--border-subtle)] hover:border-[var(--border-hover)] bg-[var(--bg-input)]'
+                }`}
+              >
+                <span
+                  className={`block text-sm font-medium ${format === opt.value ? 'text-[var(--accent-blue)]' : 'text-[var(--text-primary)]'}`}
+                >
+                  {opt.label}
+                </span>
+                <span className="block text-xs text-[var(--text-quaternary)] mt-0.5">
+                  {opt.hint}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="p-6 space-y-5 overflow-y-auto">
-          {/* 格式选择 */}
+        {/* 质量滑块（仅 JPEG / WebP） */}
+        {qualityFormats && (
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-2.5">
-              输出格式
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {formatOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setFormat(opt.value)}
-                  disabled={isExporting}
-                  className={`px-3 py-2.5 rounded-xl border text-left transition-all disabled:opacity-60 ${
-                    format === opt.value
-                      ? 'border-[var(--accent-blue)] bg-[rgba(var(--accent-blue-rgb),0.12)]'
-                      : 'border-[var(--border-subtle)] hover:border-[var(--border-hover)] bg-[var(--bg-input)]'
-                  }`}
-                >
-                  <span
-                    className={`block text-sm font-medium ${format === opt.value ? 'text-[var(--accent-blue)]' : 'text-[var(--text-primary)]'}`}
-                  >
-                    {opt.label}
-                  </span>
-                  <span className="block text-xs text-[var(--text-quaternary)] mt-0.5">
-                    {opt.hint}
-                  </span>
-                </button>
-              ))}
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
+                质量
+              </label>
+              <span className="text-xs font-mono text-[var(--accent-cyan)]">
+                {Math.round(quality * 100)}%
+              </span>
             </div>
+            <input
+              type="range"
+              min={0.5}
+              max={1}
+              step={0.05}
+              value={quality}
+              onChange={(e) => setQuality(parseFloat(e.target.value))}
+              disabled={isExporting}
+              className="w-full accent-[var(--accent-blue)]"
+            />
           </div>
+        )}
 
-          {/* 质量滑块（仅 JPEG / WebP） */}
-          {qualityFormats && (
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
-                  质量
-                </label>
-                <span className="text-xs font-mono text-[var(--accent-cyan)]">
-                  {Math.round(quality * 100)}%
+        {/* 目标目录 */}
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-2.5">
+            保存到
+          </label>
+          <button
+            onClick={pickDirectory}
+            disabled={isExporting}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] hover:border-[var(--border-hover)] transition-all text-left disabled:opacity-60"
+          >
+            <svg
+              className="w-5 h-5 shrink-0 text-[var(--accent-blue)]"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth="1.8"
+            >
+              <path
+                d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              ></path>
+            </svg>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm text-[var(--text-primary)] truncate">
+                {targetDir ? targetDir.split('/').pop() : '选择导出文件夹…'}
+              </span>
+              {targetDir && (
+                <span className="block text-xs text-[var(--text-quaternary)] truncate">
+                  {targetDir}
                 </span>
-              </div>
-              <input
-                type="range"
-                min={0.5}
-                max={1}
-                step={0.05}
-                value={quality}
-                onChange={(e) => setQuality(parseFloat(e.target.value))}
-                disabled={isExporting}
-                className="w-full accent-[var(--accent-blue)]"
+              )}
+            </span>
+          </button>
+        </div>
+
+        {/* 进度 */}
+        {isExporting && (
+          <div className="space-y-2 animate-fadeIn">
+            <div className="relative h-2 bg-[var(--bg-glass)] rounded-full overflow-hidden">
+              <div
+                className="absolute inset-y-0 left-0 bg-gradient-to-r from-[var(--accent-blue)] via-[var(--accent-cyan)] to-[var(--accent-purple)] rounded-full transition-all duration-300"
+                style={{ width: `${Math.max(5, percent)}%` }}
               />
             </div>
-          )}
-
-          {/* 目标目录 */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mb-2.5">
-              保存到
-            </label>
-            <button
-              onClick={pickDirectory}
-              disabled={isExporting}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] hover:border-[var(--border-hover)] transition-all text-left disabled:opacity-60"
-            >
-              <svg
-                className="w-5 h-5 shrink-0 text-[var(--accent-blue)]"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth="1.8"
-              >
-                <path
-                  d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                ></path>
-              </svg>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm text-[var(--text-primary)] truncate">
-                  {targetDir ? targetDir.split('/').pop() : '选择导出文件夹…'}
-                </span>
-                {targetDir && (
-                  <span className="block text-xs text-[var(--text-quaternary)] truncate">
-                    {targetDir}
-                  </span>
-                )}
-              </span>
-            </button>
-          </div>
-
-          {/* 进度 */}
-          {isExporting && (
-            <div className="space-y-2 animate-fadeIn">
-              <div className="relative h-2 bg-[var(--bg-glass)] rounded-full overflow-hidden">
-                <div
-                  className="absolute inset-y-0 left-0 bg-gradient-to-r from-[var(--accent-blue)] via-[var(--accent-cyan)] to-[var(--accent-purple)] rounded-full transition-all duration-300"
-                  style={{ width: `${Math.max(5, percent)}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-xs text-[var(--text-quaternary)]">
-                <span className="truncate font-mono">{currentFile}</span>
-                <span className="shrink-0 ml-2">{percent}%</span>
-              </div>
+            <div className="flex justify-between text-xs text-[var(--text-quaternary)]">
+              <span className="truncate font-mono">{currentFile}</span>
+              <span className="shrink-0 ml-2">{percent}%</span>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
 
-        {/* 操作区 */}
-        <div className="px-6 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-3">
-          {isExporting ? (
+      {/* 操作区 */}
+      <div className="px-6 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-3">
+        {isExporting ? (
+          <button
+            onClick={() => {
+              cancelRef.current = true;
+            }}
+            className="px-4 py-2 text-sm font-medium rounded-xl text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] transition-colors"
+          >
+            取消导出
+          </button>
+        ) : (
+          <>
             <button
-              onClick={() => {
-                cancelRef.current = true;
-              }}
+              onClick={onClose}
               className="px-4 py-2 text-sm font-medium rounded-xl text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] transition-colors"
             >
-              取消导出
+              取消
             </button>
-          ) : (
-            <>
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-sm font-medium rounded-xl text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={startExport}
-                disabled={!targetDir || photos.length === 0}
-                className="px-5 py-2 text-sm font-semibold rounded-xl text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)] hover:shadow-xl hover:shadow-[rgba(var(--accent-blue-rgb),0.4)] transition-all duration-200 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
-              >
-                导出 {photos.length} 张
-              </button>
-            </>
-          )}
-        </div>
+            <button
+              onClick={startExport}
+              disabled={!targetDir || photos.length === 0}
+              className="px-5 py-2 text-sm font-semibold rounded-xl text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)] hover:shadow-xl hover:shadow-[rgba(var(--accent-blue-rgb),0.4)] transition-all duration-200 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+            >
+              导出 {photos.length} 张
+            </button>
+          </>
+        )}
       </div>
-    </div>
+    </ModalShell>
   );
 };
 

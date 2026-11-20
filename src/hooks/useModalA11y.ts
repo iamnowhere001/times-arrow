@@ -9,8 +9,9 @@
  *   3. Esc 关闭（执行中可禁用，避免把进度遮罩下的弹层关掉）；
  *   4. 关闭后把焦点归还给打开它的那个元素。
  *
- * 用 hook 而不是统一的 `<ModalShell>`，是为了不动 9 个弹层各自的视觉外壳与布局 ——
- * 基座统一的是**行为**，不是长相。
+ * 本 hook 统一的是**行为**，不是长相：视觉外壳与布局仍由各弹层自定。
+ * 结构层（遮罩 + dialog 面板 + 本 hook 的接线）后续收敛在
+ * `components/common/ModalShell.tsx`，9 个弹层不再各自重复接线。
  */
 
 import { useEffect, useRef, type RefObject } from 'react';

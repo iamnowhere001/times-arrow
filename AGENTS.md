@@ -17,7 +17,7 @@
 | 渲染进程 | React + TypeScript ESM（`src/`） |
 | 数据目录 | macOS：`~/Library/Application Support/PhotoMinder/` |
 | 当前版本 | `0.6.2`（2026-11-11 发布，git tag `v0.6.2`） |
-| 质量基线 | typecheck / lint / 单测 379 项 / 主进程 251 项 / Electron 冒烟 全绿 |
+| 质量基线 | typecheck / lint / 单测 380 项 / 主进程 251 项 / Electron 冒烟 全绿 |
 
 **产品判断与优先级以 `ROADMAP.md` 为准；任务级状态以 `TODO.md` 为准；行为描述以 `README.md` 为准；历史技术结论以 `CODE_REVIEW.md` 为准。**
 
@@ -75,7 +75,7 @@ electron/
 
 src/
 ├── App.tsx                 # 组合 hooks + 视图路由（不要再堆业务逻辑）
-├── hooks/                  # 20 个功能域 hook：编排 / 数据 / 交互
+├── hooks/                  # 24 个功能域 hook：编排 / 数据 / 交互
 ├── components/             # 按域分组：layout / grid / timeline / map / detail / duplicate / filter / modal / common / icons
 ├── services/               # aiService（经 IPC 走主进程）
 ├── lib/                    # 领域与基础设施：cache / media / filter / persistence / geo / fs / duplicate / format
@@ -258,7 +258,7 @@ build/                      # electron-builder 资源 / afterPack / DMG 重压
 | 文件重命名 / 删除 / 导出 / 移动 | `src/hooks/useFileOperations.ts`、`src/lib/fs/fileOperations.ts`、`electron/main/data-assets.cjs` |
 | 收藏 / 标签 / 相簿 / 时间修正 | `src/hooks/usePersistedLibraryData.ts`、`src/lib/persistence/persistence.ts`、`src/lib/media/photoIdentity.ts` |
 | 搜索 / 筛选 | `src/lib/filter/filters.ts`、`src/components/filter/FilterPanel.tsx` |
-| 虚拟网格 / 列表 | `src/components/grid/ImageGrid.tsx`、`src/lib/cache/` |
+| 虚拟网格 / 列表 | `src/components/grid/ImageGrid.tsx`、`src/hooks/useVirtualViewport.ts`、`src/lib/cache/` |
 | QuickLook / 视频 | `src/components/detail/QuickLook.tsx`、`VideoPlayer.tsx`、`src/hooks/useQuickLook.ts` |
 | 时光画廊 / 地图 | `src/components/timeline/TimelineGallery.tsx`、`src/components/map/LocationMap.tsx`、`src/lib/geo/` |
 | 重复检测 | `src/components/duplicate/DuplicateDetector.tsx`、`src/lib/duplicate/duplicateDetection.ts`、`electron/lib/dhash.cjs` |

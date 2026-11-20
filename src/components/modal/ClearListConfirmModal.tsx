@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { useModalA11y } from '@/hooks/useModalA11y';
+import ModalShell from '@/components/common/ModalShell';
 
 interface ClearListConfirmModalProps {
   isOpen: boolean;
@@ -24,8 +24,6 @@ const ClearListConfirmModal: React.FC<ClearListConfirmModalProps> = ({
   onConfirm,
 }) => {
   const confirmRef = useRef<HTMLButtonElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useModalA11y({ isOpen, onClose, containerRef: dialogRef });
 
   // Enter 确认：保持与系统弹窗一致的键盘习惯（Esc 关闭交由 useModalA11y）
   useEffect(() => {
@@ -48,58 +46,54 @@ const ClearListConfirmModal: React.FC<ClearListConfirmModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-md animate-fadeIn">
-      <div
-        className="bg-[var(--bg-modal)] backdrop-blur-xl rounded-xl shadow-2xl w-[400px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] animate-scaleIn p-6"
-        role="dialog"
-        aria-modal="true"
-        ref={dialogRef}
-        aria-label="清空照片列表确认"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start gap-4 mb-5">
-          <div className="shrink-0 w-10 h-10 rounded-full bg-[rgba(var(--accent-pink-rgb),0.15)] flex items-center justify-center">
-            <svg
-              className="w-5 h-5 text-[var(--accent-pink)]"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              ></path>
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-base font-semibold text-[var(--text-primary)]">清空照片列表</h3>
-            <p className="text-sm text-[var(--text-secondary)] mt-1 leading-relaxed">
-              当前的 {count} 个照片将从列表中全部移除，筛选、搜索与缩略图缓存一并重置，
-              记录的来源也会清空（下次启动不再自动恢复）。磁盘上的原文件不会被删除，
-              之后重新打开文件夹或添加文件即可恢复。
-            </p>
-          </div>
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabel="清空照片列表确认"
+      panelClassName="bg-[var(--bg-modal)] backdrop-blur-xl rounded-xl shadow-2xl w-[400px] max-w-[90vw] overflow-hidden border border-[var(--border-subtle)] animate-scaleIn p-6"
+    >
+      <div className="flex items-start gap-4 mb-5">
+        <div className="shrink-0 w-10 h-10 rounded-full bg-[rgba(var(--accent-pink-rgb),0.15)] flex items-center justify-center">
+          <svg
+            className="w-5 h-5 text-[var(--accent-pink)]"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            ></path>
+          </svg>
         </div>
-
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] rounded-lg transition-colors"
-          >
-            取消
-          </button>
-          <button
-            ref={confirmRef}
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-pink)] hover:opacity-90 rounded-lg transition-all duration-200 active:scale-[0.98]"
-          >
-            清空列表
-          </button>
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold text-[var(--text-primary)]">清空照片列表</h3>
+          <p className="text-sm text-[var(--text-secondary)] mt-1 leading-relaxed">
+            当前的 {count} 个照片将从列表中全部移除，筛选、搜索与缩略图缓存一并重置，
+            记录的来源也会清空（下次启动不再自动恢复）。磁盘上的原文件不会被删除，
+            之后重新打开文件夹或添加文件即可恢复。
+          </p>
         </div>
       </div>
-    </div>
+
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] rounded-lg transition-colors"
+        >
+          取消
+        </button>
+        <button
+          ref={confirmRef}
+          onClick={onConfirm}
+          className="px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] bg-[var(--accent-pink)] hover:opacity-90 rounded-lg transition-all duration-200 active:scale-[0.98]"
+        >
+          清空列表
+        </button>
+      </div>
+    </ModalShell>
   );
 };
 

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useModalA11y } from '@/hooks/useModalA11y';
+import React, { useEffect, useMemo, useState } from 'react';
+import ModalShell from '@/components/common/ModalShell';
 import { Photo } from '@/types';
 // 时间语义统一从 @/lib/media/photoTime 取（本文件原先内联了同一份回退链）
 import { photoOriginalTime } from '@/lib/media/photoTime';
@@ -79,9 +79,6 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
   const [minutes, setMinutes] = useState(0);
   const [keepRelative, setKeepRelative] = useState(true);
   const [targetValue, setTargetValue] = useState('');
-
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useModalA11y({ isOpen, onClose, containerRef: dialogRef });
 
   const earliest = useMemo(() => {
     if (photos.length === 0) return 0;
@@ -164,147 +161,141 @@ const AdjustDateModal: React.FC<AdjustDateModalProps> = ({ isOpen, photos, onClo
   );
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-md animate-fadeIn">
-      <div
-        className="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[460px] max-w-[90vw] max-h-[90vh] overflow-hidden border border-[var(--border-default)] animate-scaleIn flex flex-col"
-        role="dialog"
-        aria-modal="true"
-        ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-6 py-5 border-b border-[var(--border-subtle)]">
-          <h3 className="text-lg font-semibold text-[var(--text-primary)]">调整日期与时间</h3>
-          <p className="text-sm text-[var(--text-tertiary)] mt-1">
-            将调整 {photos.length} 个项目。仅修改应用内记录的时间（用于排序与分组），不改动原文件。
-          </p>
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onClose}
+      zIndex={70}
+      panelClassName="bg-[var(--bg-elevated)] backdrop-blur-xl rounded-2xl shadow-2xl w-[460px] max-w-[90vw] max-h-[90vh] overflow-hidden border border-[var(--border-default)] animate-scaleIn flex flex-col"
+    >
+      <div className="px-6 py-5 border-b border-[var(--border-subtle)]">
+        <h3 className="text-lg font-semibold text-[var(--text-primary)]">调整日期与时间</h3>
+        <p className="text-sm text-[var(--text-tertiary)] mt-1">
+          将调整 {photos.length} 个项目。仅修改应用内记录的时间（用于排序与分组），不改动原文件。
+        </p>
+      </div>
+
+      <div className="p-6 space-y-5 overflow-y-auto">
+        <div className="grid grid-cols-2 gap-1 bg-[var(--bg-input)] p-1 rounded-xl">
+          {(
+            [
+              ['shift', '平移'],
+              ['set', '设为指定时间'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setMode(value)}
+              className={`py-2 text-sm font-medium rounded-lg transition-all ${
+                mode === value
+                  ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-xs'
+                  : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-glass)]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
-        <div className="p-6 space-y-5 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-1 bg-[var(--bg-input)] p-1 rounded-xl">
-            {(
-              [
-                ['shift', '平移'],
-                ['set', '设为指定时间'],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setMode(value)}
-                className={`py-2 text-sm font-medium rounded-lg transition-all ${
-                  mode === value
-                    ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] text-[var(--accent-contrast)] shadow-xs'
-                    : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-glass)]'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+        <p className="text-xs text-[var(--text-quaternary)] -mt-2">{modeDescription[mode]}</p>
+
+        {mode === 'shift' ? (
+          <div className="grid grid-cols-3 gap-3 animate-fadeIn">
+            {numberField('天', days, setDays, 1)}
+            {numberField('小时', hours, setHours, 1)}
+            {numberField('分钟', minutes, setMinutes, 1)}
           </div>
-
-          <p className="text-xs text-[var(--text-quaternary)] -mt-2">{modeDescription[mode]}</p>
-
-          {mode === 'shift' ? (
-            <div className="grid grid-cols-3 gap-3 animate-fadeIn">
-              {numberField('天', days, setDays, 1)}
-              {numberField('小时', hours, setHours, 1)}
-              {numberField('分钟', minutes, setMinutes, 1)}
-            </div>
-          ) : (
-            <div className="space-y-4 animate-fadeIn">
-              <div>
-                <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">
-                  基准时间
-                </label>
-                <input
-                  type="datetime-local"
-                  step={1}
-                  value={targetValue}
-                  onChange={(e) => setTargetValue(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
-                />
-              </div>
-
-              <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={keepRelative}
-                  onChange={(e) => setKeepRelative(e.target.checked)}
-                  className="rounded-sm border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] accent-[var(--accent-blue)] cursor-pointer"
-                />
-                <span className="text-sm text-[var(--text-secondary)]">保持原有时间间隔</span>
+        ) : (
+          <div className="space-y-4 animate-fadeIn">
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-tertiary)] mb-1.5">
+                基准时间
               </label>
+              <input
+                type="datetime-local"
+                step={1}
+                value={targetValue}
+                onChange={(e) => setTargetValue(e.target.value)}
+                className="w-full px-3 py-2 bg-[var(--bg-input)] border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-primary)] outline-hidden focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[rgba(var(--accent-blue-rgb),0.25)] transition-all"
+              />
             </div>
-          )}
 
-          {/* 预览 */}
-          <div
-            className={`border p-4 rounded-xl ${
-              canApply
-                ? 'bg-[rgba(var(--accent-blue-rgb),0.08)] border-[rgba(var(--accent-blue-rgb),0.2)]'
-                : 'bg-[var(--bg-glass)] border-[var(--border-subtle)]'
-            }`}
-          >
-            {canApply ? (
-              <>
-                <p className="text-xs font-medium mb-2.5 text-[var(--accent-cyan)]">预览</p>
-                <div className="space-y-2">
-                  {preview.map(({ photo, timestamp }) => (
-                    <div
-                      key={photo.id}
-                      className="flex items-center gap-2 text-xs font-mono min-w-0"
-                    >
-                      <span
-                        className="text-[var(--text-tertiary)] truncate flex-1"
-                        title={photo.name}
-                      >
-                        {photo.name}
-                      </span>
-                      <span className="text-[var(--text-quaternary)] shrink-0">
-                        {formatPreviewTime(photoOriginalTime(photo))}
-                      </span>
-                      <span className="text-[var(--text-quaternary)] shrink-0">→</span>
-                      <span className="text-[var(--text-primary)] shrink-0">
-                        {formatPreviewTime(timestamp)}
-                      </span>
-                    </div>
-                  ))}
-                  {adjustments.length > preview.length && (
-                    <p className="text-xs text-[var(--text-quaternary)]">
-                      …等共 {adjustments.length} 项
-                    </p>
-                  )}
-                </div>
-              </>
-            ) : (
-              <p className="text-xs text-[var(--text-quaternary)]">
-                {mode === 'shift' ? '请输入非零的时间偏移' : '请选择基准时间'}
-              </p>
-            )}
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={keepRelative}
+                onChange={(e) => setKeepRelative(e.target.checked)}
+                className="rounded-sm border-[var(--border-input)] bg-[var(--bg-input)] text-[var(--accent-blue)] accent-[var(--accent-blue)] cursor-pointer"
+              />
+              <span className="text-sm text-[var(--text-secondary)]">保持原有时间间隔</span>
+            </label>
           </div>
-        </div>
+        )}
 
-        <div className="px-6 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] border border-[var(--border-default)] rounded-xl transition-all duration-200"
-          >
-            取消
-          </button>
-          <button
-            onClick={() => canApply && onApply(adjustments)}
-            disabled={!canApply}
-            className={`px-6 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${
-              canApply
-                ? 'text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)] active:scale-[0.98]'
-                : 'text-[var(--text-quaternary)] bg-[var(--bg-input)] border border-[var(--border-subtle)] cursor-not-allowed'
-            }`}
-          >
-            应用
-          </button>
+        {/* 预览 */}
+        <div
+          className={`border p-4 rounded-xl ${
+            canApply
+              ? 'bg-[rgba(var(--accent-blue-rgb),0.08)] border-[rgba(var(--accent-blue-rgb),0.2)]'
+              : 'bg-[var(--bg-glass)] border-[var(--border-subtle)]'
+          }`}
+        >
+          {canApply ? (
+            <>
+              <p className="text-xs font-medium mb-2.5 text-[var(--accent-cyan)]">预览</p>
+              <div className="space-y-2">
+                {preview.map(({ photo, timestamp }) => (
+                  <div key={photo.id} className="flex items-center gap-2 text-xs font-mono min-w-0">
+                    <span
+                      className="text-[var(--text-tertiary)] truncate flex-1"
+                      title={photo.name}
+                    >
+                      {photo.name}
+                    </span>
+                    <span className="text-[var(--text-quaternary)] shrink-0">
+                      {formatPreviewTime(photoOriginalTime(photo))}
+                    </span>
+                    <span className="text-[var(--text-quaternary)] shrink-0">→</span>
+                    <span className="text-[var(--text-primary)] shrink-0">
+                      {formatPreviewTime(timestamp)}
+                    </span>
+                  </div>
+                ))}
+                {adjustments.length > preview.length && (
+                  <p className="text-xs text-[var(--text-quaternary)]">
+                    …等共 {adjustments.length} 项
+                  </p>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-[var(--text-quaternary)]">
+              {mode === 'shift' ? '请输入非零的时间偏移' : '请选择基准时间'}
+            </p>
+          )}
         </div>
       </div>
-    </div>
+
+      <div className="px-6 py-4 border-t border-[var(--border-subtle)] flex justify-end gap-3">
+        <button
+          onClick={onClose}
+          className="px-6 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] border border-[var(--border-default)] rounded-xl transition-all duration-200"
+        >
+          取消
+        </button>
+        <button
+          onClick={() => canApply && onApply(adjustments)}
+          disabled={!canApply}
+          className={`px-6 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${
+            canApply
+              ? 'text-[var(--accent-contrast)] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-hover))] shadow-lg shadow-[rgba(var(--accent-blue-rgb),0.3)] active:scale-[0.98]'
+              : 'text-[var(--text-quaternary)] bg-[var(--bg-input)] border border-[var(--border-subtle)] cursor-not-allowed'
+          }`}
+        >
+          应用
+        </button>
+      </div>
+    </ModalShell>
   );
 };
 
