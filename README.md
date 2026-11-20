@@ -8,7 +8,7 @@
 | 定位 | **个人自用**的本地照片 / 视频整理工具，macOS 优先；不对外分发，不做签名 / 公证；更新检查是唯一的可选联网能力，只下载更新包、不静默安装 |
 | 隐私 | 全部本地处理；AI 分析与可关闭的更新检查是仅有的联网功能。AI 密钥由主进程读取并代理请求、在本机明文存储（界面只读到尾号掩码）；更新检查只请求 GitHub Releases，不上报任何使用数据 |
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
-| 当前版本 | **v0.6.5**（2026-11-20 开发完成，待发版；新增「关于与更新」整页视图）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
+| 当前版本 | **v0.6.5**（2026-11-20 发布；新增「关于与更新」整页视图）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
 | 产品路线 | 定位、优先级与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；任务清单见 [`TODO.md`](./TODO.md) |
 | 质量护栏 | `npm run verify` 全绿（typecheck / lint / format / test）；测试数量以命令输出为准 · 验证基线见 [`docs/quality.md`](./docs/quality.md) |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |

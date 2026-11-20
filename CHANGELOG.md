@@ -2,7 +2,7 @@
 
 本文件记录**用户可感知的变化**（功能、行为、修复、安全），格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **发布状态**：**v0.6.5 已开发完成（2026-11-20），待发版** —— `package.json` `0.6.5`，尚未构建 DMG 与打 tag。**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
+> **发布状态**：**v0.6.5 已于 2026-11-20 正式发布** —— `package.json` `0.6.5`、git tag `v0.6.5`、DMG `PhotoMinder-0.6.5-arm64.dmg`（GitHub Release 上传待维护者登录 `gh` 后补）。**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
 > v0.6.1 于 2026-11-06 发布（tag `v0.6.1`）。工作区另有 v0.8.0 / v1.0.0 的提前交付，尚未发版，见下方 `[Unreleased]`。
 > 历史版本的日期为开发完成日期，不一定等于发布日；本文件只记录已交付事实。
 >
@@ -12,15 +12,15 @@
 
 ## [Unreleased]
 
-> **v0.6.5 已开发完成、待发版**；下面几条版本线的能力**已入库但未发版**，版本号仍随当前 `package.json`（0.6.5），
-> 不计入任何已发布版本。发版时把对应分组升格为版本节即可。主题与退出标准见 `ROADMAP.md`。
+> **v0.6.5 已于 2026-11-20 发布**；下面几条版本线的能力**已入库但未发版**，不计入任何已发布版本。
+> 主题与退出标准见 `ROADMAP.md`。
 
 ### 审查修复（2026-11-20）
 
 - **移动后列表不刷新（Fixed）**：把照片移到图库之外的文件夹后，条目仍留在列表里、选中态也未取消，点开即失效。原因是移动成功后只把条目 `path` 改到新位置（"路径跟随"），既没移除也没清选择；而移动前源路径已被回环防护登记，watcher 的 `removed` 事件也被主动吃掉，等不到兜底。现在按「目标是否仍在图库来源范围内」分流：库内移动更新路径，库外移动从列表移除、清掉这部分选中，Toast 注明「已移出图库」。判断下沉为 `isPathInLibrary` 纯函数（14 项单测覆盖前缀歧义、末尾斜杠、跨平台分隔符）。
 - **产品自我叙述与代码对齐**：「关于与更新」页移除并未实现的「手动相簿」宣称，标签与相簿描述改为只列已交付能力；迭代计划的主题名与交付状态对齐 `ROADMAP.md`（v0.8.0 回顾版、v1.0.0 可托付版，提前交付项如实标注）。
 - **README 过时限制修正**：「已知限制」曾称收藏 / 标签 / 时间修正 / AI 结果「按文件路径记录、改名后失联」，与 v0.6.1 起的内容指纹主键矛盾，已改为「按内容指纹记录、重新导入即可续上」。
-- **版本护栏与测试数字对账**：`package.json` / `package-lock.json` bump 到 `0.6.5`，版本护栏恢复绿（构建 DMG 与打 tag 仍待发版动作）；README / CODE_REVIEW 中的测试数量统一为实测口径（以 `npm test` 输出为准）。
+- **版本护栏与测试数字对账**：`package.json` / `package-lock.json` bump 到 `0.6.5`，版本护栏恢复绿；README / CODE_REVIEW 中的测试数量统一为实测口径（以 `npm test` 输出为准）。
 - **信息架构重组（P2）**：侧栏四组由按实现模块命名改为按用户任务命名并排序——「浏览 / 回顾 / 整理 / 帮助」（浏览每天用、帮助最少用），分段标题加 tooltip 说明作用；新增 `sidebarIA.test.ts` 静态护栏锁定分组名与顺序，防止滑回模块命名。所有入口保留，未删任何功能。
 
 ### v0.7.0 · 整理版（第一批，进行中）
@@ -87,10 +87,10 @@
 
 ### 说明
 
-- 更新记录第一条由单测强制与 `package.json` 版本一致（`tests/unit/aboutContent.test.ts`），发版时忘记补记录会直接失败。2026-11-20 已把 `package.json` / `package-lock.json` bump 到 `0.6.5`，护栏恢复绿；**构建 DMG 与打 tag 仍待发版动作**。
+- 更新记录第一条由单测强制与 `package.json` 版本一致（`tests/unit/aboutContent.test.ts`），发版时忘记补记录会直接失败。2026-11-20 已把 `package.json` / `package-lock.json` bump 到 `0.6.5`，护栏恢复绿。
 - 关于页在前台时检查结果就地展示，不再叠「发现新版本」Toast（否则点进去又会打开面板）；菜单更新面板打开时 `Esc` 仍只关面板、不退出关于页。
 - `tests/unit/aboutUpdateFlow.test.ts` 静态锁定交互决策：整页检查不走 `openPanel`、菜单面板不重复自动检查开关。
-- 本次只开发，未构建 DMG、未打 tag。
+- **发布结果（2026-11-20）**：`npm run verify:full` 全绿（单测 28 文件 422 项 / 主进程 12 文件），Electron 冒烟 CSP 违规 0、控制台错误 0；DMG `PhotoMinder-0.6.5-arm64.dmg` 已构建、tag `v0.6.5` 已打。GitHub Release 上传待维护者登录 `gh` 后补 —— 应用内更新检查依赖 `/releases/latest`，在此之前线上仍显示 v0.6.4 为最新。
 
 ---
 
