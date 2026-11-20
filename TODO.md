@@ -136,8 +136,9 @@
 | **F19** | 整页视图 `AboutView`：分区呈现 + 「版本与更新」区块（检查更新 / 发布页 / 自动检查开关） | 复用 `useUpdateChecker`，不直连 IPC；深浅主题与窄窗口不溢出 | ✅ |
 | **F20** | 入口与路由：左栏新增「应用」分区 + `MainView` 增 `about` + Esc 返回（更新面板打开时让位） | 侧栏进入 / 返回 / Esc 均正常；弹窗打开时 Esc 只关弹窗 | ✅ |
 | **F21** | 内容护栏：`tests/unit/aboutContent.test.ts` | 更新记录首条版本 = `package.json`；版本唯一降序；无 hex 色值 | ✅ |
+| **F22** | 交互优化：「版本与更新」就地完成检查 / 下载 / 安装引导，结果常驻可见；菜单面板移除重复的自动检查开关 | `tests/unit/aboutUpdateFlow.test.ts` 锁定交互决策；关于页在前台时抑制重复 Toast | ✅ |
 
-**剩余**：构建 DMG、打 tag `v0.6.5` 并上传 Release（本次按用户选择只开发不发版）。
+**剩余**：`package.json` 仍是 `0.6.4`，而关于页更新记录首条为 `0.6.5`——`aboutContent.test.ts` 的版本护栏因此在发版前保持红（当前 393/394 通过）。发版时把 `package.json` bump 到 `0.6.5` 即可恢复，本次不擅自改版本。另需构建 DMG、打 tag `v0.6.5` 并上传 Release（按用户选择只开发不发版）。
 
 ---
 

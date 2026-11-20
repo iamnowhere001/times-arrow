@@ -8,6 +8,7 @@
 
 import type { UpdateCheckResult, UpdateDownloadState } from '@/types';
 import ModalShell from '@/components/common/ModalShell';
+import { formatBytes, formatPublishedAt } from '@/lib/about/updateFormat';
 
 interface UpdateModalProps {
   isOpen: boolean;
@@ -17,27 +18,12 @@ interface UpdateModalProps {
   isChecking: boolean;
   error: string | null;
   download: UpdateDownloadState;
-  autoCheck: boolean;
   onCheck: () => void;
   onDownload: () => void;
   onCancelDownload: () => void;
   onOpenDownload: () => void;
   onRevealDownload: () => void;
   onOpenRelease: () => void;
-  onToggleAutoCheck: (enabled: boolean) => void;
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '';
-  const mb = bytes / (1024 * 1024);
-  return `${mb >= 100 ? Math.round(mb) : mb.toFixed(1)} MB`;
-}
-
-function formatPublishedAt(value?: string): string {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('zh-CN');
 }
 
 const primaryButtonClass =
@@ -54,14 +40,12 @@ export function UpdateModal({
   isChecking,
   error,
   download,
-  autoCheck,
   onCheck,
   onDownload,
   onCancelDownload,
   onOpenDownload,
   onRevealDownload,
   onOpenRelease,
-  onToggleAutoCheck,
 }: UpdateModalProps) {
   const isDownloading = download.state === 'downloading';
   const isDownloaded = download.state === 'done';
@@ -92,17 +76,9 @@ export function UpdateModal({
           </span>
         </div>
 
-        <label className="flex items-center justify-between gap-4 cursor-pointer select-none">
-          <span className="text-xs text-[var(--text-tertiary)]">
-            启动时自动检查更新（静默检查，仅在有新版本时提示）
-          </span>
-          <input
-            type="checkbox"
-            checked={autoCheck}
-            onChange={(event) => onToggleAutoCheck(event.target.checked)}
-            className="accent-[var(--accent-blue)] w-4 h-4 shrink-0"
-          />
-        </label>
+        <p className="text-[11px] text-[var(--text-quaternary)]">
+          自动检查可在「关于与更新」页设置。
+        </p>
 
         {error && (
           <div className="rounded-xl border border-[rgba(var(--accent-pink-rgb),0.3)] bg-[rgba(var(--accent-pink-rgb),0.1)] px-4 py-3">

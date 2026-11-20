@@ -26,6 +26,12 @@ const SILENT_CHECK_DELAY = 5_000;
 
 export interface UseUpdateCheckerParams {
   showToast: (message: string, type?: ToastType, action?: ToastAction) => void;
+  /**
+   * 「关于与更新」整页是否在前台。
+   * 整页会就地展示检查结果，此时再弹「发现新版本 / 查看更新」Toast 属于重复打扰，
+   * 点进去还会再开一次面板 —— 用 ref 跟踪，避免视图切换重建 runCheck。
+   */
+  isAboutActive?: boolean;
 }
 
 export interface UseUpdateCheckerResult {
@@ -47,7 +53,10 @@ export interface UseUpdateCheckerResult {
   setAutoCheck: (enabled: boolean) => void;
 }
 
-export function useUpdateChecker({ showToast }: UseUpdateCheckerParams): UseUpdateCheckerResult {
+export function useUpdateChecker({
+  showToast,
+  isAboutActive = false,
+}: UseUpdateCheckerParams): UseUpdateCheckerResult {
   const [isOpen, setIsOpen] = useState(false);
   const [currentVersion, setCurrentVersion] = useState('');
   const [checkResult, setCheckResult] = useState<UpdateCheckResult | null>(null);
@@ -61,6 +70,11 @@ export function useUpdateChecker({ showToast }: UseUpdateCheckerParams): UseUpda
   useEffect(() => {
     isOpenRef.current = isOpen;
   }, [isOpen]);
+  /** 关于页在前台时检查结果就地可见，静默检查与手动检查都不再叠 Toast */
+  const isAboutActiveRef = useRef(isAboutActive);
+  useEffect(() => {
+    isAboutActiveRef.current = isAboutActive;
+  }, [isAboutActive]);
 
   const runCheck = useCallback(
     async (silent: boolean) => {
@@ -79,7 +93,7 @@ export function useUpdateChecker({ showToast }: UseUpdateCheckerParams): UseUpda
             logger.warn('静默检查更新失败:', response.error);
           } else {
             setError(response.error);
-            if (!isOpenRef.current) showToast(response.error, 'error');
+            if (!isOpenRef.current && !isAboutActiveRef.current) showToast(response.error, 'error');
           }
           return;
         }
@@ -87,14 +101,14 @@ export function useUpdateChecker({ showToast }: UseUpdateCheckerParams): UseUpda
         setCheckResult(response.data);
         setCurrentVersion(response.data.currentVersion);
         if (response.data.status === 'available') {
-          // 面板已打开时结果就在眼前，不再叠 Toast
-          if (!isOpenRef.current) {
+          // 面板或关于页已打开时结果就在眼前，不再叠 Toast
+          if (!isOpenRef.current && !isAboutActiveRef.current) {
             showToast(`发现新版本 ${response.data.latestVersion}`, 'info', {
               label: '查看更新',
               onClick: () => setIsOpen(true),
             });
           }
-        } else if (!silent && !isOpenRef.current) {
+        } else if (!silent && !isOpenRef.current && !isAboutActiveRef.current) {
           showToast(
             response.data.status === 'up-to-date' ? '已是最新版本' : 'GitHub 上还没有发布版本',
             'info'
@@ -106,7 +120,7 @@ export function useUpdateChecker({ showToast }: UseUpdateCheckerParams): UseUpda
           logger.warn('静默检查更新失败:', message);
         } else {
           setError(message);
-          showToast(message, 'error');
+          if (!isOpenRef.current && !isAboutActiveRef.current) showToast(message, 'error');
         }
       } finally {
         setIsChecking(false);
@@ -207,8 +221,8 @@ export function useUpdateChecker({ showToast }: UseUpdateCheckerParams): UseUpda
         total: progress.total,
         error: message,
       });
-      // 面板里已经能看到错误时不再叠一条 Toast
-      if (!isOpenRef.current) showToast(message, 'error');
+      // 面板或关于页里已经能看到错误时不再叠一条 Toast
+      if (!isOpenRef.current && !isAboutActiveRef.current) showToast(message, 'error');
     });
 
     return () => {

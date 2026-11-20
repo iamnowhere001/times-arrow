@@ -132,8 +132,15 @@ const App: React.FC = () => {
   // Toast 队列：支持多条同时展示，错误级常驻（见 hooks/useToasts）
   const { toasts, showToast, dismissToast } = useToasts();
 
+  // 主内容区当前视图：重复检测是独立整页，而非弹窗
+  const [mainView, setMainView] = useState<MainView>('library');
+
   // 更新检查与应用内下载：启动后静默检查一次，菜单「检查更新…」打开面板（见 hooks/useUpdateChecker）
-  const updateChecker = useUpdateChecker({ showToast });
+  // 关于页在前台时把标志传进去：结果就地可见，避免再叠一层「查看更新」Toast
+  const updateChecker = useUpdateChecker({
+    showToast,
+    isAboutActive: mainView === 'about',
+  });
 
   // v0.6.2 批次 2：现场撤销（成功 Toast 按钮与「编辑 → 撤销上次文件操作」共用同一条链路）。
   // IPC 不回传 operation id，所以只撤日志里最近一条未撤销记录；批量场景由调用点
@@ -283,8 +290,6 @@ const App: React.FC = () => {
   /** 文件操作（重命名 / 删除）的提交锁：防止确认按钮被连点导致同一批文件提交两次 */
   const fileOpLockRef = useRef(false);
 
-  /** 主内容区当前视图：重复检测是独立整页，而非弹窗 */
-  const [mainView, setMainView] = useState<MainView>('library');
   /** 重复检测页是否在前台：键盘快捷键与参数重跑逻辑据此让行 */
   const isDuplicateDetectorOpen = mainView === 'duplicates';
   /** 时光画廊是否在前台：工具栏 / 详情面板据此让行 */
@@ -1107,10 +1112,17 @@ const App: React.FC = () => {
               currentVersion={updateChecker.currentVersion}
               autoCheck={updateChecker.autoCheck}
               isChecking={updateChecker.isChecking}
+              checkResult={updateChecker.checkResult}
+              error={updateChecker.error}
+              download={updateChecker.download}
               onBack={handleExitToLibrary}
-              onCheckUpdate={updateChecker.openPanel}
+              onCheckUpdate={updateChecker.checkNow}
               onToggleAutoCheck={updateChecker.setAutoCheck}
               onOpenRelease={updateChecker.openReleasePage}
+              onStartDownload={updateChecker.startDownload}
+              onCancelDownload={updateChecker.cancelDownload}
+              onOpenDownload={updateChecker.openDownloaded}
+              onRevealDownload={updateChecker.revealDownloaded}
             />
           </ErrorBoundary>
         ) : (
@@ -1325,14 +1337,12 @@ const App: React.FC = () => {
         isChecking={updateChecker.isChecking}
         error={updateChecker.error}
         download={updateChecker.download}
-        autoCheck={updateChecker.autoCheck}
         onCheck={updateChecker.checkNow}
         onDownload={updateChecker.startDownload}
         onCancelDownload={updateChecker.cancelDownload}
         onOpenDownload={updateChecker.openDownloaded}
         onRevealDownload={updateChecker.revealDownloaded}
         onOpenRelease={updateChecker.openReleasePage}
-        onToggleAutoCheck={updateChecker.setAutoCheck}
       />
       {/* 数据资产：配置导出导入 / 路径重连 / 操作日志与撤销 / 增量备份 */}
       <DataAssetsModal

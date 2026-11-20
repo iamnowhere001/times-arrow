@@ -43,11 +43,18 @@ export interface AboutContent {
 export const ABOUT_CONTENT: AboutContent = {
   appName: '时光画框',
   subtitle: '本地照片整理工作台',
-  tagline: '把散落在硬盘各处的照片收进一处：认得出、找得到、放心删。文件操作直接作用于磁盘，除可选的 AI 分析外全程不联网。',
+  tagline:
+    '把散落在硬盘各处的照片收进一处：认得出、找得到、放心删。文件操作直接作用于磁盘，除可选的 AI 分析外全程不联网。',
   promises: [
-    { title: '纯本地', description: '不上报、不云同步；只有你主动触发的 AI 分析与可关闭的更新检查会联网。' },
+    {
+      title: '纯本地',
+      description: '不上报、不云同步；只有你主动触发的 AI 分析与可关闭的更新检查会联网。',
+    },
     { title: '不覆盖', description: '写盘前先原子占位，同名文件自动追加序号，绝不覆盖已有照片。' },
-    { title: '可恢复', description: '删除进系统回收站；重命名、移动到导出都有操作日志，能撤销就撤销。' },
+    {
+      title: '可恢复',
+      description: '删除进系统回收站；重命名、移动到导出都有操作日志，能撤销就撤销。',
+    },
   ],
   features: [
     {
@@ -67,8 +74,7 @@ export const ABOUT_CONTENT: AboutContent = {
     },
     {
       title: '时光画廊',
-      description:
-        '按拍摄时间线沉浸式回顾，年份跳转与密度切换随手可用；视频直接内嵌播放。',
+      description: '按拍摄时间线沉浸式回顾，年份跳转与密度切换随手可用；视频直接内嵌播放。',
     },
     {
       title: '按地点浏览',
@@ -102,7 +108,8 @@ export const ABOUT_CONTENT: AboutContent = {
     },
     {
       title: '失败可解释',
-      description: '每个失败路径都给出原因与下一步：Toast、行内错误或「在数据资产中查看」，不静默吞错。',
+      description:
+        '每个失败路径都给出原因与下一步：Toast、行内错误或「在数据资产中查看」，不静默吞错。',
     },
     {
       title: '为长列表设计',
@@ -110,11 +117,20 @@ export const ABOUT_CONTENT: AboutContent = {
     },
   ],
   tips: [
-    { title: '直接拖进来', description: '把文件或文件夹拖到窗口任意位置即可导入，不需要先点导入按钮。' },
+    {
+      title: '直接拖进来',
+      description: '把文件或文件夹拖到窗口任意位置即可导入，不需要先点导入按钮。',
+    },
     { title: '⌘F 找照片', description: '聚焦搜索框，文件名、相机、格式一起匹配。' },
     { title: '空格快速预览', description: '选中后按空格打开预览，方向键翻页，可以边看边收藏。' },
-    { title: '⌘⌫ 移入回收站', description: '删除先进系统回收站，操作完成后的提示条上可以直接撤销。' },
-    { title: '右键做批量操作', description: '选中多张后右键，重命名、移动、导出、加标签都在同一处。' },
+    {
+      title: '⌘⌫ 移入回收站',
+      description: '删除先进系统回收站，操作完成后的提示条上可以直接撤销。',
+    },
+    {
+      title: '右键做批量操作',
+      description: '选中多张后右键，重命名、移动、导出、加标签都在同一处。',
+    },
     { title: '⇧/ 查看全部快捷键', description: '不确定按键时按 ⇧ 加斜杠，随时唤出快捷键总览。' },
   ],
   roadmap: [
@@ -141,7 +157,9 @@ export const ABOUT_CONTENT: AboutContent = {
     {
       version: '0.6.5',
       date: '2026-11-20',
-      highlights: ['新增「关于与更新」页：功能、特色、技巧、迭代计划、更新记录与版本检查集中在一处。'],
+      highlights: [
+        '新增「关于与更新」页：功能、特色、技巧、迭代计划、更新记录与版本检查集中在一处。',
+      ],
     },
     {
       version: '0.6.4',
