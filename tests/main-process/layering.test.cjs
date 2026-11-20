@@ -136,12 +136,53 @@ check(
 );
 for (const hit of backRefs) console.log(`        ${hit.file}:${hit.line}  ${hit.text}`);
 
-section('6. 守卫自身有效（防止目录改名后静默通过）');
+section('6. src/services 不得 import 组件 / hooks（用例层不反向依赖 UI）');
+const servicesFiles = walk(path.join(APP_ROOT, 'src/services'), /\.ts$/);
+const servicesToUiHits = scan(servicesFiles, /from ['"]@\/(components|hooks)/);
 check(
-  '已扫描到 hooks / lib / components / electron 模块',
+  'services → components/hooks 为 0 处',
+  servicesToUiHits.length === 0,
+  servicesToUiHits.map((h) => `${h.file}:${h.line}`).join('；')
+);
+for (const hit of servicesToUiHits) console.log(`        ${hit.file}:${hit.line}  ${hit.text}`);
+
+section('7. src/lib 不得 import hooks / services（领域层不依赖编排 / 用例）');
+const libToUpperHits = scan(libFiles, /from ['"]@\/(hooks|services)/);
+check(
+  'lib → hooks/services 为 0 处',
+  libToUpperHits.length === 0,
+  libToUpperHits.map((h) => `${h.file}:${h.line}`).join('；')
+);
+for (const hit of libToUpperHits) console.log(`        ${hit.file}:${hit.line}  ${hit.text}`);
+
+section('8. src/types 不得 import 运行时层（类型契约保持无副作用）');
+const typeFiles = walk(path.join(APP_ROOT, 'src/types'), /\.ts$/);
+const typeRuntimeHits = scan(typeFiles, /from ['"]@\/(components|hooks|lib|services)/);
+check(
+  'types → 运行时层为 0 处',
+  typeRuntimeHits.length === 0,
+  typeRuntimeHits.map((h) => `${h.file}:${h.line}`).join('；')
+);
+for (const hit of typeRuntimeHits) console.log(`        ${hit.file}:${hit.line}  ${hit.text}`);
+
+section('9. 主进程不得 require 渲染层 src/（进程边界不反向）');
+const mainAllFiles = [path.join(APP_ROOT, 'electron/main.js'), ...mainModuleFiles];
+const mainToRendererHits = scan(mainAllFiles, /require\(\s*[`'"][^`'"]*src\//);
+check(
+  'electron → src 为 0 处',
+  mainToRendererHits.length === 0,
+  mainToRendererHits.map((h) => `${h.file}:${h.line}`).join('；')
+);
+for (const hit of mainToRendererHits) console.log(`        ${hit.file}:${hit.line}  ${hit.text}`);
+
+section('10. 守卫自身有效（防止目录改名后静默通过）');
+check(
+  '已扫描到 hooks / lib / components / services / types / electron 模块',
   hooksFiles.length > 0 &&
     libFiles.length > 0 &&
     componentFiles.length > 0 &&
+    servicesFiles.length > 0 &&
+    typeFiles.length > 0 &&
     mainModuleFiles.length > 0
 );
 

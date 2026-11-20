@@ -10,9 +10,9 @@
 | 技术栈 | Electron 44 · React 19 · TypeScript 7 · Vite 8 · Tailwind CSS 4 |
 | 当前版本 | **v0.6.5**（2026-11-20 开发完成，待发版；新增「关于与更新」整页视图）· 已交付事实见 [`CHANGELOG.md`](./CHANGELOG.md) |
 | 产品路线 | 定位、优先级与版本退出标准见 [`ROADMAP.md`](./ROADMAP.md)；任务清单见 [`TODO.md`](./TODO.md) |
-| 质量护栏 | ESLint + oxlint 0 problems · 单测 398 项 · 主进程集成测试 286 项 · Electron 冒烟 1 项 |
+| 质量护栏 | `npm run verify` 全绿（typecheck / lint / format / test）；测试数量以命令输出为准 · 验证基线见 [`docs/quality.md`](./docs/quality.md) |
 | 审查报告 | 代码审查结论与 P0 / P1 / P2 修复记录见 [`CODE_REVIEW.md`](./CODE_REVIEW.md)；2026-11-05 批次见附录 F |
-| 协作手册 | AI 代理与新贡献者的操作约束见 [`AGENTS.md`](./AGENTS.md) |
+| 协作手册 | AI 代理与新贡献者的操作约束见 [`AGENTS.md`](./AGENTS.md)；文档地图见 [`docs/README.md`](./docs/README.md)，架构与扩展手册见 [`docs/architecture.md`](./docs/architecture.md) |
 
 ---
 
@@ -44,13 +44,17 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 | 命令 | 说明 |
 | --- | --- |
+| `npm run verify` | 一条命令：typecheck + lint + format:check + test（提交前默认） |
+| `npm run verify:full` | verify + build（改构建 / 入口 / 主进程时） |
 | `npm run typecheck` | `tsc --noEmit`（渲染进程 + 构建配置 + tests 三个 project） |
 | `npm run lint` / `lint:fix` | ESLint（JS/CJS）+ oxlint（TS/TSX，type-aware；当前均为 0 problems） |
 | `npm run format` / `format:check` | Prettier（已全量格式化，`format:check` 通过） |
 | `npm run test` | `test:main` + `test:unit` |
-| `npm run test:unit` | Vitest 纯函数单测（398 项） |
-| `npm run test:main` | 打桩 electron 的主进程集成测试（286 项 = 22 + 18 + 48 + 16 + 47 + 迁移守卫 30 + 重命名预演 20 + 崩溃记录 16 + 数据健康 18 + 更新检查 35 + 分层依赖 6 + IPC 契约 10） |
+| `npm run test:unit` | Vitest 纯函数单测（自动发现 `tests/unit/*.test.ts`） |
+| `npm run test:main` | 打桩 electron 的主进程集成测试（自动发现 `tests/main-process/*.test.cjs`；`-- <关键字>` 可只跑匹配文件） |
 | `npm run test:smoke` | 真启动 Electron 的端到端冒烟 |
+
+> 测试数量不写死在文档里，以命令输出为准；当前基线与分层说明见 [`docs/quality.md`](./docs/quality.md)。
 
 > **两个环境注意事项**
 > 1. **lint 分两层**：`lint:js` 用 ESLint 检查 JS/CJS（主进程、构建脚本），`lint:ts` 用 oxlint（type-aware）检查 TS/TSX。这样绕开了 `typescript-eslint` 对 TypeScript 7 的 peer 限制（该包已从 devDependencies 移除），同时让 TS 侧重新获得静态检查。
@@ -237,7 +241,7 @@ DMG 约 80MB（安装后约 227MB），其中 Electron Framework 本体占 190MB
 
 | 分类 | 选型 |
 | --- | --- |
-| 桌面壳 | Electron 44（主进程 `electron/main.js` 1,343 行 + `electron/main/` 6 个领域模块 + 预加载 `electron/preload.js`） |
+| 桌面壳 | Electron 44（主进程 `electron/main.js` 组合根 + `electron/main/` 9 个领域模块 + 预加载 `electron/preload.js`） |
 | 前端 | React 19、TypeScript 7 |
 | 构建 | Vite 8（`@vitejs/plugin-react`） |
 | 样式 | Tailwind CSS 4（CSS-first `@theme`）+ `src/styles/styles.css` 的 CSS 变量 |
@@ -292,78 +296,15 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 
 ## 目录结构
 
+```text
+electron/                 # 主进程：main.js 组合根 + main/ 领域模块 + lib/ 基础设施
+src/                      # 渲染进程：App 组合 + components / hooks / services / lib / types
+tests/                    # 三层验证：unit / main-process / smoke
+docs/                     # 架构 / 质量 / 决策 / 文档地图 / 历史存档
+build/                    # electron-builder 资源与打包钩子
 ```
-.
-├── electron/             # 主进程（Node / CommonJS）
-│   ├── main.js           #   入口：窗口、菜单、IPC 注册、pm:// 协议（1,343 行）
-│   ├── preload.js        #   contextBridge 暴露 window.electronAPI
-│   ├── main/             #   按领域拆出的主进程模块（2026-11-05，见 CODE_REVIEW 附录 F）
-│   │   ├── ai.cjs        #     DeepSeek 代理、AI 配置读写与密钥掩码
-│   │   ├── authorization.cjs #  会话级路径白名单
-│   │   ├── media-pipeline.cjs # 扫描 / EXIF / 缩略图 / HEIC / dHash
-│   │   ├── store.cjs     #     本地 JSON 存储、原子写、损坏备份与通知
-│   │   ├── data-assets.cjs #   内容指纹 / 配置导出导入 / 路径重连 / 操作日志 / 增量备份
-│   │   └── migrations.cjs #    config.json / ai-cache.json 的 v1→v2 结构迁移（路径键 → 内容指纹）
-│   └── lib/
-│       ├── csp.cjs       #     CSP 策略唯一定义（响应头与构建期 meta 共用同一份）
-│       ├── fingerprint.cjs #   内容指纹（size + 头尾各 64KB 的 sha256，128 bit）
-│       ├── dhash.cjs     #     感知哈希算法本体（主进程与渲染层共用唯一实现）
-│       ├── dhash.d.cts   #     上者的类型声明，供渲染层具名导入
-│       └── logger.cjs    #     轻量日志器（开发输出 / 打包静默）
-├── src/                  # 渲染进程（React / Vite）
-│   ├── main.tsx          #   挂载入口（createRoot + ErrorBoundary）
-│   ├── App.tsx           #   应用主组件：组合 hooks + 视图路由
-│   ├── hooks/            #   从 App 抽出的功能域 hook（共 20 个）
-│   │                     #     编排：useAppConfig / useLibraryImport / useIngestPipeline
-│   │                     #     数据：usePersistedLibraryData / useLibraryDerived / useLibrarySources
-│   │                     #     交互：useSelection / useFileOperations / useFileOpFeedback
-│   │                     #           useDragAndDrop / useKeyboardShortcuts / useQuickLook
-│   │                     #     其它：useSmartAlbums / useWatcherSync / useCollapseAnimation
-│   │                     #           useToasts / useThemeMode / useDuplicateDetection
-│   ├── components/       #   UI 组件（按功能域分组）
-│   │   ├── layout/       #     Sidebar / Toolbar / ActiveFiltersBar / ToastStack
-│   │   ├── grid/         #     ImageGrid / ThumbnailImage
-│   │   ├── timeline/     #     TimelineGallery（时光画廊）
-│   │   ├── map/          #     LocationMap（按地点浏览）
-│   │   ├── detail/       #     DetailsPane / QuickLook / VideoPlayer
-│   │   ├── duplicate/    #     DuplicateDetector
-│   │   ├── about/        #     AboutView（关于与更新）
-│   │   ├── filter/       #     FilterPanel
-│   │   ├── modal/        #     Rename / Export / AdjustDate / SaveAlbum / AiSettings / DataAssets 等
-│   │   ├── common/       #     Toast / ErrorBoundary / ViewErrorFallback / ContextMenu 等
-│   │   └── icons/        #     跨文件复用的通用图标（唯一入口，N13 / D4）
-│   ├── services/         #   aiService（经 IPC 走主进程代理）
-│   ├── lib/              #   领域与基础设施逻辑
-│   │   ├── cache/        #     cacheManager / thumbCache / dragThumbnail
-│   │   ├── media/        #     mediaTypes / videoMeta / photoGrouping
-│   │   │                 #     photoTime（时间语义唯一入口）/ photoIdentity（标注主键唯一入口）
-│   │   │                 #     photoHash / filenameRepair
-│   │   ├── filter/       #     filters / libraryViewState
-│   │   ├── persistence/  #     persistence / aiCache / sources
-│   │   ├── geo/          #     mapMath / landMask / places / placeIndex
-│   │   │                 #     places.data.json（1731 条城市，动态 import 成独立 chunk）
-│   │   ├── fs/           #     fileOperations / pathUtils / fileToBase64 / ipcGuard
-│   │   ├── duplicate/    #     duplicateDetection（预筛 / 聚类 / 并查集 / 取消）
-│   │   ├── format/       #     format
-│   │   ├── concurrency.ts
-│   │   ├── contextMenuActions.ts
-│   │   └── logger.ts
-│   ├── types/            #   index.ts（领域类型）+ global.d.ts（IpcResult / window.electronAPI）
-│   ├── utils/index.ts    #   纯再导出 barrel（86 行，实现已按领域拆到 lib/）
-│   └── styles/styles.css #   主题变量与基础样式（Tailwind v4 CSS-first）
-├── tests/                # 三层验证
-│   ├── unit/             #   Vitest 纯函数单测（398 项 / 25 个文件）
-│   ├── main-process/     #   打桩 electron 的集成测试（286 项，含 rename-probe / crash-report / data-health / layering / ipc-contract）+ harness.cjs 脚手架
-│   └── smoke/            #   真启动 Electron 的端到端冒烟
-├── build/                # electron-builder 资源（图标 / afterPack / DMG 重压钩子）
-├── index.html            # Vite 入口 HTML
-├── vite.config.mts       # React + Tailwind 插件、@ 别名、CSP meta 注入、CJS→ESM 插件
-├── tsconfig*.json        # 解决方案 / 渲染进程 / 主进程 三套 TS 配置
-├── .env.example          # 环境变量示例
-├── TODO.md               # 待办任务 / 功能改进 / 已知问题清单
-├── CODE_REVIEW.md        # 代码审查结论与修复记录
-└── package.json          # 含 electron-builder 打包配置（build 字段）
-```
+
+完整模块地图、分层职责、依赖方向与扩展手册见 [`docs/architecture.md`](./docs/architecture.md)。
 
 ---
 
@@ -409,7 +350,7 @@ Electron 侧默认配置偏松，本项目已逐项收紧（详见 `CODE_REVIEW.
 
 个人维护为主，欢迎 Issue 与 Pull Request。
 
-1. 从 `main` 拉出 `feat/xxx` 或 `fix/xxx` 分支；提交前确保 `npm run typecheck`、`npm run lint`、`npm run test` 与 `npm run build` 全部通过（改主进程务必跑 `test:main`）。
+1. 从 `main` 拉出 `feat/xxx` 或 `fix/xxx` 分支；提交前确保 `npm run verify` 通过；改构建 / 入口时再跑 `npm run build`（改主进程务必跑 `test:main`）。
 2. 提交信息遵循 Conventional Commits（`feat` / `fix` / `refactor` / `docs` / `chore` / `style` / `test`，可带 scope），一次提交只做一件事。
 3. 代码沿用现有结构与命名：渲染进程 `src/`、主进程 `electron/`、领域与基础设施逻辑 `src/lib/`、状态编排 `src/hooks/`；界面文案用中文，注释与文档同语言。
 4. 涉及文件操作 / 持久化的改动必须处理失败路径（写盘失败、文件被外部移动或删除），不得静默吞错。

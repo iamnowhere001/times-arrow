@@ -2,6 +2,8 @@
 
 > 在本仓库工作的 AI 编码代理（以及新加入的人类）的操作手册。
 > **先读这份，再动代码。** 它与 `README.md`（功能事实）、`ROADMAP.md`（产品方向）、`TODO.md`（执行清单）、`CODE_REVIEW.md`（技术审查）分工不同，不要用其中一份替代另一份。
+>
+> 文档地图与单一事实源见 [`docs/README.md`](./docs/README.md)；分层 / 依赖方向 / 扩展手册见 [`docs/architecture.md`](./docs/architecture.md)；验证基线与 DoD 见 [`docs/quality.md`](./docs/quality.md)；关键取舍见 [`docs/decisions.md`](./docs/decisions.md)。
 
 ---
 
@@ -17,7 +19,7 @@
 | 渲染进程 | React + TypeScript ESM（`src/`） |
 | 数据目录 | macOS：`~/Library/Application Support/PhotoMinder/` |
 | 当前版本 | `0.6.5`（2026-11-20 开发完成，待发版：左栏「应用 → 关于与更新」整页视图） |
-| 质量基线 | typecheck / lint / 单测 380 项 / 主进程 286 项 / Electron 冒烟 全绿 |
+| 质量基线 | `npm run verify` 全绿（typecheck / lint / format / test）；测试数量以命令输出为准，不写死 |
 
 **产品判断与优先级以 `ROADMAP.md` 为准；任务级状态以 `TODO.md` 为准；行为描述以 `README.md` 为准；历史技术结论以 `CODE_REVIEW.md` 为准。**
 
@@ -35,9 +37,13 @@ npm run electron:dev         # Electron 桌面应用
 npm run typecheck            # tsc 三个 project（渲染 / node / tests）
 npm run lint                 # ESLint(JS/CJS) + oxlint(TS/TSX, type-aware)
 npm run format:check         # Prettier
+npm run verify               # 一条命令：typecheck + lint + format:check + test
+npm run verify:full          # verify + build（改构建 / 入口时）
+npm run verify:release       # verify:full + test:smoke（发版前；受限环境用 test:smoke:no-sandbox）
 npm run test                 # test:main + test:unit
 npm run test:unit            # Vitest 纯函数
-npm run test:main            # 打桩 electron 的主进程集成测试
+npm run test:main            # 打桩 electron 的主进程集成测试（自动发现 *.test.cjs）
+npm run test:main -- updater # 只跑文件名匹配的主进程测试
 npm run test:smoke           # 真实启动 Electron 的冒烟（受限环境改用下一行）
 npm run test:smoke:no-sandbox
 
@@ -63,15 +69,18 @@ electron/
 ├── main/                   # 领域模块（CommonJS）
 │   ├── ai.cjs              #   DeepSeek 代理、AI 配置读写与密钥掩码
 │   ├── authorization.cjs   #   会话级路径白名单
-│   ├── media-pipeline.cjs  #   扫描 / EXIF / 缩略图 / HEIC / dHash
-│   ├── store.cjs           #   JSON 存储、原子写、损坏备份
+│   ├── crash-report.cjs    #   主进程异常落盘与下次启动提示
 │   ├── data-assets.cjs     #   指纹 / 配置导入导出 / 重连 / 日志 / 备份
-│   ├── updater.cjs         #   GitHub Release 检查 / DMG 下载 / 安装引导
-│   └── migrations.cjs      #   config / ai-cache 的 v1→v2 迁移
+│   ├── health.cjs          #   数据健康检查与迁移报告
+│   ├── media-pipeline.cjs  #   扫描 / EXIF / 缩略图 / HEIC / dHash
+│   ├── migrations.cjs      #   config / ai-cache 的 v1→v2 迁移
+│   ├── store.cjs           #   JSON 存储、原子写、损坏备份
+│   └── updater.cjs         #   GitHub Release 检查 / DMG 下载 / 安装引导
 └── lib/
     ├── csp.cjs             # CSP 唯一定义
     ├── fingerprint.cjs     # 内容指纹
     ├── dhash.cjs           # dHash 唯一实现
+    ├── dhash.d.cts         # 上者的类型声明（供渲染层具名导入）
     └── logger.cjs          # 主进程日志器
 
 src/
@@ -79,17 +88,18 @@ src/
 ├── hooks/                  # 25 个功能域 hook：编排 / 数据 / 交互
 ├── components/             # 按域分组：layout / grid / timeline / map / about / detail / duplicate / filter / modal / common / icons
 ├── services/               # aiService（经 IPC 走主进程）
-├── lib/                    # 领域与基础设施：cache / media / filter / persistence / geo / fs / duplicate / format
+├── lib/                    # 领域与基础设施：about / album / cache / dataAssets / duplicate / filter / format / fs / geo / grid / media / persistence / platform / tags
 ├── types/                  # 领域类型 + global.d.ts（IpcResult / electronAPI）
-├── utils/index.ts          # 纯再导出 barrel（86 行，不得加实现）
+├── utils/index.ts          # 纯再导出 barrel（不得加实现）
 └── styles/styles.css       # 主题令牌（@theme + :root + .light-theme）与基础样式
 
 tests/
 ├── unit/                   # Vitest 纯函数
-├── main-process/           # 打桩 electron 的集成测试 + harness
+├── main-process/           # 打桩 electron 的集成测试 + run.cjs（自动发现）+ harness.cjs
 └── smoke/                  # 真启动 Electron
 
-build/                      # electron-builder 资源 / afterPack / DMG 重压
+docs/                      # 架构 / 质量 / 决策 / 文档地图 / 历史存档
+build/                     # electron-builder 资源 / afterPack / DMG 重压
 ```
 
 ---
@@ -110,7 +120,7 @@ build/                      # electron-builder 资源 / afterPack / DMG 重压
 - `pm://file/...` 每次请求都要做白名单校验；未授权返回 403。
 - IPC 注册必须走 `handle()`（统一异常兜底 + 重复注册检测），**不要**直接 `ipcMain.handle`。
 - 返回统一为 `IpcResult<T>`：`{ ok: true, data }` / `{ ok: false, error, code? }`。“用户取消”是 `{ ok: true, data: null }`，不是失败。
-- 改 IPC 时同步四处：`electron/preload.js`、`src/types/global.d.ts`、测试冻结清单（`tests/main-process/ipc-contract.test.cjs`）、调用点。
+- 改 IPC 时同步五处：`electron/preload.js`、`src/types/global.d.ts`、主进程 `handle()` 注册、测试冻结清单（`tests/main-process/ipc-contract.test.cjs`）、调用点。
 - 更新类 IPC（`update-*`）**不接收渲染层路径**：下载目录与文件名由主进程决定，打开 / 显示也只使用主进程内部记录的路径。不要为了“方便”新增 path 参数。
 
 ### 4.3 身份与持久化
@@ -183,14 +193,12 @@ build/                      # electron-builder 资源 / afterPack / DMG 重压
 
 ### 改动后（Definition of Done）
 
-- [ ] `npm run typecheck` 通过
-- [ ] `npm run lint` 0 problems
-- [ ] `npm run test` 通过；改主进程必须跑 `test:main`
-- [ ] `npm run format:check` 通过
-- [ ] 改构建 / 打包 / 入口时 `npm run build` 通过
+- [ ] `npm run verify` 通过（typecheck + lint + format:check + test）
+- [ ] 改主进程必须跑 `test:main`；改构建 / 打包 / 入口时跑 `npm run build`，必要时 `test:smoke`
 - [ ] 新增纯逻辑有单测；新增 IPC / 权限 / 迁移有主进程测试
 - [ ] 手动验证相关路径：导入、选择、操作、失败、重启恢复
-- [ ] 同步文档：行为变化 → `README.md`；任务状态 → `TODO.md`；用户可感知变化 → `CHANGELOG.md`；方向 / 优先级变化 → `ROADMAP.md`；技术结论 → `CODE_REVIEW.md`
+- [ ] 同步文档：行为变化 → `README.md`；任务状态 → `TODO.md`；用户可感知变化 → `CHANGELOG.md`；方向 / 优先级变化 → `ROADMAP.md`；技术结论 → `CODE_REVIEW.md`；架构 / 依赖变化 → `docs/architecture.md`
+- [ ] 关键取舍变化 → `docs/decisions.md`；命令 / 测试分层变化 → `docs/quality.md`
 
 ---
 
@@ -204,8 +212,13 @@ build/                      # electron-builder 资源 / afterPack / DMG 重压
 | `CHANGELOG.md` | 每个版本交付了什么 | 用户可感知的 Added / Changed / Fixed / Security |
 | `CODE_REVIEW.md` | 技术审查结论与修复证据 | 架构 / 安全 / 重构批次 |
 | `AGENTS.md` | 代理与新人怎么安全地改 | 命令、约束、入口变化 |
+| `docs/README.md` | 文档地图与单一事实源 | 新增 / 移动文档 |
+| `docs/architecture.md` | 分层、依赖方向、扩展手册、结构性债务 | 目录 / 依赖 / 扩展流程变化 |
+| `docs/quality.md` | 验证基线、测试分层、DoD、棘轮 | 命令 / 测试策略变化 |
+| `docs/decisions.md` | 关键决策与理由 | 关键取舍变化 |
+| `docs/archive/` | 历史记录 | 只追加，不回改 |
 
-**冲突处理**：方向冲突以 `ROADMAP.md` 为准；任务状态冲突以 `TODO.md` 为准；行为描述冲突以代码 + `README.md` 为准，并立刻修正文档。不要靠“以后再同步”留下四份互相矛盾的文档。
+**冲突处理**：方向冲突以 `ROADMAP.md` 为准；任务状态冲突以 `TODO.md` 为准；行为描述冲突以代码 + `README.md` 为准；数字冲突以命令输出为准。不要靠“以后再同步”留下互相矛盾的文档。
 
 ---
 

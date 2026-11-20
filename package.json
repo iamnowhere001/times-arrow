@@ -4,6 +4,9 @@
   "version": "0.6.5",
   "main": "electron/main.js",
   "type": "commonjs",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
@@ -16,7 +19,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "npm run test:main && npm run test:unit",
-    "test:main": "node tests/main-process/unique-path.test.cjs && node tests/main-process/storage-recovery.test.cjs && node tests/main-process/ipc-security.test.cjs && node tests/main-process/ai-config-privacy.test.cjs && node tests/main-process/data-assets.test.cjs && node tests/main-process/migration-version-guard.test.cjs && node tests/main-process/rename-probe.test.cjs && node tests/main-process/crash-report.test.cjs && node tests/main-process/data-health.test.cjs && node tests/main-process/updater.test.cjs && node tests/main-process/layering.test.cjs && node tests/main-process/ipc-contract.test.cjs",
+    "test:main": "node tests/main-process/run.cjs",
+    "verify": "npm run typecheck && npm run lint && npm run format:check && npm run test",
+    "verify:full": "npm run verify && npm run build",
+    "verify:release": "npm run verify:full && npm run test:smoke",
     "test:smoke": "electron tests/smoke/electron-smoke.cjs",
     "test:smoke:no-sandbox": "PHOTOMINDER_DISABLE_SANDBOX=1 electron tests/smoke/electron-smoke.cjs",
     "test:unit": "vitest run",
