@@ -159,7 +159,8 @@ src/
 ├── main.tsx                # 挂载入口
 ├── components/             # 按域分组的 UI
 │   ├── layout/             #   Sidebar / Toolbar / ActiveFiltersBar / ToastStack
-│   ├── grid/               #   ImageGrid / ThumbnailImage / EmptyStates
+│   ├── grid/               #   ImageGrid（工具栏与组合）/ VirtualGrid / VirtualList / ImageCard /
+│   │                       #   ThumbnailImage / EmptyStates
 │   ├── timeline/           #   TimelineGallery
 │   ├── map/                #   LocationMap
 │   ├── detail/             #   DetailsPane / QuickLook / VideoPlayer / BatchTagsPanel
@@ -315,7 +316,8 @@ Electron 默认配置偏松，下面九个面是逐项收紧后的现状。规�
 | 布局几何 | `src/lib/grid/justifiedLayout.ts` | `tests/unit/gridLayout.test.ts` + 静态断言 | 铺行宽度是滚动容器**扣除横向 padding 后**的内容区宽度，不是 `clientWidth`；`CARD_PADDING` 与 `ImageCard` 内边距必须成对修改 |
 | 主题令牌 | `src/styles/styles.css` 的 `@theme` + `:root` / `.light-theme` | `tests/unit/designTokens.test.ts` | 两处声明必须同步；组件里不写十六进制色值 |
 | 通用图标 | `src/components/icons/index.tsx` | 代码审查 | 只收「图形相同且被两处以上使用」的图标；尺寸 / 线宽由调用点传参，不在图标库里写死 |
-| `@/utils` | 纯再导出 barrel | `tests/unit/utilsBarrel.test.ts` | 不得加实现；新代码直接 import 具体模块 |
+| 日期胶囊文案 | `formatDayCapsule`（`src/components/grid/VirtualGrid.tsx`） | 代码审查 | 调用方与胶囊内部共用，避免「今天 / 昨天」出现两套判定 |
+| `@/utils` | 纯再导出 barrel | `tests/unit/utilsBarrel.test.ts` | 不得加实现；新代码直接 import 具体模块 | 不得加实现；新代码直接 import 具体模块 |
 | 日志器 | `src/lib/logger.ts`（渲染）/ `electron/lib/logger.cjs`（主进程） | 代码审查 | 两端**同构两份**实现，不是重复代码：进程隔离无法共享。接口固定 `debug` / `info` / `warn` / `error`，`debug` 与 `info` 仅开发构建输出。禁止出现第三份 |
 
 ---
@@ -389,7 +391,7 @@ Electron 默认配置偏松，下面九个面是逐项收紧后的现状。规�
 | 优先级 | 债务 | 现状 | 目标 | 风险 | 验收 |
 | --- | --- | --- | --- | --- | --- |
 | ~~P1~~ | ~~`electron/main.js` 组合根过大~~ | ✅ **已完成（2026-11-20）**：拆出 `window` / `menu` / `protocol` / `security` / `watch` / `fs-ops` / `memory-watchdog` 与 `ipc/`（registry / files / dialog）；`main.js` 只剩装配与生命周期 | — | 已用 `test:main` 与 `verify` 全绿验证；行为零变化 | `ipc-contract` 全绿；`main.js` 不含业务逻辑 |
-| P2 | `ImageGrid.tsx` 同时含网格与列表两套虚拟化 | 单文件 1.8k 行 | 抽 `components/grid/virtual/`，共用滚动 / 测量逻辑 | 中：滚动与选择回归 | 滚动位置 / 键盘导航 / 选择不回归；单测覆盖布局纯逻辑 |
+| ~~P2~~ | ~~`ImageGrid.tsx` 同时含网格与列表两套虚拟化~~ | ✅ **已完成（2026-11-20）**：拆为 `VirtualGrid` / `VirtualList` / `ImageCard`，`ImageGrid` 只留工具栏与组合；滚动位置记忆随各自组件下沉，清空时由 `reset*ScrollMemory()` 统一丢弃 | — | 已用 `verify` + 构建 + 真实冒烟验证（`#root` 内容长度与拆分前一致） | 滚动 / 键盘 / 选择行为未改动；`gridLayout.test.ts` 的静态断言改为扫描整个 `grid/` 目录 |
 | P3 | `App.tsx` 仍承担较多跨域连线 | 1.4k 行 | 抽视图路由 `AppViews` 与跨域事件订阅 | 中低 | 行为零变化；依赖方向不变 |
 | P4 | `services/` 只有 AI 一个用例 | 组件直接调 IPC 的额度见 `layering.test.cjs` 的 `BASELINE` | 按域补 service，逐步下调棘轮基线 | 低 | 每次只迁一个域；基线只降不升 |
 | P5 | `strictNullChecks` 未开 | `noImplicitAny` 已 0 新增错误 | 分目录开启并修 | 中 | 每个 project 单独通过 |

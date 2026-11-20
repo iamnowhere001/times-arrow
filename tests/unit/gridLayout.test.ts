@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   buildGridLayout,
@@ -21,7 +21,20 @@ import { makePhoto } from './fixtures';
  * 另外 48px 行高下限曾让「窄窗口 + 超宽全景图」的行反超容器宽度。
  */
 const ROOT = resolve(import.meta.dirname, '../..');
-const readGrid = () => readFileSync(resolve(ROOT, 'src/components/grid/ImageGrid.tsx'), 'utf8');
+const GRID_DIR = resolve(ROOT, 'src/components/grid');
+
+/**
+ * 渲染层源码快照：断言跨 `grid/` 下全部 tsx 拼接。
+ *
+ * 虚拟化与卡片已经从 `ImageGrid.tsx` 拆成独立文件，如果继续盯死单个文件名，
+ * 正确的重构会让守卫失败、而「把代码挪回去」反倒能通过 —— 那是在守文件名，不是守行为。
+ */
+const readGrid = () =>
+  readdirSync(GRID_DIR)
+    .filter((name) => name.endsWith('.tsx'))
+    .sort()
+    .map((name) => readFileSync(resolve(GRID_DIR, name), 'utf8'))
+    .join('\n');
 
 const photo = (id: string, width = 4, height = 3) =>
   makePhoto({ id, dimensions: { width, height } });

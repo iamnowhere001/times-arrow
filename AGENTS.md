@@ -217,7 +217,7 @@ build/      # electron-builder 资源与打包钩子
 | 文件重命名 / 删除 / 导出 / 移动 | `src/hooks/useFileOperations.ts`、`src/lib/fs/fileOperations.ts`、`electron/main/data-assets.cjs` |
 | 收藏 / 标签 / 相簿 / 时间修正 | `src/hooks/usePersistedLibraryData.ts`、`src/lib/persistence/persistence.ts`、`src/lib/media/photoIdentity.ts` |
 | 搜索 / 筛选 | `src/lib/filter/filters.ts`、`src/components/filter/FilterPanel.tsx` |
-| 虚拟网格 / 列表 | `src/components/grid/ImageGrid.tsx`、`src/hooks/useVirtualViewport.ts`、`src/lib/cache/` |
+| 虚拟网格 / 列表 / 卡片 | `src/components/grid/ImageGrid.tsx`（工具栏与组合）、`VirtualGrid.tsx`、`VirtualList.tsx`、`ImageCard.tsx`、`src/hooks/useVirtualViewport.ts` |
 | QuickLook / 视频 | `src/components/detail/QuickLook.tsx`、`VideoPlayer.tsx`、`src/hooks/useQuickLook.ts` |
 | 时光画廊 / 地图 | `src/components/timeline/TimelineGallery.tsx`、`src/components/map/LocationMap.tsx`、`src/lib/geo/` |
 | 重复检测 | `src/components/duplicate/DuplicateDetector.tsx`、`src/lib/duplicate/duplicateDetection.ts`、`electron/lib/dhash.cjs` |
