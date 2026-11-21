@@ -29,6 +29,7 @@ if (SANDBOX_DISABLED) {
 registerPmScheme();
 
 const fs = require('fs');
+const path = require('path');
 const logger = require('./lib/logger.cjs');
 
 const { createAuthorization } = require('./main/authorization.cjs');
@@ -38,6 +39,7 @@ const { createAiService } = require('./main/ai.cjs');
 const { createUpdater } = require('./main/updater.cjs');
 const { createDataAssets } = require('./main/data-assets.cjs');
 const { createFileIpc } = require('./main/ipc/files.cjs');
+const { createFaceService } = require('./main/face/service.cjs');
 const { createWindowManager } = require('./main/window.cjs');
 const { createMenu: installAppMenu } = require('./main/menu.cjs');
 const { createDirWatcher } = require('./main/watch.cjs');
@@ -101,6 +103,7 @@ const {
   mimeTypeFor,
   readHeicAsJpeg,
   getThumbDir,
+  ensureThumbnail,
   pruneThumbCache,
   loadThumbKeys,
   trimHashCache,
@@ -113,6 +116,8 @@ const {
 const pmProtocol = createPmProtocol({
   logger,
   getThumbDir,
+  // 人像封面目录由人像服务创建，但协议注册早于服务装配，这里只做路径推导
+  getFaceDir: () => path.join(app.getPath('userData'), 'faces', 'covers'),
   isPathAuthorized,
   isHeicFile,
   readHeicAsJpeg,
@@ -174,6 +179,21 @@ registerMediaPipelineIpc({ handle, ok, fail });
 
 // 三个 JSON 存储的读写通道由 ./main/store.cjs 提供
 registerStoreIpc({ handle, ok, fail });
+
+// 人像识别：ONNX 运行时与模型只在用户进入「人像」页时才加载，
+// 扫描结果按 fileId 存入 faces.json（与收藏 / 标签同一套身份口径）。
+const faces = createFaceService({
+  userDataDir: app.getPath('userData'),
+  nativeImage,
+  store,
+  ensureThumbnail,
+  getThumbDir,
+  isPathAuthorized,
+  unauthorizedError: UNAUTHORIZED_ERROR,
+  send: (channel, payload) => win.send(channel, payload),
+  logger,
+});
+faces.registerIpc({ handle, ok, fail });
 
 /**
  * 取走「存储损坏并已备份」的通知（取走即清空）。

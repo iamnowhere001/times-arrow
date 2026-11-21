@@ -1,6 +1,6 @@
 # 质量基线
 
-> **最后更新**：2026-11-20 · **适用版本**：0.6.5
+> **最后更新**：2026-11-21 · **适用版本**：0.6.6
 > **事实源**：`package.json` 的 `scripts`、`tests/`、`vitest.config.mts`
 >
 > **一条命令证明没改坏：`npm run verify`。**
@@ -49,7 +49,7 @@ ESLint 只检查 JS/CJS（主进程、构建脚本），TS/TSX 交给 oxlint（t
 | 层 | 位置 | 运行方式 | 适合测什么 | 不适合测什么 |
 | --- | --- | --- | --- | --- |
 | 纯函数单测 | `tests/unit/*.test.ts` | Vitest，自动发现 | 算法、筛选、时间语义、布局、格式化、静态断言 | DOM、IPC、文件系统 |
-| 主进程集成 | `tests/main-process/*.test.cjs` | Node + 打桩 electron，自动发现 | IPC 契约、安全边界、存储、迁移、更新、崩溃 | 真实窗口、真实渲染 |
+| 主进程集成 | `tests/main-process/*.test.cjs` | Node + 打桩 electron，自动发现 | IPC 契约、安全边界、存储、迁移、更新、崩溃、人脸算法 | 真实窗口、真实渲染 |
 | 端到端冒烟 | `tests/smoke/electron-smoke.cjs` | 真启动 Electron | 启动、CSP、控制台错误、基本渲染 | 细粒度逻辑 |
 | 静态守卫 | 混在上两层 | 读源码断言 | 分层、唯一入口、品牌、文档一致、设计令牌 | 运行时行为 |
 

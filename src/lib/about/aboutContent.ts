@@ -1,5 +1,5 @@
 /**
- * 「关于与更新」页的静态内容（v0.6.5）。
+ * 「关于与更新」页的静态内容（v0.6.6）。
  *
  * 为什么不运行时读 `CHANGELOG.md` / `ROADMAP.md`：package.json 的 build.files
  * 已排除全部 md 文件，装进 DMG 后渲染层读不到。
@@ -82,6 +82,11 @@ export const ABOUT_CONTENT: AboutContent = {
         '把带 GPS 的照片落到地图上，按拍摄地点聚合成条；旅行与出差拍的照片可以按地点集中回看。',
     },
     {
+      title: '人像',
+      description:
+        '本地人脸识别把照片按人物分组，可重命名与合并；模型首次使用时才下载，识别全程离线。',
+    },
+    {
       title: '相似照片',
       description:
         '基于 dHash 感知哈希分组比对，附相似度与可释放空间；支持忽略整组、只检测选中项，清理前后都有报告。',
@@ -154,6 +159,14 @@ export const ABOUT_CONTENT: AboutContent = {
     },
   ],
   releases: [
+    {
+      version: '0.6.6',
+      date: '2026-11-21',
+      highlights: [
+        '左栏新增「人像」：本地识别人脸并按人物分组，支持重命名、合并与人物照片回看。',
+        '人脸模型不打进安装包，首次使用时按需下载到本机缓存，之后完全离线运行。',
+      ],
+    },
     {
       version: '0.6.5',
       date: '2026-11-20',

@@ -172,6 +172,54 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('update-download-progress', listener);
   },
 
+  // 本地人像识别：模型首次使用时由主进程下载，推理与聚类全程在本机完成
+  getFaceStatus: () => ipcRenderer.invoke('face-status'),
+  downloadFaceModel: () => ipcRenderer.invoke('face-model-download'),
+  cancelFaceModelDownload: () => ipcRenderer.invoke('face-model-cancel'),
+  /** photos: { path, fileId }[]；force=true 时忽略已扫描记录重扫 */
+  startFaceScan: (photos, options) =>
+    ipcRenderer.invoke('face-scan-start', { photos, ...(options || {}) }),
+  cancelFaceScan: () => ipcRenderer.invoke('face-scan-cancel'),
+  listFacePeople: () => ipcRenderer.invoke('face-people-list'),
+  getFacePersonPhotos: (personId) => ipcRenderer.invoke('face-person-photos', personId),
+  renameFacePerson: (personId, name) =>
+    ipcRenderer.invoke('face-person-rename', { personId, name }),
+  mergeFacePeople: (targetId, sourceIds) =>
+    ipcRenderer.invoke('face-person-merge', { targetId, sourceIds }),
+  clearFaceIndex: () => ipcRenderer.invoke('face-index-clear'),
+  /** 模型下载进度；返回取消订阅函数 */
+  onFaceModelProgress: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on('face-model-progress', listener);
+    return () => ipcRenderer.removeListener('face-model-progress', listener);
+  },
+  onFaceModelError: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on('face-model-error', listener);
+    return () => ipcRenderer.removeListener('face-model-error', listener);
+  },
+  /** 扫描进度 / 完成 / 失败；均返回取消订阅函数 */
+  onFaceScanProgress: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on('face-scan-progress', listener);
+    return () => ipcRenderer.removeListener('face-scan-progress', listener);
+  },
+  onFaceScanDone: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on('face-scan-done', listener);
+    return () => ipcRenderer.removeListener('face-scan-done', listener);
+  },
+  onFaceScanError: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on('face-scan-error', listener);
+    return () => ipcRenderer.removeListener('face-scan-error', listener);
+  },
+  onFaceStatusChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('face-status-changed', listener);
+    return () => ipcRenderer.removeListener('face-status-changed', listener);
+  },
+
   // 从拖放的 File 对象解析真实磁盘路径
   getFilePath: (file) => {
     try {

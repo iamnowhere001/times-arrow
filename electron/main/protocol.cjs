@@ -47,6 +47,7 @@ function registerPmScheme() {
  * @param {object} deps
  * @param {object} deps.logger
  * @param {() => string} deps.getThumbDir 缩略图缓存目录
+ * @param {() => string} deps.getFaceDir 人像封面目录
  * @param {(p: string) => boolean} deps.isPathAuthorized
  * @param {(p: string) => boolean} deps.isHeicFile
  * @param {(p: string) => Promise<Buffer>} deps.readHeicAsJpeg
@@ -55,6 +56,7 @@ function registerPmScheme() {
 function createPmProtocol({
   logger,
   getThumbDir,
+  getFaceDir,
   isPathAuthorized,
   isHeicFile,
   readHeicAsJpeg,
@@ -135,6 +137,19 @@ function createPmProtocol({
 
         if (kind === 'thumb' && payload) {
           const filePath = path.join(getThumbDir(), path.basename(payload));
+          const data = await readFile(filePath);
+          return new Response(data, {
+            headers: {
+              'Content-Type': 'image/jpeg',
+              'Cache-Control': 'max-age=31536000, immutable',
+              'Access-Control-Allow-Origin': '*',
+            },
+          });
+        }
+
+        // 人像封面是主进程裁好的小方图，内容由本机生成，不含用户路径
+        if (kind === 'face' && payload) {
+          const filePath = path.join(getFaceDir(), path.basename(payload));
           const data = await readFile(filePath);
           return new Response(data, {
             headers: {

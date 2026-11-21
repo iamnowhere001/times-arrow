@@ -1,6 +1,6 @@
 # 架构说明
 
-> **最后更新**：2026-11-20 · **适用版本**：0.6.5
+> **最后更新**：2026-11-21 · **适用版本**：0.6.6
 > **事实源**：`electron/main.js`、`electron/main/`、`electron/lib/`、`src/`（分层与依赖方向由 `tests/main-process/layering.test.cjs` 断言）
 >
 > 这是「系统怎么分层、依赖往哪走、改一处要动哪些地方」的唯一技术地图。
@@ -44,7 +44,7 @@
 │    │                          watch / fs-ops / memory-watchdog / ai /          │
 │    │                          authorization / media-pipeline / store /         │
 │    │                          data-assets / migrations / updater /             │
-│    │                          crash-report / health                            │
+│    │                          crash-report / health / face/                    │
 │    ├─ main/ipc/               registry（ok / fail / handle）+ 按域通道注册      │
 │    └─ lib/*.cjs               基础设施：csp / fingerprint / dhash / logger        │
 └─────────────────────────────────────────────────────────────────────────────────┘
@@ -69,6 +69,7 @@
 | --- | --- | --- |
 | 组合根 | `electron/main.js` | 装配依赖、`app` 生命周期、崩溃上报；**不放业务逻辑** |
 | 领域服务 | `electron/main/*.cjs` | 授权、存储、媒体管线、AI、更新、数据资产、迁移、崩溃、健康、窗口、菜单、协议、安全、监听、落盘工具 |
+| 人像域 | `electron/main/face/` | 模型下载与校验、SCRFD 检测、五点对齐、ArcFace 特征、余弦聚类、索引与 IPC |
 | IPC 注册 | `electron/main/ipc/` | `registry.cjs` 提供 `ok` / `fail` / `handle`（全进程唯一）；通道按域分组注册 |
 | 基础设施 | `electron/lib/*.cjs` | CSP、内容指纹、dHash、日志 |
 | 契约桥 | `electron/preload.js` | `contextBridge` 暴露 `window.electronAPI` |
@@ -114,6 +115,7 @@ electron/main.js ──→ electron/main/*.cjs ──→ electron/lib/*.cjs
 | 图片格式 | heic-convert（HEIC/HEIF → JPEG，带磁盘缓存） | `electron/main/media-pipeline.cjs` |
 | 内容指纹 | `sha256(size + 头尾各 64KB)` 截 128 bit | `electron/lib/fingerprint.cjs` |
 | AI | DeepSeek 视觉模型，无第三方 SDK，主进程代理 | `electron/main/ai.cjs` |
+| 人脸识别 | onnxruntime-node + InsightFace buffalo_sc（SCRFD + ArcFace），前后处理在 JS 中实现；模型首次按需下载 | `electron/main/face/` |
 | 测试 | Vitest + 自建主进程 runner + Electron 冒烟 | `tests/` |
 
 依赖边界（能连什么、不能连什么）见 [`external.md`](./external.md)。
@@ -143,6 +145,12 @@ electron/
 │   ├── migrations.cjs      #   config / ai-cache 的 v1→v2 迁移
 │   ├── store.cjs           #   JSON 存储、原子写、损坏备份
 │   ├── updater.cjs         #   GitHub Release 检查 / DMG 下载 / 安装引导
+│   ├── face/               #   人像域：模型 / 检测 / 对齐 / 特征 / 聚类 / 索引
+│   │   ├── model-store.cjs #     模型下载、SHA256 校验、原子解压
+│   │   ├── scrfd.cjs       #     SCRFD 输入张量、解码、NMS
+│   │   ├── arcface.cjs     #     五点对齐、112×112 张量、L2 归一化
+│   │   ├── cluster.cjs     #     余弦相似度聚类
+│   │   └── service.cjs     #     faces.json 索引、扫描、封面、IPC
 │   └── ipc/                #   IPC 通道注册（按域拆分）
 │       ├── registry.cjs    #     ok / fail / handle：全进程唯一实例
 │       ├── files.cjs       #     重命名 / 删除 / 移动 / 导出 / 系统开放
@@ -167,6 +175,7 @@ src/
 │   ├── detail/             #   DetailsPane / QuickLook / VideoPlayer / BatchTagsPanel
 │   ├── duplicate/          #   DuplicateDetector / DuplicateReportPanel
 │   ├── about/              #   AboutView
+│   ├── people/             #   PeopleView（人像网格 / 人物详情 / 模型下载引导）
 │   ├── filter/             #   FilterPanel
 │   ├── modal/              #   业务弹窗（设置 / 导出 / 数据资产 / 关于更新 / 确认…）
 │   ├── common/             #   Toast / ErrorBoundary / ModalShell / ImmersiveView / Stat…
@@ -264,6 +273,7 @@ build/                      # electron-builder 资源与打包钩子
 | --- | --- | --- |
 | AI 分析 | 用户显式点击 / 配置 | 主进程代理；密钥只在主进程；读取只回掩码；20MB base64 闸门 |
 | 更新检查 | 启动静默一次 + 手动 | 只请求 GitHub Releases；下载 host 白名单；不静默安装；可关闭 |
+| 人脸模型 | 首次进入人像页并确认下载 | 只从 InsightFace 官方 GitHub Release 下载 zip；校验 SHA256 后解压到 `userData/models/`；可取消；之后完全离线 |
 
 其余任何网络请求都不应存在。新增网络能力前先读 `ROADMAP.md` 的产品边界。
 
@@ -284,6 +294,7 @@ Electron 默认配置偏松，下面九个面是逐项收紧后的现状。规�
 | 写盘 | `reserveUniquePath()` 用 `open(path,'wx')` 原子占位，消除 TOCTOU | `electron/main/data-assets.cjs` |
 | AI 密钥 | 主进程读取并代理；读取只回 `hasApiKey` + 尾号掩码 | `electron/main/ai.cjs` |
 | 更新检查 | 只由主进程请求 GitHub；下载 host 白名单；不静默安装；更新类 IPC 不收渲染层路径 | `electron/main/updater.cjs` |
+| 人像 | `face-scan-start` 对每个候选路径逐个 `isPathAuthorized()`，未授权单张记为失败并上报 `failed`；封面走 `pm://local/face/<basename>`，只读 `userData/faces/covers`，不接受任意路径 | `electron/main/face/service.cjs`、`electron/main/protocol.cjs` |
 
 > 这层防的是**内容级攻击**（被当作图片加载的 SVG 等能构造 `pm://` 请求但无法调用 IPC）。渲染进程若被完全攻破，攻击者天然拥有全部 IPC 能力，需要靠 CSP 与沙箱收敛。
 
@@ -299,6 +310,7 @@ Electron 默认配置偏松，下面九个面是逐项收紧后的现状。规�
 | 虚拟化 | 网格与列表只渲染视口内元素（含 overscan），滚动事件 rAF 节流 | `src/components/grid/ImageGrid.tsx`、`src/hooks/useVirtualViewport.ts` |
 | 内存治理 | 真 LRU（命中刷新 + 逐项淘汰）+ `volatile` / `sticky` 分级；主进程按 RSS 广播内存压力，渲染进程另有堆占用巡检 | `src/lib/cache/cacheManager.ts` |
 | 行内材质 | 长列表行避免 `backdrop-filter`，惯性滚动会掉帧 | 各卡片 / 行组件 |
+| 人脸索引 | 扫描在主进程逐张串行，渲染层只收进度与摘要；封面是 160×160 JPEG，不进内存大图 | `electron/main/face/service.cjs`、`src/components/people/PeopleView.tsx` |
 
 ---
 
@@ -320,6 +332,7 @@ Electron 默认配置偏松，下面九个面是逐项收紧后的现状。规�
 | 日期胶囊文案 | `formatDayCapsule`（`src/components/grid/VirtualGrid.tsx`） | 代码审查 | 调用方与胶囊内部共用，避免「今天 / 昨天」出现两套判定 |
 | `@/utils` | 纯再导出 barrel | `tests/unit/utilsBarrel.test.ts` | 不得加实现；新代码直接 import 具体模块 | 不得加实现；新代码直接 import 具体模块 |
 | 日志器 | `src/lib/logger.ts`（渲染）/ `electron/lib/logger.cjs`（主进程） | 代码审查 | 两端**同构两份**实现，不是重复代码：进程隔离无法共享。接口固定 `debug` / `info` / `warn` / `error`，`debug` 与 `info` 仅开发构建输出。禁止出现第三份 |
+| 人脸检测 / 特征 / 聚类 | `electron/main/face/`（`scrfd.cjs` / `arcface.cjs` / `cluster.cjs`） | `tests/main-process/face-algorithms.test.cjs` | 前后处理只在主进程实现一份；渲染层不复制算法、不接收特征向量 |
 
 ---
 

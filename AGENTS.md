@@ -18,7 +18,7 @@
 | 主进程 | Node.js / CommonJS（`electron/**/*.cjs`、`electron/main.js`、`electron/preload.js`） |
 | 渲染进程 | React + TypeScript ESM（`src/`） |
 | 数据目录 | macOS：`~/Library/Application Support/PhotoMinder/` |
-| 当前版本 | `0.6.5`（2026-11-20 发布：左栏「应用 → 关于与更新」整页视图） |
+| 当前版本 | `0.6.6`（2026-11-21 开发完成，待发版：左栏「人像」本地人脸识别） |
 | 质量基线 | `npm run verify` 全绿（typecheck / lint / format / test）；测试数量以命令输出为准，不写死 |
 
 **产品判断与优先级以 `ROADMAP.md` 为准；任务级状态以 `TODO.md` 为准；行为描述以 `README.md` 为准；历史技术结论以 `CODE_REVIEW.md` 为准。**
@@ -60,8 +60,9 @@ build/      # electron-builder 资源与打包钩子
 
 ### 4.1 本地与隐私
 
-- 除显式触发的 AI 分析、可关闭的更新检查外，**不引入任何网络请求**：不上报、不拉配置、不接第三方 SDK、不做遥测 / 崩溃收集 / 云同步。
+- 除显式触发的 AI 分析、可关闭的更新检查、人像页首次使用的模型下载外，**不引入任何网络请求**：不上报、不拉配置、不接第三方 SDK、不做遥测 / 崩溃收集 / 云同步。
 - 更新检查只由主进程请求 GitHub Releases（`electron/main/updater.cjs`）；下载地址必须来自 API 且 host 在 `github.com` / `objects.githubusercontent.com` / `release-assets.githubusercontent.com` 白名单内；只下载 DMG、由用户确认安装，不静默覆盖 `/Applications`；渲染层不得直连 GitHub。
+- 人脸模型只由主进程下载：优先走 GitHub 加速镜像、最后回落 InsightFace 官方 Release，**任何线路都必须通过写死的 SHA256 校验**才解压到 `userData/models/`；模型、特征向量与封面都只留在本机，不上传照片或人脸特征，渲染层只拿人物摘要与 `fileId`。
 - AI 密钥只允许主进程读取。`ai-config-get` 只返回 `hasApiKey` + 尾号掩码，**不得**把明文回传给渲染层；不得把密钥写进日志、错误信息或导出的配置。
 - 导出的配置**不包含 AI 密钥**。
 
@@ -107,7 +108,7 @@ build/      # electron-builder 资源与打包钩子
 - 大图 / 视频**不得**以 base64 常驻渲染进程。原图与缩略图走 `pm://` 流式协议；视频要实现 HTTP Range（206）。
 - 缩略图按需生成，不导入时批量预生成；磁盘缓存 + LRU + 内存压力裁剪。
 - 长列表必须虚拟化；滚动事件用 rAF 节流；行组件避免 `backdrop-filter`（惯性滚动会掉帧）。
-- 主进程重活（扫描 / EXIF / HEIC / dHash / 缩略图）必须限流；不要把同步解码塞回渲染进程。
+- 主进程重活（扫描 / EXIF / HEIC / dHash / 缩略图 / 人脸检测）必须限流；不要把同步解码塞回渲染进程。
 
 ### 4.7 设计与文案
 
@@ -219,14 +220,14 @@ build/      # electron-builder 资源与打包钩子
 | 搜索 / 筛选 | `src/lib/filter/filters.ts`、`src/components/filter/FilterPanel.tsx` |
 | 虚拟网格 / 列表 / 卡片 | `src/components/grid/ImageGrid.tsx`（工具栏与组合）、`VirtualGrid.tsx`、`VirtualList.tsx`、`ImageCard.tsx`、`src/hooks/useVirtualViewport.ts` |
 | QuickLook / 视频 | `src/components/detail/QuickLook.tsx`、`VideoPlayer.tsx`、`src/hooks/useQuickLook.ts` |
-| 时光画廊 / 地图 | `src/components/timeline/TimelineGallery.tsx`、`src/components/map/LocationMap.tsx`、`src/lib/geo/` |
+| 时光画廊 / 地图 / 人像 | `src/components/timeline/TimelineGallery.tsx`、`src/components/map/LocationMap.tsx`、`src/components/people/PeopleView.tsx`、`src/lib/geo/`、`electron/main/face/` |
 | 重复检测 | `src/components/duplicate/DuplicateDetector.tsx`、`src/lib/duplicate/duplicateDetection.ts`、`electron/lib/dhash.cjs` |
 | AI | `electron/main/ai.cjs`、`src/services/aiService.ts`、`src/components/modal/AiSettingsModal.tsx` |
 | 检查更新 / 下载 DMG | `electron/main/updater.cjs`、`src/hooks/useUpdateChecker.ts`、`src/components/modal/UpdateModal.tsx` |
 | 主题 / 视觉 | `src/styles/styles.css`、`src/components/common/`、`src/components/icons/` |
 | 打包 / 体积 | `package.json` 的 `build` 字段、`build/afterPack.js`、`build/recompressDmg.js` |
 | 应用菜单能触发什么 | `electron/main/menu.cjs`（发送端）+ `src/hooks/useAppMenuEvents.ts`（订阅端），两处对照 |
-| 加一个弹窗 / 改整页视图 | 开关加在 `src/hooks/useAppModals.ts`；渲染加在 `src/components/layout/AppOverlays.tsx`（全部弹层）或 `AppViews.tsx`（四个整页视图） |
+| 加一个弹窗 / 改整页视图 | 开关加在 `src/hooks/useAppModals.ts`；渲染加在 `src/components/layout/AppOverlays.tsx`（全部弹层）或 `AppViews.tsx`（五个整页视图） |
 | 安全边界 | `electron/main/authorization.cjs`、`electron/lib/csp.cjs`、`CODE_REVIEW.md` 附录 A / B |
 
 **新增一类东西**（整页视图 / hook / IPC 通道 / 持久化字段 / 纯逻辑与测试 / 主进程测试 / 文件操作 / 主题）的分步清单，见 [`docs/architecture.md`](./docs/architecture.md) §6。

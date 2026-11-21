@@ -375,6 +375,43 @@ declare global {
 
       /** 注册 ⌘O 菜单导入事件；返回取消订阅函数 */
       onImportPaths: (callback: (picked: PickedPaths) => void) => () => void;
+
+      /** 人像识别：模型 / 扫描 / 索引状态（首次进入人像页时调用） */
+      getFaceStatus: () => Promise<IpcResult<import('@/types').FaceStatus>>;
+      /** 下载人脸模型（约 15MB，仅用户显式触发时联网）；进度走 onFaceModelProgress */
+      downloadFaceModel: () => Promise<IpcResult<{ started: boolean; reason?: string }>>;
+      cancelFaceModelDownload: () => Promise<IpcResult<{ cancelled: boolean }>>;
+      /** 开始扫描；photos 必须来自当前图库（path + fileId），force 时忽略已扫描记录 */
+      startFaceScan: (
+        photos: { path: string; fileId: string }[],
+        options?: { force?: boolean }
+      ) => Promise<IpcResult<{ started: boolean; total: number }>>;
+      cancelFaceScan: () => Promise<IpcResult<{ cancelled: boolean }>>;
+      listFacePeople: () => Promise<IpcResult<import('@/types').FacePerson[]>>;
+      getFacePersonPhotos: (
+        personId: string
+      ) => Promise<IpcResult<import('@/types').FacePersonPhotoRef[]>>;
+      renameFacePerson: (
+        personId: string,
+        name: string
+      ) => Promise<IpcResult<{ id: string; name: string }>>;
+      mergeFacePeople: (
+        targetId: string,
+        sourceIds: string[]
+      ) => Promise<IpcResult<{ moved: number; targetId: string }>>;
+      /** 清空人脸索引与封面（不删原图） */
+      clearFaceIndex: () => Promise<IpcResult<{ cleared: boolean }>>;
+      onFaceModelProgress: (
+        callback: (progress: import('@/types').FaceModelStatus) => void
+      ) => () => void;
+      onFaceModelError: (callback: (payload: { message: string }) => void) => () => void;
+      onFaceScanProgress: (
+        callback: (progress: import('@/types').FaceScanState) => void
+      ) => () => void;
+      onFaceScanDone: (callback: (summary: import('@/types').FaceScanDone) => void) => () => void;
+      onFaceScanError: (callback: (payload: { message: string }) => void) => () => void;
+      onFaceStatusChanged: (callback: () => void) => () => void;
+
       /** 注册内存压力广播（主进程看门狗发出）；返回取消订阅函数 */
       onMemoryPressure: (callback: (level: 'soft' | 'hard') => void) => () => void;
     };

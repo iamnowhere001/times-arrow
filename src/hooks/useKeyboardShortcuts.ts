@@ -47,6 +47,8 @@ export interface UseKeyboardShortcutsParams {
   isDuplicateDetectorOpen: boolean;
   isTimelineOpen: boolean;
   isMapOpen: boolean;
+  /** 人像页在前台：Esc 返回图库，其余按键让行 */
+  isPeopleOpen: boolean;
   /** 「关于与更新」页在前台（更新弹窗打开时由调用方置 false，让 Esc 先关弹窗） */
   isAboutOpen: boolean;
   /** 返回图库（整页视图的 Esc） */
@@ -84,6 +86,7 @@ export function useKeyboardShortcuts({
   isDuplicateDetectorOpen,
   isTimelineOpen,
   isMapOpen,
+  isPeopleOpen,
   isAboutOpen,
   onExitToLibrary,
   handleExitDuplicates,
@@ -189,6 +192,14 @@ export function useKeyboardShortcuts({
       }
       // 按地点浏览：同上（地图自身的方向键平移 / 缩放由地图容器处理）
       if (isMapOpen) {
+        if (e.key === 'Escape' && !quickLookPhoto) {
+          e.preventDefault();
+          onExitToLibrary();
+        }
+        return;
+      }
+      // 人像：Esc 返回图库（人物详情页内部的返回交给页面按钮）
+      if (isPeopleOpen) {
         if (e.key === 'Escape' && !quickLookPhoto) {
           e.preventDefault();
           onExitToLibrary();
@@ -311,6 +322,7 @@ export function useKeyboardShortcuts({
     isDuplicateDetectorOpen,
     isTimelineOpen,
     isMapOpen,
+    isPeopleOpen,
     isAboutOpen,
     isExportModalOpen,
     isShortcutsOpen,

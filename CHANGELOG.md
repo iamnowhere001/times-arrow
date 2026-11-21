@@ -2,11 +2,41 @@
 
 本文件记录**用户可感知的变化**（功能、行为、修复、安全），格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **发布状态**：**v0.6.5 已于 2026-11-20 正式发布** —— `package.json` `0.6.5`、git tag `v0.6.5`、GitHub Release 资产 `PhotoMinder-0.6.5-arm64.dmg`（80.3MB，SHA256 与本地一致），`/releases/latest` 已指向该版本。**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
+> **发布状态**：**v0.6.6 已于 2026-11-21 开发完成（待发版）** —— `package.json` 已 bump 到 `0.6.6`。**v0.6.5 已于 2026-11-20 正式发布** —— `package.json` `0.6.5`、git tag `v0.6.5`、GitHub Release 资产 `PhotoMinder-0.6.5-arm64.dmg`（80.3MB，SHA256 与本地一致），`/releases/latest` 已指向该版本。**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
 > v0.6.1 于 2026-11-06 发布（tag `v0.6.1`）。工作区另有 v0.8.0 / v1.0.0 的提前交付，尚未发版，见下方 `[Unreleased]`。
 > 历史版本的日期为开发完成日期，不一定等于发布日；本文件只记录已交付事实。
 >
 > 本文件由 2026-11-06 的文档整理批次根据 git 历史、`TODO.md` 完成存档与 `CODE_REVIEW.md` 修复记录回溯建立；日期为开发完成日期，不一定等于发布日。
+
+---
+
+## [0.6.6] — 2026-11-21（开发完成，待发版）
+
+主题：**本地人像**。回顾从「某一天」走到「某一个人」。
+
+### Added
+
+- **人像整页视图**：左栏「回顾」新增「人像」，本地识别人脸并按人物分组；支持重命名、合并同一人的多个分组、点进人物回看全部照片并直接 QuickLook，可一键清空索引（原照片不受影响）。
+- **纯本地人脸链路**：主进程用 onnxruntime-node 加载 InsightFace buffalo_sc，SCRFD 检测、五点对齐、ArcFace 特征与余弦相似度聚类全部在 JS 中实现；特征按内容指纹写入 `faces.json`，渲染层只拿人物摘要与 `fileId`。
+- **模型按需下载**：约 15MB 的模型不打进 DMG，首次进入人像页时由主进程下载（镜像优先、官方回落）、校验 SHA256 后解压到 `userData/models/`，可取消；之后识别全程离线。
+- **人像封面**：扫描时按检测框裁切 160×160 JPEG，走 `pm://local/face` 读取，不把大图转 base64 送进渲染进程。
+
+### Changed
+
+- 打包增加 `onnxruntime-node` 原生运行库并写入 `asarUnpack`；`build.files` 排除非 macOS 二进制与版本化 dylib，安装包只多带运行时。
+- 模型下载线路改为**镜像优先、官方回落**：单条线路连接失败或 SHA256 不匹配时自动换下一条；网络错误统一翻译为「无法连接下载服务器，请检查网络后重试」，不再把 `ECONNREFUSED` 原样显示在界面上。
+
+### 说明
+
+- 聚类阈值为余弦相似度 `0.36`，在测试人像上同人约 `0.35`、异人低于 `0.14`；阈值偏保守，宁可多分一组（可合并）也不把两个人并到一起。
+- 人脸检测复用已按 EXIF 摆正的缩略图，避免直接读原图时的方向问题；视频不参与识别。
+
+### 发布验证（2026-11-21）
+
+- `npm run verify` 全绿：单测 28 文件 422 项、主进程 13 文件、人像算法 17 项断言。
+- 打包产物验证：`app.asar.unpacked` 只包含 `darwin/arm64` 的 `libonnxruntime.1.dylib` 与 `onnxruntime_binding.node`（非 macOS 二进制与版本化 dylib 已裁掉）；从打包后的 `app.asar` 加载 onnxruntime 成功。
+- 服务端到端（真实 Electron + 真实模型）：模型下载 → SHA256 → 解压 → `ensureReady` 通过；扫描产生 `preparing / detecting / grouping / done` 进度与 `face-scan-done`；未授权路径计入 `failed` 并写日志；新实例重启后能读回索引。
+- DMG `PhotoMinder-0.6.6-arm64.dmg` 重压后 **88.1MB**（v0.6.5 为 84.2MB，增量约 3.9MB）。
 
 ---
 

@@ -1,6 +1,6 @@
 # 数据模型与持久化
 
-> **最后更新**：2026-11-20 · **适用版本**：0.6.5
+> **最后更新**：2026-11-21 · **适用版本**：0.6.6
 > **事实源**：`src/types/index.ts`（领域类型）、`electron/lib/fingerprint.cjs`（指纹算法）、`electron/main/store.cjs`（写盘）、`electron/main/migrations.cjs`（迁移）
 
 ## 本文负责什么
@@ -45,12 +45,16 @@
 | `ai-config.json` | AI 服务配置（含明文 Key） | `ai.cjs` | 仅主进程读取；读取接口只回掩码 |
 | `ai.env` | 环境变量兜底文件 | 用户手写 | 优先级最低 |
 | `thumbnails/` | 磁盘缩略图缓存 | `media-pipeline.cjs` | 可整体删除，按需重建 |
+| `faces.json` | 人像索引：人脸框、特征向量、人物分组与命名 | `face/service.cjs`（走 `store.cjs`） | 解析失败按空索引处理并提示重新扫描；重扫可重建 |
+| `faces/covers/` | 人像封面（160×160 JPEG） | `face/service.cjs` | 可整体删除；缺图时显示占位，重扫补齐 |
+| `models/buffalo_sc/` | 人脸模型（SCRFD + ArcFace onnx） | `face/model-store.cjs` | 缺失时人像页引导重新下载；下载先校验 SHA256 再解压 |
 
 **写盘规则（不可绕过）**：
 
-- 一律走 `store.cjs`：临时文件 + `rename` 原子替换，写前轮转备份。不要自己 `writeFile`。
-- 「读 - 改 - 写」必须在同一把锁内（`withStoreLock`），否则并发写会互相覆盖。
+- 一律走 `store.cjs`：临时文件 + `rename` 原子替换，写前轮转备份。不要自己 `writeFile`。人脸索引 `faces.json` 已按这条规则接入。
+- 「读 - 改 - 写」必须在同一把锁内（`withStoreLock`），否则并发写会互相覆盖。人脸扫描是逐张串行的，写索引集中在批次结束时发生。
 - 任何写盘失败都要有用户可见反馈，不得静默吞错。
+- 人脸特征也是按 `fileId` 记录的：照片重命名 / 移动不会丢失人物归属；内容变了（`fileId` 变）就当作新照片重扫。
 
 字段级 schema 不在这里维护：加字段时看 `src/types/index.ts` 与 `store.cjs` 的默认值。
 
@@ -78,6 +82,7 @@
 | 改 `fileId` 算法 | 等同于让全部历史标注失联。需要迁移或明确放弃旧数据，属于「先问维护者」清单 |
 | 新增落盘文件 | 有上限吗？损坏时怎么恢复？用户怎么知道？ |
 | 改备份 / 恢复语义 | 用户可能正靠它救数据。先看 [`decisions.md`](./decisions.md) ADR-003 |
+| 改人脸模型 / 聚类阈值 | 特征维度与阈值必须一起看；阈值调高会多分组（可合并），调低会把不同人并到一起。先看 [`decisions.md`](./decisions.md) 人脸一节 |
 
 ## 5. 守卫
 

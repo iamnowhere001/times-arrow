@@ -26,7 +26,7 @@ describe('侧栏信息架构（静态断言）', () => {
 
   it('每个分段标题都有 tooltip 说明其作用', () => {
     expect(source).toContain('title="按全部 / 收藏 / 隐藏浏览照片"');
-    expect(source).toContain('title="按时间线、地图或相似度重新查看照片"');
+    expect(source).toContain('title="按时间线、地图、人物或相似度重新查看照片"');
     expect(source).toContain('title="按自己的规则把照片归组"');
     expect(source).toContain('title="功能介绍、操作技巧与版本更新"');
   });

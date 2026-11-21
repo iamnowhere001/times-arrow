@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 /**
  * 主视图导航。
  *
- * 五个视图是互斥的整页切换，没有「返回栈」——从任何一个整页视图返回都只回图库。
+ * 六个视图是互斥的整页切换，没有「返回栈」——从任何一个整页视图返回都只回图库。
  * 因此这里只提供三个动作：`goTo(view)`、`backToLibrary()`、以及状态本身。
  *
  * 改造前 App 里有七个 `useCallback(() => setMainView('xxx'), [])` 的单行包装，
@@ -14,7 +14,7 @@ import { useCallback, useState } from 'react';
  * 剩下的三个（侧栏的「时光画廊 / 按地点 / 关于」入口）仍保留在 App：
  * Sidebar 是 `React.memo` 的，必须给它稳定引用，内联箭头会破坏 memo。
  */
-export type MainView = 'library' | 'timeline' | 'map' | 'duplicates' | 'about';
+export type MainView = 'library' | 'timeline' | 'map' | 'people' | 'duplicates' | 'about';
 
 export interface MainViewNavigation {
   mainView: MainView;

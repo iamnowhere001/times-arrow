@@ -238,6 +238,74 @@ export interface UpdatePreferences {
   autoCheck?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// 本地人像识别（v0.6.6）
+// ---------------------------------------------------------------------------
+
+/** 人脸模型状态：模型不进安装包，首次使用时由主进程下载 */
+export type FaceModelState =
+  'unknown' | 'missing' | 'downloading' | 'installing' | 'ready' | 'error';
+
+export interface FaceModelStatus {
+  state: FaceModelState;
+  /** 下载进度（0–100） */
+  percent: number;
+  received: number;
+  total: number;
+  error: string | null;
+}
+
+export type FaceScanPhase =
+  'idle' | 'preparing' | 'detecting' | 'grouping' | 'done' | 'cancelled' | 'error';
+
+/** 扫描进度（主进程 → 渲染层事件） */
+export interface FaceScanState {
+  isScanning: boolean;
+  phase: FaceScanPhase;
+  done: number;
+  total: number;
+  current: string;
+  faces: number;
+  failed: number;
+}
+
+export interface FaceStats {
+  /** 已建立索引的照片数（含未检出人脸的） */
+  indexed: number;
+  photosWithFaces: number;
+  faces: number;
+  people: number;
+}
+
+export interface FaceStatus {
+  model: FaceModelStatus;
+  scan: FaceScanState;
+  stats: FaceStats;
+}
+
+/** 人像网格里的一个人物（不包含特征向量，向量只留在主进程） */
+export interface FacePerson {
+  id: string;
+  name: string;
+  createdAt: number;
+  faceCount: number;
+  photoCount: number;
+  /** pm://local/face/<封面文件>；封面缺失时为 null */
+  coverUrl: string | null;
+}
+
+/** 某个人的照片引用：按 fileId 回连渲染层已有的 Photo */
+export interface FacePersonPhotoRef {
+  fileId: string;
+  faceCount: number;
+}
+
+/** 扫描完成汇总 */
+export interface FaceScanDone extends FaceStats {
+  failed: number;
+  skipped: number;
+}
+
 /** GitHub Release 里可下载的安装包资产 */
 export interface UpdateAsset {
   name: string;

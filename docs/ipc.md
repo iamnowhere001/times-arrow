@@ -1,6 +1,6 @@
 # 跨进程契约（IPC）
 
-> **最后更新**：2026-11-20 · **适用版本**：0.6.5
+> **最后更新**：2026-11-21 · **适用版本**：0.6.6
 > **事实源**：`electron/preload.js`（暴露面）、`src/types/global.d.ts`（类型）、主进程 `handle()` 注册、`tests/main-process/ipc-contract.test.cjs` 的 `CHANNELS` 冻结清单
 
 ## 本文负责什么
@@ -51,6 +51,10 @@
 只有 6 个入口能产生授权（这六项的列举由 [`AGENTS.md`](../AGENTS.md) §4.2 作为规则本体维护，此处不重复展开）。新增「隐式信任」的入口等于在安全边界上开洞——具体面见 [`architecture.md`](./architecture.md) §4.6 与 [`decisions.md`](./decisions.md) ADR-004。
 
 `update-*` 类通道是例外：它们**不接收**渲染层路径，下载目录与文件名由主进程决定，因此不走授权链。不要为了「方便」给它们加 path 参数。
+
+`face-scan-start` 接收的是一批候选（`{ path, fileId }`），执行时会对**每个**路径逐个 `isPathAuthorized()`：未授权的单张记为失败并计入 `failed`，同时写日志，不静默跳过；不要改成「只校验第一项」或「扫描时假装成功」。`face-model-*` 不接收渲染层路径，模型目录由主进程决定。
+
+`pm://local/face/<basename>` 与 `pm://local/thumb/<basename>` 同类：只有 basename，解析后必须落在 `userData/faces/covers` 内，不接受任意路径。
 
 ---
 

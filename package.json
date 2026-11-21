@@ -1,7 +1,7 @@
 {
   "name": "photominder",
   "private": true,
-  "version": "0.6.5",
+  "version": "0.6.6",
   "main": "electron/main.js",
   "type": "commonjs",
   "engines": {
@@ -31,8 +31,10 @@
     "dist:mac": "npm run build && electron-builder --mac --arm64 && node build/recompressDmg.js"
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "exifreader": "^4.45.0",
-    "heic-convert": "^2.1.0"
+    "heic-convert": "^2.1.0",
+    "onnxruntime-node": "^1.31.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -61,7 +63,8 @@
     "productName": "PhotoMinder",
     "asar": true,
     "asarUnpack": [
-      "node_modules/libheif-js/**/*"
+      "node_modules/libheif-js/**/*",
+      "node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/**/*"
     ],
     "files": [
       "electron/**/*",
@@ -75,7 +78,10 @@
       "!node_modules/exifreader/babel.config.json",
       "!node_modules/libheif-js/libheif/**",
       "!node_modules/libheif-js/wasm.js",
-      "!node_modules/libheif-js/libheif-wasm/{libheif.js,libheif.wasm,libheif-bundle.mjs}"
+      "!node_modules/libheif-js/libheif-wasm/{libheif.js,libheif.wasm,libheif-bundle.mjs}",
+      "!node_modules/onnxruntime-node/bin/napi-v6/{linux,win32}/**",
+      "!node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/libonnxruntime.1.*.dylib",
+      "!node_modules/onnxruntime-node/script/**"
     ],
     "afterPack": "build/afterPack.js",
     "directories": {

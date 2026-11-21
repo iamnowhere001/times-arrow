@@ -62,6 +62,10 @@ interface SidebarProps {
   onSelectMap: () => void;
   /** 当前是否处于按地点浏览视图 */
   isMapActive: boolean;
+  /** 打开人像（整页视图）：本地人脸识别后按人物浏览 */
+  onSelectPeople: () => void;
+  /** 当前是否处于人像视图 */
+  isPeopleActive: boolean;
   /** 打开相似照片（整页视图）：与筛选无关，属「视图」而非分类 */
   onCheckDuplicates: () => void;
   /** 请求清空照片列表：破坏性操作，由 App 统一弹二次确认 */
@@ -270,6 +274,25 @@ const TimelineIcon = () => (
       stroke="none"
       opacity="0.55"
     ></rect>
+  </svg>
+);
+
+/** 人像：两个人物轮廓，表达「按人物聚照片」 */
+const PeopleIcon = () => (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.9"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="9" cy="8" r="3.2"></circle>
+    <path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"></path>
+    <circle cx="17" cy="9" r="2.4"></circle>
+    <path d="M15 14.4c2.6-.5 5 1.2 5.6 4.2"></path>
   </svg>
 );
 
@@ -670,6 +693,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   isTimelineActive,
   onSelectMap,
   isMapActive,
+  onSelectPeople,
+  isPeopleActive,
   onCheckDuplicates,
   onRequestReset,
   hasPhotos,
@@ -859,7 +884,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
           {/* 分组卡 · 回顾：整页沉浸式入口，右端箭头表示会离开当前列表 */}
           <section aria-label="回顾" className={GROUP_CARD}>
-            <SectionLabel title="按时间线、地图或相似度重新查看照片">回顾</SectionLabel>
+            <SectionLabel title="按时间线、地图、人物或相似度重新查看照片">回顾</SectionLabel>
             <div className="space-y-0.5">
               <NavRow
                 icon={<TimelineIcon />}
@@ -877,6 +902,17 @@ const Sidebar: React.FC<SidebarProps> = ({
                 disabled={!hasPhotos}
                 chevron
                 title={hasPhotos ? '把带 GPS 的照片落到地图上，按拍摄地点浏览' : '导入照片后可用'}
+              />
+              <NavRow
+                icon={<PeopleIcon />}
+                label="人像"
+                onClick={onSelectPeople}
+                active={isPeopleActive}
+                disabled={!hasPhotos}
+                chevron
+                title={
+                  hasPhotos ? '本地识别照片里的人物并按人物浏览；照片不会上传' : '导入照片后可用'
+                }
               />
               <NavRow
                 icon={<DuplicateIcon />}

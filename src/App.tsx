@@ -277,6 +277,8 @@ const App: React.FC = () => {
   const isTimelineOpen = mainView === 'timeline';
   /** 「按地点浏览」是否在前台 */
   const isMapOpen = mainView === 'map';
+  /** 「人像」是否在前台（本地人脸识别后按人物浏览） */
+  const isPeopleOpen = mainView === 'people';
   /** 「关于与更新」是否在前台（更新弹窗打开时让位，避免 Esc 同时关弹窗又退出页面） */
   const isAboutOpen = mainView === 'about';
   /**
@@ -828,6 +830,7 @@ const App: React.FC = () => {
   const handleOpenSaveAlbum = modals.saveAlbum.open;
   const handleSelectTimeline = useCallback(() => goTo('timeline'), [goTo]);
   const handleSelectMap = useCallback(() => goTo('map'), [goTo]);
+  const handleSelectPeople = useCallback(() => goTo('people'), [goTo]);
   const handleOpenAbout = useCallback(() => goTo('about'), [goTo]);
   /** 地图照片条 → QuickLook：翻页范围限定在该地点的照片内 */
   const handleMapQuickLook = useCallback((photo: Photo, scope: Photo[]) => {
@@ -890,6 +893,7 @@ const App: React.FC = () => {
     isDuplicateDetectorOpen,
     isTimelineOpen,
     isMapOpen,
+    isPeopleOpen,
     isAboutOpen: isAboutOpen && !updateChecker.isOpen,
     onExitToLibrary: backToLibrary,
     handleExitDuplicates,
@@ -1031,6 +1035,8 @@ const App: React.FC = () => {
           isTimelineActive={isTimelineOpen}
           onSelectMap={handleSelectMap}
           isMapActive={isMapOpen}
+          onSelectPeople={handleSelectPeople}
+          isPeopleActive={isPeopleOpen}
           onCheckDuplicates={handleCheckDuplicatesClick}
           rankedTags={rankedTags}
           activeTags={filters.tags}
@@ -1097,6 +1103,8 @@ const App: React.FC = () => {
             timelinePhotos={timelinePhotos}
             onTimelineQuickLook={setQuickLookPhoto}
             onMapQuickLook={handleMapQuickLook}
+            people={{ photos: timelinePhotos, onQuickLook: setQuickLookPhoto }}
+            onBackFromPeople={backToLibrary}
             about={{
               currentVersion: updateChecker.currentVersion,
               autoCheck: updateChecker.autoCheck,
