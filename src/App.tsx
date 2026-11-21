@@ -16,7 +16,7 @@ import { useThemeMode } from '@/hooks/useThemeMode';
 import { useDuplicateDetection } from '@/hooks/useDuplicateDetection';
 import { useBatchTags } from '@/hooks/useBatchTags';
 import { createEmptyFilters } from '@/lib/filter/filters';
-import { deriveEmptyStateCopy } from '@/lib/filter/libraryViewState';
+import { deriveEmptyStateCopy, libraryViewName } from '@/lib/filter/libraryViewState';
 import { savePersistedConfig } from '@/lib/persistence/persistence';
 import { isPathInLibrary } from '@/lib/persistence/sources';
 import Sidebar from '@/components/layout/Sidebar';
@@ -198,8 +198,17 @@ const App: React.FC = () => {
     activeCategory,
   });
 
-  // 选择集与其交互（见 hooks/useSelection）：单击 / Shift 连选 / 全选 / 筛选变化后收敛。
-  // 调用点必须在 useDuplicateDetection 之前：删除流程要把「从选中集中摘除」注入给它。
+  /**
+   * 左栏收起时顶栏补位的「现在在看什么」（参考系统照片 App：收起侧栏后左上角
+   * 变成「人物 / 7 个项目」）。侧栏展开时这件事由高亮行负责，顶栏不重复。
+   */
+  const libraryViewLabel = libraryViewName({
+    category: activeCategory,
+    mediaFilter,
+    albumName: albums.find((album) => album.id === activeAlbumId)?.name,
+  });
+
+  // 选择集与其交互（见 hooks/useSelection）：单击 / Shift 连选 / 全选 / 筛选变化后收敛。  // 调用点必须在 useDuplicateDetection 之前：删除流程要把「从选中集中摘除」注入给它。
   const {
     selectedIds,
     setSelectedIds,
@@ -1142,6 +1151,8 @@ const App: React.FC = () => {
                 setIsDetailsPaneOpen={setIsDetailsPaneOpen}
                 isLeftPaneOpen={isLeftPaneOpen}
                 setIsLeftPaneOpen={setIsLeftPaneOpen}
+                viewName={libraryViewLabel}
+                viewCount={visiblePhotos.length}
                 searchQuery={searchQuery}
                 onSearchQueryChange={setSearchQuery}
                 searchInputRef={searchInputRef}

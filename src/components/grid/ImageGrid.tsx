@@ -376,7 +376,8 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(
 
     /**
      * 排序 / 缩放属于「浏览视图」控制，选中项出现时也必须留着（K16）。
-     * 抽成共用块，两种情境条都渲染，不再出现「选中后要先按 Esc 才能调排序」。
+     * 现在只渲染在一个地方：列表右上角的浮动胶囊（见网格视图 return），
+     * 与选中态无关 —— 不再出现「选中后才多出一条浏览设置行」。
      */
     const directionLabel = sortConfig.direction === 'asc' ? '↑' : '↓';
     const browseControls = (
@@ -757,39 +758,41 @@ const ImageGrid = forwardRef<ImageGridHandle, ImageGridProps>(
       sortConfig.key === 'dateCreated';
     return (
       <div className="flex-1 flex flex-col w-full min-h-0">
-        {/* 情境条：无选中 = 浏览条（统计 + 排序）；有选中 = 选择条（批量操作 + 清除） */}
+        {/* 顶部只有一条「占位」行：无选中 = 分类名 + 数量，有选中 = 选择条。
+            浏览控件不再占位（见下方浮动胶囊），因此选中与否都不会多插一行、列表不会整体下移。 */}
         {inSelectMode ? (
-          <>
-            {selectionBar}
-            {/* 选中态也保留排序 / 缩放：独立成行，窄窗口 flex-wrap 换行而不是裁切控件 */}
-            <div className="mb-3 mx-4 shrink-0 rounded-xl border backdrop-blur-xl px-3.5 py-2 flex flex-wrap items-center gap-2.5 min-h-[46px] bg-[var(--bg-elevated)] border-[var(--border-subtle)]">
-              <span className="text-sm text-[var(--text-tertiary)] whitespace-nowrap">
-                浏览设置
-              </span>
-              <div className="flex-1" />
-              {browseControls}
-            </div>
-          </>
+          selectionBar
         ) : (
-          <div className="mb-3 mx-4 shrink-0 rounded-xl border backdrop-blur-xl px-3.5 py-2 flex items-center gap-2.5 min-h-[46px] bg-[var(--bg-elevated)] border-[var(--border-subtle)]">
-            <div className="flex items-center gap-2 min-w-0">
-              {viewTitle && (
-                <span className="text-sm font-semibold text-[var(--text-primary)] whitespace-nowrap">
-                  {viewTitle}
-                </span>
-              )}
-              <span className="text-sm text-[var(--text-tertiary)] whitespace-nowrap">
-                {photos.length} 项
+          <div className="mb-2 mx-4 shrink-0 flex items-baseline gap-2 min-w-0">
+            {viewTitle && (
+              <span className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                {viewTitle}
               </span>
-            </div>
-
-            <div className="flex-1" />
-
-            {browseControls}
+            )}
+            <span className="text-xs text-[var(--text-tertiary)] whitespace-nowrap tabular-nums">
+              {photos.length} 项
+            </span>
           </div>
         )}
 
-        <div className={`flex-1 flex flex-col min-h-0 ${reflowClass}`}>
+        <div className={`relative flex-1 flex flex-col min-h-0 ${reflowClass}`}>
+          {/*
+            浏览设置浮层：半透明毛玻璃、右对齐、压在第一行图片上。
+            - 不参与布局（绝对定位）：选中 / 取消选中不会推动列表，滚到哪都在同一位置；
+            - 外层 pointer-events-none：胶囊之外的区域仍能点卡片、拖滚动条；
+            - 背景用 color-mix 把 --bg-elevated 压到 72% 透明度，图片能透出来但文字仍可读。
+          */}
+          <div className="pointer-events-none absolute inset-x-0 top-2 z-20 flex justify-end pr-4">
+            <div
+              className="pointer-events-auto flex max-w-full flex-wrap items-center justify-end gap-2 rounded-xl border border-[var(--border-subtle)] px-2 py-1 shadow-lg shadow-[rgba(0,0,0,0.18)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 hover:border-[rgba(var(--accent-blue-rgb),0.35)] hover:shadow-xl"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--bg-elevated) 72%, transparent)',
+              }}
+            >
+              {browseControls}
+            </div>
+          </div>
+
           <VirtualGrid
             ref={virtualGridRef}
             items={photos}

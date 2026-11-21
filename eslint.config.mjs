@@ -52,7 +52,7 @@ export default [
 
   // ------------------------------------------------- 主进程 / 构建（Node CJS）
   {
-    files: ['electron/**/*.{js,cjs}', 'build/**/*.js', 'tests/**/*.cjs', '*.cjs'],
+    files: ['electron/**/*.{js,cjs}', 'build/**/*.{js,cjs}', 'tests/**/*.cjs', '*.cjs'],
     languageOptions: {
       globals: { ...globals.node },
       sourceType: 'commonjs',

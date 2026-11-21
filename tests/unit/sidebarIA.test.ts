@@ -28,7 +28,27 @@ describe('侧栏信息架构（静态断言）', () => {
     expect(source).toContain('title="按全部 / 收藏 / 隐藏浏览照片"');
     expect(source).toContain('title="按时间线、地图、人物或相似度重新查看照片"');
     expect(source).toContain('title="按自己的规则把照片归组"');
-    expect(source).toContain('title="功能介绍、操作技巧与版本更新"');
+    expect(source).toContain('title="快捷键、功能介绍与版本更新"');
+  });
+
+  it('「帮助」组收拢快捷键与关于入口（2026-11-21 从底栏上收）', () => {
+    const help = source.slice(source.indexOf('aria-label="帮助"'));
+    expect(help).toContain('键盘快捷键');
+    expect(help).toContain('onOpenShortcuts');
+    expect(help).toContain('onOpenAbout');
+  });
+
+  it('「清空列表」是带文字的入口，落在「整理」组而不是底栏图标', () => {
+    const organize = source.slice(
+      source.indexOf('aria-label="整理"'),
+      source.indexOf('aria-label="帮助"')
+    );
+    expect(organize).toContain('onRequestReset');
+    expect(organize).toContain('清空列表');
+    // 底栏（</nav> 之后）只剩外观切换：这两个能力不应再出现在那里
+    const footer = source.slice(source.lastIndexOf('</nav>'));
+    expect(footer).not.toContain('onRequestReset');
+    expect(footer).not.toContain('onOpenShortcuts');
   });
 
   it('重组不删入口：整页视图、筛选分类与标签仍然可达', () => {

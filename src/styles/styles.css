@@ -190,7 +190,7 @@
   --border-subtle: rgba(255, 246, 232, 0.07);
   --border-default: rgba(255, 246, 232, 0.12);
   --border-hover: rgba(255, 246, 232, 0.2);
-  --border-sidebar-divider: rgba(255, 242, 220, 0.09);
+  --border-sidebar-divider: rgba(255, 242, 220, 0.12);
 
   /* 阴影统一压向暖黑，取消彩色光晕，只保留主色的细描边 + 近距离柔光 */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.22);
@@ -299,7 +299,7 @@
   --border-subtle: rgba(26, 22, 17, 0.07);
   --border-default: rgba(26, 22, 17, 0.11);
   --border-hover: rgba(26, 22, 17, 0.17);
-  --border-sidebar-divider: rgba(110, 82, 46, 0.12);
+  --border-sidebar-divider: rgba(110, 82, 46, 0.16);
   --border-input: rgba(26, 22, 17, 0.13);
 
   --shadow-sm: 0 1px 2px rgba(26, 22, 17, 0.06), 0 2px 8px rgba(26, 22, 17, 0.06);

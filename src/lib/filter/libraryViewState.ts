@@ -161,6 +161,37 @@ export function deriveLibraryViewState(input: LibraryViewStateInput): LibraryVie
   };
 }
 
+export interface LibraryViewNameInput {
+  /** 侧栏分类：all / favorites / hidden */
+  category: string;
+  /** 当前媒体类型筛选 */
+  mediaFilter: MediaFilter;
+  /** 当前视图恰好等价于某个智能相簿时的名字 */
+  albumName?: string;
+}
+
+/**
+ * 「现在在看什么」的一行名字 —— 左栏收起时由顶栏接住这个问题。
+ *
+ * 侧栏展开时这件事由高亮行回答，收起后左上角只剩一个开关按钮，用户会瞬时失去方位。
+ * 口径与侧栏行文案保持一致：分类在前、媒体类型用 `·` 跟在后面；相簿视图直接用相簿名，
+ * 因为那是用户自己起的名字，比「收藏夹 · 视频」这类组合更能说明当前在哪。
+ */
+export const libraryViewName = (input: LibraryViewNameInput): string => {
+  const albumName = input.albumName?.trim();
+  if (albumName) return albumName;
+
+  const media = input.mediaFilter === 'all' ? '' : MEDIA_FILTER_LABELS[input.mediaFilter];
+  const category =
+    input.category === 'hidden' ? '已隐藏' : input.category === 'favorites' ? '收藏夹' : '';
+
+  if (category && media) return `${category} · ${media}`;
+  if (category) return category;
+  // 默认视图说「所有照片」而不是 gridViewTitle 的「所有媒体」：
+  // 顶栏是给用户看的方位提示，侧栏那一行也叫「所有照片」，两处必须同名。
+  return media || '所有照片';
+};
+
 /** 空状态主按钮要做的事；具体回调由调用方按动作分发（纯函数不持有 setState） */
 export type EmptyStateAction =
   'import' | 'clearSearch' | 'clearFilters' | 'showHidden' | 'showAll' | 'showAllMedia' | 'none';

@@ -36,7 +36,12 @@ function loadMainProcess(options = {}) {
   const readyCallbacks = [];
   const trashCalls = [];
   const openPathCalls = [];
-  const userData = options.userData ?? fs.mkdtempSync(path.join(os.tmpdir(), 'pm-userdata-'));
+  // 主进程启动时会 app.setPath('userData', join(appData, 'PhotoMinder'))，
+  // 桩要能承载这个调用：appData 用独立临时目录，userData 初值与钉死后的目标同名，
+  // 于是 setPath 在桩里是幂等的，beforeRequire 写的文件仍然落在主进程读取的位置。
+  const appDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-appdata-'));
+  const pinnedByOption = Boolean(options.userData);
+  let userData = options.userData ?? path.join(appDataRoot, 'PhotoMinder');
 
   const fakeElectron = {
     app: {
@@ -44,7 +49,11 @@ function loadMainProcess(options = {}) {
       on: (event, fn) => {
         if (event === 'ready') readyCallbacks.push(fn);
       },
-      getPath: () => userData,
+      getPath: (key) => (key === 'appData' ? appDataRoot : userData),
+      // 调用方显式指定 userData 时以它为准：测试隔离不能被主进程的钉死覆盖
+      setPath: (key, value) => {
+        if (key === 'userData' && !pinnedByOption) userData = value;
+      },
       getAppPath: () => APP_ROOT,
       isPackaged: false,
       quit() {},

@@ -54,6 +54,20 @@ const { UNAUTHORIZED_ERROR, authorizeRoot, authorizePaths, isPathAuthorized } =
   createAuthorization();
 
 /**
+ * 数据目录钉死为英文 PhotoMinder —— 与「用户看得见的名字」解耦。
+ *
+ * 打包产物的 Info.plist 把 CFBundleDisplayName 写成「时光画框」之后，
+ * Electron 的 app.name 会跟着变成中文，`userData` 也随之迁到新的中文目录，
+ * 现有 config.json / 收藏 / 标签 / 人脸特征会全部失联 —— 这正是 ADR-002
+ * 当初不敢动 productName 的原因。现在显式钉死一次，冲突就消失了：
+ * 显示名随便改，数据永远落在同一个地方。
+ *
+ * macOS 默认的 APFS 大小写不敏感，所以这里的 PhotoMinder 与既有的
+ * `~/Library/Application Support/photominder/` 是同一个目录，老数据原地可用。
+ */
+app.setPath('userData', path.join(app.getPath('appData'), 'PhotoMinder'));
+
+/**
  * 崩溃记录器要在 process.on 注册之前可用：异常可能发生在模块求值期间，
  * 而 handler 里引用的是这个绑定本身，事件触发时它已经初始化完成。
  */

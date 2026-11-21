@@ -78,7 +78,10 @@ build/      # electron-builder 资源与打包钩子
 
 ### 4.3 身份与持久化
 
-- **品牌口径（2026-11-06 拍板）**：界面显示名「时光画框」、副标题「本地照片整理工作台」；`package.json` 的 `productName` / `appId` 与导出文件的 `payload.app` 一律保持 `PhotoMinder`。前者决定 `userData` 目录，后者是旧备份的格式标识，改动会丢数据或让备份无法导入。由 `tests/unit/branding.test.ts` 静态断言守住。
+- **品牌口径（2026-11-06 拍板，2026-11-21 扩展）**：用户看得见的名字统一为「时光画框」（副标题「本地照片整理工作台」），包括 Finder / Dock / 应用菜单 —— 这三个由 `package.json` 的 `mac.extendInfo.CFBundleDisplayName` / `CFBundleName` 提供。`productName` / `appId` / `.app` 文件名 / DMG 文件名 / 导出文件的 `payload.app` 一律保持 `PhotoMinder`。
+- **`userData` 必须显式钉死**：`electron/main.js` 里 `app.setPath('userData', path.join(app.getPath('appData'), 'PhotoMinder'))`，且必须在第一次 `getPath('userData')` 之前执行。原因是 `CFBundleDisplayName` 为中文时 `app.name` 会变，`userData` 默认会跟着迁到中文目录 —— 不钉死就等于丢数据。**不要删除或后移这一行。**
+- **图标单一源**：`build/icon-source.svg`（1024×1024，macOS 大圆角规格）→ `npm run icon:build` → `build/icon.icns`。不要手改 icns，也不要在别处复制一份 SVG。
+以上四条由 `tests/unit/branding.test.ts` 静态断言守住。
 - `Photo.fileId` = **内容指纹**（`sha256(size + 头尾各 64KB)` 截 128 bit），是跨会话、跨重命名 / 移动的稳定身份。
 - `Photo.id` 只是会话内唯一 id，**不要**拿它做持久化键。
 - 收藏 / 隐藏 / 标签 / 时间修正 / 智能相簿 / AI 结果都按 `fileId` 记录。不要重新引入按路径记录、`rekeyPathData` / `dropPathData` 那条补丁链。

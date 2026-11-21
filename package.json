@@ -28,7 +28,8 @@
     "test:unit": "vitest run",
     "electron:dev": "ELECTRON_START_URL=http://127.0.0.1:3000 electron .",
     "electron:build": "npm run build && electron-builder && node build/recompressDmg.js",
-    "dist:mac": "npm run build && electron-builder --mac --arm64 && node build/recompressDmg.js"
+    "dist:mac": "npm run build && electron-builder --mac --arm64 && node build/recompressDmg.js",
+    "icon:build": "node build/make-icon.cjs"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
@@ -91,6 +92,9 @@
     "mac": {
       "category": "public.app-category.photography",
       "icon": "build/icon.icns",
+      "extendInfo": {
+        "CFBundleDisplayName": "时光画框"
+      },
       "target": [
         {
           "target": "dmg",

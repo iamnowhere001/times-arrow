@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LibrarySource, MediaFilter, SmartAlbum } from '@/types';
 import { PlusIcon, RefreshIcon } from '@/components/icons';
 import { DotPinIcon } from '@/components/common/DotField';
@@ -68,11 +68,11 @@ interface SidebarProps {
   isPeopleActive: boolean;
   /** 打开相似照片（整页视图）：与筛选无关，属「视图」而非分类 */
   onCheckDuplicates: () => void;
-  /** 请求清空照片列表：破坏性操作，由 App 统一弹二次确认 */
+  /** 请求清空照片列表：破坏性操作，由 App 统一弹二次确认。入口在「整理 · 文件夹」末尾 */
   onRequestReset: () => void;
   /** 库中是否有内容：决定「相似照片 / 清空照片列表」是否可用 */
   hasPhotos: boolean;
-  /** 打开快捷键总览层：与外观同属底部全局区，不作用于当前视图 */
+  /** 打开快捷键总览层：归在「帮助」组，与「关于与更新」并列，不作用于当前视图 */
   onOpenShortcuts: () => void;
   /** 打开「关于与更新」整页视图：功能介绍 / 技巧 / 迭代计划 / 更新记录 */
   onOpenAbout: () => void;
@@ -348,28 +348,6 @@ const ChevronRightIcon = () => (
   </svg>
 );
 
-/** 品牌标记：光圈叶片。摄影语汇里最简洁的身份符号，与「暗房」配色同源 */
-const ApertureIcon = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.9"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <circle cx="12" cy="12" r="10"></circle>
-    <line x1="14.31" y1="8" x2="20.05" y2="17.94"></line>
-    <line x1="9.69" y1="8" x2="21.17" y2="8"></line>
-    <line x1="7.38" y1="12" x2="13.12" y2="2.06"></line>
-    <line x1="9.69" y1="16" x2="3.95" y2="6.06"></line>
-    <line x1="14.31" y1="16" x2="2.83" y2="16"></line>
-    <line x1="16.62" y1="12" x2="10.88" y2="21.94"></line>
-  </svg>
-);
-
 /** 文件夹来源：常驻入口，重启后据此重建图库 */
 const FolderIcon = () => (
   <svg
@@ -475,11 +453,12 @@ const TagIcon = () => (
 /**
  * 快捷键：键盘轮廓。比一个「?」更直说它打开的是什么 ——
  * 「?」是「我不懂」的求助语义，而这里给的是操作说明。
+ * 尺寸与其它导航行图标同为 18，行首才能对齐成一竖列。
  */
 const KeyboardIcon = () => (
   <svg
-    width="16"
-    height="16"
+    width="18"
+    height="18"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -556,7 +535,7 @@ const GROUP_CARD =
 const GROUP_DIVIDER = 'my-2 mx-1.5 border-t border-[var(--border-sidebar-divider)]';
 
 const ROW_BASE =
-  'group w-full flex items-center rounded-[9px] font-medium transition-all duration-150';
+  'group w-full flex items-center rounded-[9px] font-medium transition-all duration-150 outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[rgba(var(--accent-blue-rgb),0.55)]';
 const ROW_STATE = (active: boolean, disabled?: boolean) =>
   active
     ? 'bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-[0_4px_14px_-4px_rgba(var(--accent-blue-rgb),0.45)] ring-1 ring-inset ring-[rgba(255,255,255,0.14)]'
@@ -656,7 +635,7 @@ const SectionLabel: React.FC<{
 );
 
 /**
- * 左栏：按用户任务分为「浏览 / 回顾 / 整理 / 帮助」四组，底部为全局设置。
+ * 左栏：按用户任务分为「浏览 / 回顾 / 整理 / 帮助」四组，底部只留外观切换。
  *
  * 组织原则：
  * 1. 分组名回答「我能做什么」（浏览、回顾、整理、帮助），不回答「这是什么模块」
@@ -665,7 +644,9 @@ const SectionLabel: React.FC<{
  * 3. 全栏只有「视图行」（去往整页视图，右端是箭头）与「筛选行」（留下并改变列表，
  *    右端是计数）两类行；相簿与文件夹来源沿用同一套行走法，只调密度不做新控件。
  * 4. 计数右对齐成等宽数字列；分隔线只出现在「内容类型改变」处，不再每段一条。
- * 5. 彩色与体量只留给当前选中行；底部收成一条全局工具带，不与导航争夺纵向空间。
+ * 5. 彩色与体量只留给当前选中行；底栏只留外观切换，其余入口全部回到导航分组里。
+ * 6. 品牌标题落在导航区顶部而不是顶带：顶带只负责拖拽与红绿灯，
+ *    不再用一个图标 + 两行文字去挤占 244px 里的第一屏。
  */
 const Sidebar: React.FC<SidebarProps> = ({
   counts,
@@ -712,6 +693,50 @@ const Sidebar: React.FC<SidebarProps> = ({
   useEffect(() => {
     if (editingAlbumId) albumInputRef.current?.select();
   }, [editingAlbumId]);
+
+  /**
+   * 导航区的滚动位置：上下两端各需要一层渐隐。
+   *
+   * macOS 的滚动条默认不常驻，「整理」卡片被切掉一半时看起来像渲染出错。
+   * 渐隐同时是「下面还有内容」的唯一提示 —— 这里不引入额外箭头或文字，
+   * 只让被切开的边缘柔化，注意力才不会被吸走。
+   */
+  const navRef = useRef<HTMLElement>(null);
+  const [navEdge, setNavEdge] = useState({ top: false, bottom: false });
+
+  const syncNavEdge = useCallback(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const top = el.scrollTop > 2;
+    const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 2;
+    setNavEdge((prev) => (prev.top === top && prev.bottom === bottom ? prev : { top, bottom }));
+  }, []);
+
+  // 相簿 / 标签 / 来源增删会改变内容高度但不触发 scroll，渲染后同步一次兜住
+  useLayoutEffect(() => {
+    syncNavEdge();
+  });
+
+  // 滚动用 rAF 节流：一个滚轮手势会触发几十次事件，不节流等于每帧 setState
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        syncNavEdge();
+      });
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [syncNavEdge]);
 
   const startRename = (album: SmartAlbum) => {
     setEditingAlbumId(album.id);
@@ -825,494 +850,544 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div
         className={`w-[244px] h-full flex flex-col transition-[opacity,transform] duration-200 ease-entrance ${isOpen ? 'opacity-100 translate-x-0 delay-75' : 'opacity-0 -translate-x-3'}`}
       >
-        {/* 顶部：与右邻 Toolbar 共用 40px 高度、材质、底线与 --shadow-toolbar，消除左上角接缝台阶 */}
+        {/*
+          顶带只留红绿灯与拖拽区。
+          高度 / 材质 / 底线仍与右邻 Toolbar 对齐（40px + --shadow-toolbar），
+          否则左上角会出现接缝台阶。品牌信息整体下移到导航区顶部，
+          这里不再放图标与文字 —— 顶带里空着比塞一个「不承载操作的 logo」更安静。
+        */}
         <div
-          className={`app-drag h-10 shrink-0 flex items-center gap-2.5 bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] shadow-[var(--shadow-toolbar)] ${
-            hasMacTrafficLights ? 'pl-[78px] pr-3' : 'px-3.5'
+          aria-hidden="true"
+          className={`app-drag h-10 shrink-0 bg-[var(--bg-elevated)] backdrop-blur-xl border-b border-[var(--border-subtle)] shadow-[var(--shadow-toolbar)] ${
+            hasMacTrafficLights ? 'pl-[78px]' : ''
           }`}
-        >
-          <span className="shrink-0 flex items-center justify-center w-6 h-6 rounded-[7px] bg-[linear-gradient(135deg,var(--accent-blue),var(--accent-blue-deep))] text-[var(--accent-contrast)] shadow-[0_2px_8px_-3px_rgba(var(--accent-blue-rgb),0.8)] ring-1 ring-inset ring-[rgba(255,255,255,0.18)]">
-            <ApertureIcon />
-          </span>
-          <span className="flex flex-col items-start justify-center leading-tight min-w-0">
-            <span className="text-[13px] font-semibold tracking-tight text-[var(--text-primary)] truncate">
-              时光画框
-            </span>
-            <span className="text-xs text-[var(--text-tertiary)] truncate">本地照片整理工作台</span>
-          </span>
-        </div>
+        />
 
-        <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-2.5 custom-scrollbar">
-          {/* 分组卡 · 浏览：图库与媒体类型同卡承载，以极细暖调分割线区隔 */}
-          <section aria-label="浏览" className={GROUP_CARD}>
-            <div>
-              <SectionLabel title="按全部 / 收藏 / 隐藏浏览照片">图库</SectionLabel>
-              <ul className="space-y-0.5">
-                {libraryItems.map((item) => (
-                  <li key={item.id}>
-                    <NavRow
-                      icon={item.icon}
-                      label={item.label}
-                      count={item.count}
-                      active={navItemActive(item, activeCategory, mediaFilter)}
-                      onClick={() => onSelectNav(item.category, item.filter)}
-                    />
-                  </li>
-                ))}
-              </ul>
+        <div className="relative min-h-0 flex-1">
+          <nav
+            ref={navRef}
+            className="h-full overflow-y-auto px-2.5 py-3 space-y-2.5 custom-scrollbar"
+          >
+            {/*
+            品牌标题：从顶带下移到这里，成为内容区的第一行。
+            只留名称 —— 副标题已收进「关于与更新」的概览区（见 aboutContent.subtitle），
+            在 244px 宽的栏里每天重复一次定位说明，只是噪音。
+          */}
+            <div className="app-drag px-1.5">
+              <h1 className="truncate text-[16px] font-semibold tracking-tight text-[var(--text-primary)]">
+                时光画框
+              </h1>
             </div>
 
-            <div aria-hidden="true" className={GROUP_DIVIDER} />
+            {/* 分组卡 · 浏览：图库与媒体类型同卡承载，以极细暖调分割线区隔 */}
+            <section aria-label="浏览" className={GROUP_CARD}>
+              <div>
+                <SectionLabel title="按全部 / 收藏 / 隐藏浏览照片">图库</SectionLabel>
+                <ul className="space-y-0.5">
+                  {libraryItems.map((item) => (
+                    <li key={item.id}>
+                      <NavRow
+                        icon={item.icon}
+                        label={item.label}
+                        count={item.count}
+                        active={navItemActive(item, activeCategory, mediaFilter)}
+                        onClick={() => onSelectNav(item.category, item.filter)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-            <div>
-              <SectionLabel title="只看某一类媒体">媒体类型</SectionLabel>
-              <ul className="space-y-0.5">
-                {mediaTypeItems.map((item) => (
-                  <li key={item.id}>
-                    <NavRow
-                      icon={item.icon}
-                      label={item.label}
-                      count={item.count}
-                      active={navItemActive(item, activeCategory, mediaFilter)}
-                      onClick={() => onSelectNav(item.category, item.filter)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
+              <div aria-hidden="true" className={GROUP_DIVIDER} />
 
-          {/* 分组卡 · 回顾：整页沉浸式入口，右端箭头表示会离开当前列表 */}
-          <section aria-label="回顾" className={GROUP_CARD}>
-            <SectionLabel title="按时间线、地图、人物或相似度重新查看照片">回顾</SectionLabel>
-            <div className="space-y-0.5">
-              <NavRow
-                icon={<TimelineIcon />}
-                label="时光画廊"
-                onClick={onSelectTimeline}
-                active={isTimelineActive}
-                chevron
-                title="按时间线沉浸式回顾全部记忆"
-              />
-              <NavRow
-                icon={<DotPinIcon />}
-                label="按地点"
-                onClick={onSelectMap}
-                active={isMapActive}
-                disabled={!hasPhotos}
-                chevron
-                title={hasPhotos ? '把带 GPS 的照片落到地图上，按拍摄地点浏览' : '导入照片后可用'}
-              />
-              <NavRow
-                icon={<PeopleIcon />}
-                label="人像"
-                onClick={onSelectPeople}
-                active={isPeopleActive}
-                disabled={!hasPhotos}
-                chevron
-                title={
-                  hasPhotos ? '本地识别照片里的人物并按人物浏览；照片不会上传' : '导入照片后可用'
-                }
-              />
-              <NavRow
-                icon={<DuplicateIcon />}
-                label="相似照片"
-                onClick={onCheckDuplicates}
-                disabled={!hasPhotos}
-                chevron
-                title={hasPhotos ? '找出相似照片，逐组比对后清理' : '导入照片后可用'}
-              />
-            </div>
-          </section>
+              <div>
+                <SectionLabel title="只看某一类媒体">媒体类型</SectionLabel>
+                <ul className="space-y-0.5">
+                  {mediaTypeItems.map((item) => (
+                    <li key={item.id}>
+                      <NavRow
+                        icon={item.icon}
+                        label={item.label}
+                        count={item.count}
+                        active={navItemActive(item, activeCategory, mediaFilter)}
+                        onClick={() => onSelectNav(item.category, item.filter)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
 
-          {/* 分组卡 · 整理：标签、相簿与文件夹来源，卡内以极细暖调分割线串联各子组 */}
-          <section aria-label="整理" className={GROUP_CARD}>
-            {/* 标签按使用频次排序，点击即筛（与筛选面板共用 filters.tags） */}
-            {rankedTags.length > 0 && (
-              <>
-                <div>
-                  <SectionLabel title="按使用频次排列，点击即筛选">标签</SectionLabel>
-                  <ul className="space-y-0.5">
-                    {visibleTags.map((item) => {
-                      const active = activeTags.includes(item.name);
-                      return (
-                        <li key={item.name}>
-                          <button
-                            type="button"
-                            onClick={() => onSelectTag(item.name)}
-                            aria-pressed={active}
-                            title={`${item.count} 张照片使用；点击${active ? '取消筛选' : '按此标签筛选'}`}
-                            className={`${ROW_BASE} h-8 gap-2.5 px-2 text-[12.5px] ${
-                              active
-                                ? 'bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--accent-blue)] ring-1 ring-inset ring-[rgba(var(--accent-blue-rgb),0.3)]'
-                                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-sidebar-hover)] hover:shadow-[inset_0_0_0_1px_rgba(var(--accent-blue-rgb),0.12)] active:bg-[var(--bg-glass-active)]'
-                            }`}
-                          >
-                            <span
-                              className={`shrink-0 transition-colors duration-150 ${
+            {/* 分组卡 · 回顾：整页沉浸式入口，右端箭头表示会离开当前列表 */}
+            <section aria-label="回顾" className={GROUP_CARD}>
+              <SectionLabel title="按时间线、地图、人物或相似度重新查看照片">回顾</SectionLabel>
+              <div className="space-y-0.5">
+                <NavRow
+                  icon={<TimelineIcon />}
+                  label="时光画廊"
+                  onClick={onSelectTimeline}
+                  active={isTimelineActive}
+                  chevron
+                  title="按时间线沉浸式回顾全部记忆"
+                />
+                <NavRow
+                  icon={<DotPinIcon />}
+                  label="按地点"
+                  onClick={onSelectMap}
+                  active={isMapActive}
+                  disabled={!hasPhotos}
+                  chevron
+                  title={hasPhotos ? '把带 GPS 的照片落到地图上，按拍摄地点浏览' : '导入照片后可用'}
+                />
+                <NavRow
+                  icon={<PeopleIcon />}
+                  label="人像"
+                  onClick={onSelectPeople}
+                  active={isPeopleActive}
+                  disabled={!hasPhotos}
+                  chevron
+                  title={
+                    hasPhotos ? '本地识别照片里的人物并按人物浏览；照片不会上传' : '导入照片后可用'
+                  }
+                />
+                <NavRow
+                  icon={<DuplicateIcon />}
+                  label="相似照片"
+                  onClick={onCheckDuplicates}
+                  disabled={!hasPhotos}
+                  chevron
+                  title={hasPhotos ? '找出相似照片，逐组比对后清理' : '导入照片后可用'}
+                />
+              </div>
+            </section>
+
+            {/* 分组卡 · 整理：标签、相簿与文件夹来源，卡内以极细暖调分割线串联各子组 */}
+            <section aria-label="整理" className={GROUP_CARD}>
+              {/* 标签按使用频次排序，点击即筛（与筛选面板共用 filters.tags） */}
+              {rankedTags.length > 0 && (
+                <>
+                  <div>
+                    <SectionLabel title="按使用频次排列，点击即筛选">标签</SectionLabel>
+                    <ul className="space-y-0.5">
+                      {visibleTags.map((item) => {
+                        const active = activeTags.includes(item.name);
+                        return (
+                          <li key={item.name}>
+                            <button
+                              type="button"
+                              onClick={() => onSelectTag(item.name)}
+                              aria-pressed={active}
+                              title={`${item.count} 张照片使用；点击${active ? '取消筛选' : '按此标签筛选'}`}
+                              className={`${ROW_BASE} h-8 gap-2.5 px-2 text-[12.5px] ${
                                 active
-                                  ? 'text-[var(--accent-blue)]'
-                                  : 'text-[var(--text-tertiary)] group-hover:text-[var(--accent-cyan)]'
+                                  ? 'bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--accent-blue)] ring-1 ring-inset ring-[rgba(var(--accent-blue-rgb),0.3)]'
+                                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-sidebar-hover)] hover:shadow-[inset_0_0_0_1px_rgba(var(--accent-blue-rgb),0.12)] active:bg-[var(--bg-glass-active)]'
                               }`}
                             >
-                              <TagIcon />
-                            </span>
-                            <span className="truncate">{item.name}</span>
-                            <Stat
-                              value={item.count}
-                              emphasis="micro"
-                              inheritColor
-                              className={`ml-auto shrink-0 ${
-                                active ? 'opacity-90' : 'text-[var(--text-tertiary)]'
-                              }`}
+                              <span
+                                className={`shrink-0 transition-colors duration-150 ${
+                                  active
+                                    ? 'text-[var(--accent-blue)]'
+                                    : 'text-[var(--text-tertiary)] group-hover:text-[var(--accent-cyan)]'
+                                }`}
+                              >
+                                <TagIcon />
+                              </span>
+                              <span className="truncate">{item.name}</span>
+                              <Stat
+                                value={item.count}
+                                emphasis="micro"
+                                inheritColor
+                                className={`ml-auto shrink-0 ${
+                                  active ? 'opacity-90' : 'text-[var(--text-tertiary)]'
+                                }`}
+                              />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {rankedTags.length > 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllTags((prev) => !prev)}
+                        className="mt-1 px-2 py-1 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                      >
+                        {showAllTags ? '收起标签' : `展开全部 ${rankedTags.length} 个标签`}
+                      </button>
+                    )}
+                  </div>
+                  <div aria-hidden="true" className={GROUP_DIVIDER} />
+                </>
+              )}
+
+              {/* 智能相簿 */}
+              <div>
+                <SectionLabel
+                  title="按自己的规则把照片归组"
+                  action={
+                    <button
+                      type="button"
+                      onClick={onRequestSaveAlbum}
+                      title="把当前筛选条件存为相簿"
+                      aria-label="新建智能相簿"
+                      className="flex items-center justify-center w-6 h-6 -mr-0.5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-sidebar-hover)] transition-colors duration-150"
+                    >
+                      <PlusIcon />
+                    </button>
+                  }
+                >
+                  智能相簿
+                </SectionLabel>
+
+                {albums.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={onRequestSaveAlbum}
+                    title="把当前筛选条件存为相簿，之后一键回到同样的筛选"
+                    className="group/empty mt-0.5 w-full flex items-center gap-2.5 h-8 px-2 rounded-[9px] border border-dashed border-[var(--border-default)] text-xs text-[var(--text-tertiary)] hover:border-[rgba(var(--accent-blue-rgb),0.3)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-sidebar-hover)] transition-colors duration-150"
+                  >
+                    <span className="shrink-0 flex items-center justify-center w-[18px] transition-colors duration-150 group-hover/empty:text-[var(--accent-cyan)]">
+                      <PlusIcon />
+                    </span>
+                    <span className="truncate">把当前筛选存为相簿</span>
+                  </button>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {albums.map((album) => {
+                      const active = activeAlbumId === album.id;
+                      const count = albumCounts[album.id] ?? 0;
+                      const editing = editingAlbumId === album.id;
+                      return (
+                        <li key={album.id} className="group/album relative">
+                          {editing ? (
+                            <input
+                              ref={albumInputRef}
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  commitRename(album.id);
+                                } else if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  setEditingAlbumId(null);
+                                }
+                              }}
+                              // 失焦视为放弃，不自动提交：避免 Esc 取消后 blur 又把旧名字写回去
+                              onBlur={() => setEditingAlbumId(null)}
+                              title="Enter 保存 · Esc 取消"
+                              aria-label={`重命名相簿 ${album.name}`}
+                              className="w-full h-8 px-2 rounded-[9px] bg-[var(--bg-input)] border border-[var(--accent-blue)] text-[12.5px] text-[var(--text-primary)] outline-hidden"
                             />
-                          </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onSelectAlbum(album)}
+                              aria-current={active ? 'page' : undefined}
+                              title={album.name}
+                              className={`${ROW_BASE} h-8 gap-2.5 px-2 group-hover/album:pr-14 group-focus-within/album:pr-14 text-[12.5px] ${ROW_STATE(active)}`}
+                            >
+                              <span className={ROW_ICON(active)}>
+                                <AlbumIcon />
+                              </span>
+                              <span className="truncate">{album.name}</span>
+                              <Stat
+                                value={count}
+                                emphasis="micro"
+                                inheritColor
+                                className={`ml-auto shrink-0 transition-opacity duration-150 group-hover/album:opacity-0 group-focus-within/album:opacity-0 ${
+                                  active ? 'opacity-75' : 'text-[var(--text-tertiary)]'
+                                }`}
+                              />
+                            </button>
+                          )}
+                          {!editing && (
+                            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover/album:opacity-100 group-hover/album:pointer-events-auto group-focus-within/album:opacity-100 group-focus-within/album:pointer-events-auto transition-opacity duration-150">
+                              <button
+                                type="button"
+                                onClick={() => startRename(album)}
+                                title={`重命名相簿「${album.name}」`}
+                                aria-label={`重命名相簿 ${album.name}`}
+                                className={`flex items-center justify-center w-6 h-6 rounded-md transition-colors duration-150 ${
+                                  active
+                                    ? 'text-[var(--accent-contrast)] opacity-80 hover:opacity-100 hover:bg-[var(--accent-contrast-soft)]'
+                                    : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)]'
+                                }`}
+                              >
+                                <svg
+                                  className="w-3.5 h-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                  <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onDeleteAlbum(album.id)}
+                                title={`删除相簿「${album.name}」`}
+                                aria-label={`删除相簿 ${album.name}`}
+                                className={`flex items-center justify-center w-6 h-6 rounded-md transition-colors duration-150 ${
+                                  active
+                                    ? 'text-[var(--accent-contrast)] opacity-80 hover:opacity-100 hover:bg-[var(--accent-contrast-soft)]'
+                                    : 'text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.14)]'
+                                }`}
+                              >
+                                <TrashIcon />
+                              </button>
+                            </div>
+                          )}
                         </li>
                       );
                     })}
                   </ul>
-                  {rankedTags.length > 8 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAllTags((prev) => !prev)}
-                      className="mt-1 px-2 py-1 text-xs font-medium text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-                    >
-                      {showAllTags ? '收起标签' : `展开全部 ${rankedTags.length} 个标签`}
-                    </button>
-                  )}
-                </div>
-                <div aria-hidden="true" className={GROUP_DIVIDER} />
-              </>
-            )}
+                )}
+              </div>
 
-            {/* 智能相簿 */}
-            <div>
-              <SectionLabel
-                title="按自己的规则把照片归组"
-                action={
-                  <button
-                    type="button"
-                    onClick={onRequestSaveAlbum}
-                    title="把当前筛选条件存为相簿"
-                    aria-label="新建智能相簿"
-                    className="flex items-center justify-center w-6 h-6 -mr-0.5 rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-sidebar-hover)] transition-colors duration-150"
-                  >
-                    <PlusIcon />
-                  </button>
-                }
-              >
-                智能相簿
-              </SectionLabel>
+              <div aria-hidden="true" className={GROUP_DIVIDER} />
 
-              {albums.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={onRequestSaveAlbum}
-                  title="把当前筛选条件存为相簿，之后一键回到同样的筛选"
-                  className="group/empty mt-0.5 w-full flex items-center gap-2.5 h-8 px-2 rounded-[9px] border border-dashed border-[var(--border-default)] text-xs text-[var(--text-tertiary)] hover:border-[rgba(var(--accent-blue-rgb),0.3)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-sidebar-hover)] transition-colors duration-150"
-                >
-                  <span className="shrink-0 flex items-center justify-center w-[18px] transition-colors duration-150 group-hover/empty:text-[var(--accent-cyan)]">
-                    <PlusIcon />
-                  </span>
-                  <span className="truncate">把当前筛选存为相簿</span>
-                </button>
-              ) : (
-                <ul className="space-y-0.5">
-                  {albums.map((album) => {
-                    const active = activeAlbumId === album.id;
-                    const count = albumCounts[album.id] ?? 0;
-                    const editing = editingAlbumId === album.id;
-                    return (
-                      <li key={album.id} className="group/album relative">
-                        {editing ? (
-                          <input
-                            ref={albumInputRef}
-                            type="text"
-                            value={editingName}
-                            onChange={(e) => setEditingName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                commitRename(album.id);
-                              } else if (e.key === 'Escape') {
-                                e.preventDefault();
-                                setEditingAlbumId(null);
-                              }
-                            }}
-                            // 失焦视为放弃，不自动提交：避免 Esc 取消后 blur 又把旧名字写回去
-                            onBlur={() => setEditingAlbumId(null)}
-                            title="Enter 保存 · Esc 取消"
-                            aria-label={`重命名相簿 ${album.name}`}
-                            className="w-full h-8 px-2 rounded-[9px] bg-[var(--bg-input)] border border-[var(--accent-blue)] text-[12.5px] text-[var(--text-primary)] outline-hidden"
-                          />
-                        ) : (
+              {/* 文件夹：常驻来源（N8） */}
+              <div>
+                <SectionLabel title="打开或拖入的文件夹，重启后可一键恢复">文件夹</SectionLabel>
+                {directorySources.length === 0 && fileSourceCount === 0 ? (
+                  <p className="px-2 pt-0.5 text-xs leading-relaxed text-[var(--text-tertiary)]">
+                    打开或拖入文件夹后会记在这里，重启后可一键恢复。
+                  </p>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {directorySources.map((source) => {
+                      const unavailable = unavailableSourcePaths.has(source.path);
+                      const name = source.path.split(/[\\/]/).filter(Boolean).pop() ?? source.path;
+                      return (
+                        <li key={source.path} className="group/source relative">
                           <button
                             type="button"
-                            onClick={() => onSelectAlbum(album)}
-                            aria-current={active ? 'page' : undefined}
-                            title={album.name}
-                            className={`${ROW_BASE} h-8 gap-2.5 px-2 group-hover/album:pr-14 group-focus-within/album:pr-14 text-[12.5px] ${ROW_STATE(active)}`}
+                            onClick={() => onSelectDirectorySource(source.path)}
+                            title={
+                              unavailable
+                                ? `不可用：文件夹不存在或所在磁盘未挂载\n${source.path}\n（可点右侧 ✕ 移除来源）`
+                                : source.path
+                            }
+                            className={`${ROW_BASE} h-8 gap-2.5 px-2 group-hover/source:pr-8 group-focus-within/source:pr-8 text-left text-[12.5px] ${
+                              unavailable
+                                ? 'text-[var(--accent-orange)] hover:bg-[rgba(var(--accent-orange-rgb),0.12)]'
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-sidebar-hover)] hover:shadow-[inset_0_0_0_1px_rgba(var(--accent-blue-rgb),0.12)] hover:text-[var(--text-primary)] active:bg-[var(--bg-glass-active)]'
+                            }`}
                           >
-                            <span className={ROW_ICON(active)}>
-                              <AlbumIcon />
+                            <span
+                              className={`shrink-0 ${unavailable ? 'text-[var(--accent-orange)]' : 'text-[var(--text-tertiary)] group-hover:text-[var(--accent-cyan)]'} transition-colors duration-150`}
+                            >
+                              <FolderIcon />
                             </span>
-                            <span className="truncate">{album.name}</span>
-                            <Stat
-                              value={count}
-                              emphasis="micro"
-                              inheritColor
-                              className={`ml-auto shrink-0 transition-opacity duration-150 group-hover/album:opacity-0 group-focus-within/album:opacity-0 ${
-                                active ? 'opacity-75' : 'text-[var(--text-tertiary)]'
-                              }`}
-                            />
+                            <span className="truncate">{name}</span>
+                            {unavailable && (
+                              <span className="ml-auto shrink-0 text-[var(--accent-orange)] transition-opacity duration-150 group-hover/source:opacity-0 group-focus-within/source:opacity-0">
+                                <WarningIcon />
+                              </span>
+                            )}
                           </button>
-                        )}
-                        {!editing && (
-                          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover/album:opacity-100 group-hover/album:pointer-events-auto group-focus-within/album:opacity-100 group-focus-within/album:pointer-events-auto transition-opacity duration-150">
-                            <button
-                              type="button"
-                              onClick={() => startRename(album)}
-                              title={`重命名相簿「${album.name}」`}
-                              aria-label={`重命名相簿 ${album.name}`}
-                              className={`flex items-center justify-center w-6 h-6 rounded-md transition-colors duration-150 ${
-                                active
-                                  ? 'text-[var(--accent-contrast)] opacity-80 hover:opacity-100 hover:bg-[var(--accent-contrast-soft)]'
-                                  : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)]'
-                              }`}
-                            >
-                              <svg
-                                className="w-3.5 h-3.5"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                              </svg>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onDeleteAlbum(album.id)}
-                              title={`删除相簿「${album.name}」`}
-                              aria-label={`删除相簿 ${album.name}`}
-                              className={`flex items-center justify-center w-6 h-6 rounded-md transition-colors duration-150 ${
-                                active
-                                  ? 'text-[var(--accent-contrast)] opacity-80 hover:opacity-100 hover:bg-[var(--accent-contrast-soft)]'
-                                  : 'text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.14)]'
-                              }`}
-                            >
-                              <TrashIcon />
-                            </button>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
+                          <button
+                            type="button"
+                            onClick={() => onRemoveDirectorySource(source.path)}
+                            title={`移除来源「${name}」（磁盘文件不会被删除）`}
+                            aria-label={`移除来源 ${name}`}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md opacity-0 pointer-events-none group-hover/source:opacity-100 group-hover/source:pointer-events-auto group-focus-within/source:opacity-100 group-focus-within/source:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto text-[var(--text-tertiary)] hover:text-[var(--accent-pink)] hover:bg-[var(--bg-glass-hover)] transition-opacity duration-150"
+                          >
+                            <RemoveSourceIcon />
+                          </button>
+                        </li>
+                      );
+                    })}
 
-            <div aria-hidden="true" className={GROUP_DIVIDER} />
-
-            {/* 文件夹：常驻来源（N8） */}
-            <div>
-              <SectionLabel title="打开或拖入的文件夹，重启后可一键恢复">文件夹</SectionLabel>
-              {directorySources.length === 0 && fileSourceCount === 0 ? (
-                <p className="px-2 pt-0.5 text-xs leading-relaxed text-[var(--text-tertiary)]">
-                  打开或拖入文件夹后会记在这里，重启后可一键恢复。
-                </p>
-              ) : (
-                <ul className="space-y-0.5">
-                  {directorySources.map((source) => {
-                    const unavailable = unavailableSourcePaths.has(source.path);
-                    const name = source.path.split(/[\\/]/).filter(Boolean).pop() ?? source.path;
-                    return (
-                      <li key={source.path} className="group/source relative">
+                    {/* 单独添加的文件没有目录可聚合，收成一行；点击把所有文件来源补进列表 */}
+                    {fileSourceCount > 0 && (
+                      <li className="group/source relative">
                         <button
                           type="button"
-                          onClick={() => onSelectDirectorySource(source.path)}
-                          title={
-                            unavailable
-                              ? `不可用：文件夹不存在或所在磁盘未挂载\n${source.path}\n（可点右侧 ✕ 移除来源）`
-                              : source.path
-                          }
+                          onClick={onSelectFileSources}
+                          title={`${fileSourceCount} 个单独添加的文件：${filePreview}${
+                            fileSourceCount > 3 ? ' 等' : ''
+                          }${unavailableFileCount > 0 ? `\n其中 ${unavailableFileCount} 个已不可用` : ''}\n点击再次补进列表`}
                           className={`${ROW_BASE} h-8 gap-2.5 px-2 group-hover/source:pr-8 group-focus-within/source:pr-8 text-left text-[12.5px] ${
-                            unavailable
+                            unavailableFileCount > 0
                               ? 'text-[var(--accent-orange)] hover:bg-[rgba(var(--accent-orange-rgb),0.12)]'
                               : 'text-[var(--text-secondary)] hover:bg-[var(--bg-sidebar-hover)] hover:shadow-[inset_0_0_0_1px_rgba(var(--accent-blue-rgb),0.12)] hover:text-[var(--text-primary)] active:bg-[var(--bg-glass-active)]'
                           }`}
                         >
                           <span
-                            className={`shrink-0 ${unavailable ? 'text-[var(--accent-orange)]' : 'text-[var(--text-tertiary)] group-hover:text-[var(--accent-cyan)]'} transition-colors duration-150`}
+                            className={`shrink-0 ${unavailableFileCount > 0 ? 'text-[var(--accent-orange)]' : 'text-[var(--text-tertiary)] group-hover:text-[var(--accent-cyan)]'} transition-colors duration-150`}
                           >
-                            <FolderIcon />
+                            <FileIcon />
                           </span>
-                          <span className="truncate">{name}</span>
-                          {unavailable && (
-                            <span className="ml-auto shrink-0 text-[var(--accent-orange)] transition-opacity duration-150 group-hover/source:opacity-0 group-focus-within/source:opacity-0">
+                          <span className="truncate">单独添加的文件</span>
+                          <span className="ml-auto shrink-0 transition-opacity duration-150 group-hover/source:opacity-0 group-focus-within/source:opacity-0">
+                            {unavailableFileCount > 0 ? (
                               <WarningIcon />
-                            </span>
-                          )}
+                            ) : (
+                              <Stat
+                                value={fileSourceCount}
+                                emphasis="micro"
+                                inheritColor
+                                className="text-[var(--text-tertiary)]"
+                              />
+                            )}
+                          </span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => onRemoveDirectorySource(source.path)}
-                          title={`移除来源「${name}」（磁盘文件不会被删除）`}
-                          aria-label={`移除来源 ${name}`}
+                          onClick={onRemoveFileSources}
+                          title="移除全部单独添加的文件来源（磁盘文件不会被删除）"
+                          aria-label="移除单独添加的文件来源"
                           className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md opacity-0 pointer-events-none group-hover/source:opacity-100 group-hover/source:pointer-events-auto group-focus-within/source:opacity-100 group-focus-within/source:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto text-[var(--text-tertiary)] hover:text-[var(--accent-pink)] hover:bg-[var(--bg-glass-hover)] transition-opacity duration-150"
                         >
                           <RemoveSourceIcon />
                         </button>
                       </li>
-                    );
-                  })}
+                    )}
+                  </ul>
+                )}
 
-                  {/* 单独添加的文件没有目录可聚合，收成一行；点击把所有文件来源补进列表 */}
-                  {fileSourceCount > 0 && (
-                    <li className="group/source relative">
-                      <button
-                        type="button"
-                        onClick={onSelectFileSources}
-                        title={`${fileSourceCount} 个单独添加的文件：${filePreview}${
-                          fileSourceCount > 3 ? ' 等' : ''
-                        }${unavailableFileCount > 0 ? `\n其中 ${unavailableFileCount} 个已不可用` : ''}\n点击再次补进列表`}
-                        className={`${ROW_BASE} h-8 gap-2.5 px-2 group-hover/source:pr-8 group-focus-within/source:pr-8 text-left text-[12.5px] ${
-                          unavailableFileCount > 0
-                            ? 'text-[var(--accent-orange)] hover:bg-[rgba(var(--accent-orange-rgb),0.12)]'
-                            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-sidebar-hover)] hover:shadow-[inset_0_0_0_1px_rgba(var(--accent-blue-rgb),0.12)] hover:text-[var(--text-primary)] active:bg-[var(--bg-glass-active)]'
-                        }`}
-                      >
-                        <span
-                          className={`shrink-0 ${unavailableFileCount > 0 ? 'text-[var(--accent-orange)]' : 'text-[var(--text-tertiary)] group-hover:text-[var(--accent-cyan)]'} transition-colors duration-150`}
-                        >
-                          <FileIcon />
-                        </span>
-                        <span className="truncate">单独添加的文件</span>
-                        <span className="ml-auto shrink-0 transition-opacity duration-150 group-hover/source:opacity-0 group-focus-within/source:opacity-0">
-                          {unavailableFileCount > 0 ? (
-                            <WarningIcon />
-                          ) : (
-                            <Stat
-                              value={fileSourceCount}
-                              emphasis="micro"
-                              inheritColor
-                              className="text-[var(--text-tertiary)]"
-                            />
-                          )}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={onRemoveFileSources}
-                        title="移除全部单独添加的文件来源（磁盘文件不会被删除）"
-                        aria-label="移除单独添加的文件来源"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded-md opacity-0 pointer-events-none group-hover/source:opacity-100 group-hover/source:pointer-events-auto group-focus-within/source:opacity-100 group-focus-within/source:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto text-[var(--text-tertiary)] hover:text-[var(--accent-pink)] hover:bg-[var(--bg-glass-hover)] transition-opacity duration-150"
-                      >
-                        <RemoveSourceIcon />
-                      </button>
-                    </li>
-                  )}
-                </ul>
-              )}
-            </div>
-          </section>
-          {/* 分组卡 · 帮助：应用自身的信息入口，与照片内容无关 */}
-          <section aria-label="帮助" className={GROUP_CARD}>
-            <SectionLabel title="功能介绍、操作技巧与版本更新">帮助</SectionLabel>
-            <div className="space-y-0.5">
-              <NavRow
-                icon={<InfoIcon />}
-                label="关于与更新"
-                onClick={onOpenAbout}
-                chevron
-                title="主要功能、特色、操作技巧、迭代计划、更新记录与版本检查"
-              />
-            </div>
-          </section>
-        </nav>
+                <div aria-hidden="true" className={GROUP_DIVIDER} />
 
-        {/* 底部全局工具带：外观切换 + 快捷键参考 + 清空照片列表 */}
-        <div className="px-3 py-2.5 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] backdrop-blur-sm">
-          <div className="flex items-center gap-1.5">
-            <div
-              role="radiogroup"
-              aria-label="外观模式"
-              className="flex items-center gap-0.5 p-0.5 rounded-[10px] bg-[var(--bg-input)] border border-[var(--border-subtle)]"
-            >
-              {(
-                [
-                  { id: 'system', fullLabel: '跟随系统', icon: <MonitorIcon /> },
-                  { id: 'light', fullLabel: '明亮', icon: <SunIcon /> },
-                  { id: 'dark', fullLabel: '暗黑', icon: <MoonIcon /> },
-                ] as const
-              ).map((option) => {
-                const active = themeMode === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    aria-label={`外观：${option.fullLabel}`}
-                    title={
-                      active
-                        ? `当前为${option.fullLabel}模式`
-                        : option.id === 'system'
-                          ? '跟随系统深色 / 浅色偏好'
-                          : `切换到${option.fullLabel}模式`
-                    }
-                    onClick={() => {
-                      if (!active) onThemeModeChange(option.id);
-                    }}
-                    className={`flex items-center justify-center w-8 h-7 rounded-lg border border-transparent transition-colors duration-150 ${
-                      active
-                        ? 'border-[rgba(var(--accent-blue-rgb),0.32)] bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--accent-blue)]'
-                        : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
+                {/*
+                清空列表：从底部纯图标带移到这里。
+                它清的正是「列表 + 记住的来源」（N8 语义），与上面几行同属
+                「重新开始」的语义域；带文字不靠猜，悬停才转粉，
+                点击仍走 App 的二次确认，磁盘文件不受影响。
+              */}
+                <button
+                  type="button"
+                  onClick={onRequestReset}
+                  disabled={!hasPhotos}
+                  title={
+                    hasPhotos
+                      ? '清空列表中的全部照片并重置筛选与缓存；磁盘上的原文件不会被删除'
+                      : '列表为空'
+                  }
+                  className={`${ROW_BASE} h-8 gap-2.5 px-2 text-[12.5px] ${
+                    hasPhotos
+                      ? 'text-[var(--text-secondary)] hover:bg-[rgba(var(--accent-pink-rgb),0.1)] hover:text-[var(--accent-pink)]'
+                      : 'text-[var(--text-quaternary)] cursor-not-allowed'
+                  }`}
+                >
+                  <span
+                    className={`shrink-0 transition-colors duration-150 ${
+                      hasPhotos
+                        ? 'text-[var(--text-tertiary)] group-hover:text-[var(--accent-pink)]'
+                        : 'text-[var(--text-quaternary)]'
                     }`}
                   >
-                    {option.icon}
-                  </button>
-                );
-              })}
-            </div>
+                    <RefreshIcon size={13} strokeWidth={2} />
+                  </span>
+                  <span className="truncate">清空列表</span>
+                  {hasPhotos && (
+                    <Stat
+                      value={counts.all}
+                      emphasis="micro"
+                      inheritColor
+                      className="ml-auto shrink-0 text-[var(--text-quaternary)] transition-colors duration-150 group-hover:text-[var(--accent-pink)]"
+                    />
+                  )}
+                </button>
+              </div>
+            </section>
+            {/*
+            分组卡 · 帮助：应用自身的信息入口，与照片内容无关。
+            快捷键总览从底部图标带收进这里 —— 「怎么用这个应用」和
+            「这个应用是什么」本就该在同一组里，而不是一个在底栏一个在帮助。
+            常用的放在前面：快捷键比版本更新更常被打开。
+          */}
+            <section aria-label="帮助" className={GROUP_CARD}>
+              <SectionLabel title="快捷键、功能介绍与版本更新">帮助</SectionLabel>
+              <div className="space-y-0.5">
+                <NavRow
+                  icon={<KeyboardIcon />}
+                  label="键盘快捷键"
+                  onClick={onOpenShortcuts}
+                  chevron
+                  title="查看全部快捷键分组；也可以随时按 ? 唤出"
+                />
+                <NavRow
+                  icon={<InfoIcon />}
+                  label="关于与更新"
+                  onClick={onOpenAbout}
+                  chevron
+                  title="主要功能、特色、操作技巧、迭代计划、更新记录与版本检查"
+                />
+              </div>
+            </section>
+          </nav>
 
-            <div className="flex-1" />
+          {/* 滚动渐隐：只让「被切开的边缘」柔化，不拦截指针、不遮挡内容 */}
+          <div
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-x-0 top-0 h-7 bg-gradient-to-b from-[var(--bg-secondary)] to-transparent transition-opacity duration-200 ${
+              navEdge.top ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+          <div
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-[var(--bg-secondary)] to-transparent transition-opacity duration-200 ${
+              navEdge.bottom ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+        </div>
 
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={onOpenShortcuts}
-                title="键盘快捷键（? 也可唤出）"
-                aria-label="键盘快捷键"
-                className="shrink-0 flex items-center justify-center w-8 h-8 rounded-[10px] text-[var(--text-tertiary)] hover:text-[var(--accent-cyan)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)] transition-colors duration-150"
-              >
-                <KeyboardIcon />
-              </button>
-
-              <span aria-hidden="true" className="w-px h-4 bg-[var(--border-subtle)] mx-0.5" />
-
-              <button
-                type="button"
-                onClick={onRequestReset}
-                disabled={!hasPhotos}
-                title={
-                  hasPhotos
-                    ? '清空列表中的全部照片并重置筛选与缓存；磁盘上的原文件不会被删除'
-                    : '列表为空'
-                }
-                aria-label="清空照片列表"
-                className={`shrink-0 flex items-center justify-center w-8 h-8 rounded-[10px] transition-colors duration-150 ${
-                  hasPhotos
-                    ? 'text-[var(--text-tertiary)] hover:text-[var(--accent-pink)] hover:bg-[rgba(var(--accent-pink-rgb),0.1)]'
-                    : 'text-[var(--text-quaternary)] opacity-40 cursor-not-allowed'
-                }`}
-              >
-                <RefreshIcon size={14} strokeWidth={1.9} />
-              </button>
-            </div>
+        {/*
+          底部只剩外观切换。
+          快捷键归「帮助」，清空列表归「整理 · 文件夹」—— 底栏不再承载任何操作，
+          只留一个不作用于当前视图的显示偏好：这是唯一放在拇指区也不会出错的东西。
+          三段拉满整宽，成为一条分段控件；不再配文字标签 —— 太阳 / 月亮 / 显示器
+          三个图形本身就是这套语言里最不需要解释的一组。
+        */}
+        <div className="shrink-0 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2.5 backdrop-blur-sm">
+          <div
+            role="radiogroup"
+            aria-label="外观模式"
+            className="flex items-center gap-0.5 p-0.5 rounded-[10px] bg-[var(--bg-input)] border border-[var(--border-subtle)]"
+          >
+            {(
+              [
+                { id: 'system', fullLabel: '跟随系统', icon: <MonitorIcon /> },
+                { id: 'light', fullLabel: '明亮', icon: <SunIcon /> },
+                { id: 'dark', fullLabel: '暗黑', icon: <MoonIcon /> },
+              ] as const
+            ).map((option) => {
+              const active = themeMode === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  aria-label={`外观：${option.fullLabel}`}
+                  title={
+                    active
+                      ? `当前为${option.fullLabel}模式`
+                      : option.id === 'system'
+                        ? '跟随系统深色 / 浅色偏好'
+                        : `切换到${option.fullLabel}模式`
+                  }
+                  onClick={() => {
+                    if (!active) onThemeModeChange(option.id);
+                  }}
+                  className={`flex flex-1 items-center justify-center h-7 rounded-lg border border-transparent transition-colors duration-150 ${
+                    active
+                      ? 'border-[rgba(var(--accent-blue-rgb),0.32)] bg-[rgba(var(--accent-blue-rgb),0.15)] text-[var(--accent-blue)]'
+                      : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] active:bg-[var(--bg-glass-active)]'
+                  }`}
+                >
+                  {option.icon}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

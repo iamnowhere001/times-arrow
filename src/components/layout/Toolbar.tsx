@@ -14,6 +14,15 @@ interface ToolbarProps {
   setIsDetailsPaneOpen: (isOpen: boolean) => void;
   isLeftPaneOpen: boolean;
   setIsLeftPaneOpen: (isOpen: boolean) => void;
+  /**
+   * 左栏收起时顶栏补位显示的「现在在看什么」。
+   *
+   * 侧栏展开时这件事由高亮行回答；收起后不补位，左上角就只剩一个开关按钮，
+   * 用户会瞬时失去方位（这也是系统照片 App 收起侧栏后显示「人物 / 7 个项目」的原因）。
+   */
+  viewName?: string;
+  /** 与 viewName 同行的数量，只在收起态出现 */
+  viewCount?: number;
   /** 搜索关键词（文件名 / 相机 / 格式） */
   searchQuery: string;
   onSearchQueryChange: (query: string) => void;
@@ -259,11 +268,13 @@ const ActionButton: React.FC<{
 
 /**
  * 顶栏：三段式布局。
- * 左「侧栏开关 + 导入」→ 中「搜索 + 筛选」→ 右「视图控制」。
+ * 左「侧栏开关 + 导入（+ 收起侧栏后的视图名）」→ 中「搜索 + 筛选」→ 右「视图控制」。
  *
  * 顶栏只放「作用于当前视图」的东西：左区一处主操作（导入），右区两处视图开关
  * （网格 / 列表、详情面板）。凡是不作用于当前视图的——相似照片、清空照片列表、
  * 快捷键帮助——一律归侧栏，那才是「除了整理照片之外的事」的归属。
+ * 唯一的例外是左栏收起后的视图名：它不作用于视图，但正是视图的方位本身，
+ * 缺席会让人不知道自己站在哪儿。
  */
 const Toolbar: React.FC<ToolbarProps> = ({
   onImport,
@@ -273,6 +284,8 @@ const Toolbar: React.FC<ToolbarProps> = ({
   setIsDetailsPaneOpen,
   isLeftPaneOpen,
   setIsLeftPaneOpen,
+  viewName,
+  viewCount,
   searchQuery,
   onSearchQueryChange,
   searchInputRef,
@@ -303,7 +316,8 @@ const Toolbar: React.FC<ToolbarProps> = ({
     >
       <div className="app-no-drag flex items-center gap-2 h-full">
         {/* ===== 左：主要导航与常用操作 ===== */}
-        <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+        {/* 分组本身允许收缩（按钮各自 shrink-0）：收起左栏后这里要容纳视图名，窄窗口靠它截断 */}
+        <div className="flex min-w-0 items-center gap-1.5">
           {/* 侧边栏开关：常驻浅色圆角底（参照系统照片应用），收起后紧邻红绿灯。
               与搜索框共用同一档容器语言（32px 高 / 10px 圆角 / 输入底色），
               整条顶带才像同一套零件拼出来的 */}
@@ -317,6 +331,33 @@ const Toolbar: React.FC<ToolbarProps> = ({
           >
             <SidebarIcon />
           </button>
+
+          {/*
+            收起左栏后的方位提示：当前视图名 + 数量，紧跟开关按钮 ——
+            顺序与系统照片 App 一致（开关 → 我在哪 → 能做什么）。
+            与「导入」之间一条细分隔线：前面回答方位，后面是动作，混在一起会被读成一串。
+          */}
+          {!isLeftPaneOpen && viewName && (
+            <>
+              <div className="flex min-w-0 shrink items-baseline gap-1.5">
+                <span
+                  className="truncate text-[13px] font-semibold text-[var(--text-primary)]"
+                  title={viewName}
+                >
+                  {viewName}
+                </span>
+                {typeof viewCount === 'number' && (
+                  <span className="shrink-0 font-numeric text-xs tabular-nums text-[var(--text-tertiary)]">
+                    {viewCount} 项
+                  </span>
+                )}
+              </div>
+              <span
+                aria-hidden="true"
+                className="mx-0.5 h-4 w-px shrink-0 bg-[var(--border-subtle)]"
+              />
+            </>
+          )}
 
           <ActionButton
             onClick={onImport}

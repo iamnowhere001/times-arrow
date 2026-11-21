@@ -40,15 +40,29 @@
 
 ## ADR-002 · 品牌双轨
 
-**决策**：界面显示名统一为「时光画框」，副标题「本地照片整理工作台」；
-`package.json` 的 `productName` / `appId`、数据目录、DMG 文件名、导出文件的 `payload.app` 一律保留 `PhotoMinder`。
+**决策**：用户看得见的名字统一为「时光画框」（副标题「本地照片整理工作台」）；
+`productName` / `appId` / 数据目录 / DMG 文件名 / 导出文件的 `payload.app` 一律保留 `PhotoMinder`。
 
-**理由**：改 `productName` 会迁移 `userData`，导致现有收藏 / 标签失联；改 `payload.app` 会让旧备份无法导入。
-前者是界面承诺，后者是数据格式标识，两者职责不同。
+具体拆分（2026-11-21 起）：
 
-**后果**：系统级应用菜单与 DMG 文件名保留英文，属受控例外。
+| 面向 | 取值 | 落点 |
+| --- | --- | --- |
+| 界面文案、窗口标题、导出对话框 | 时光画框 | `index.html`、`Sidebar.tsx`、`data-assets.cjs` |
+| Finder / Dock / 应用菜单 | 时光画框 | `mac.extendInfo.CFBundleDisplayName` / `CFBundleName` |
+| `.app` 文件名、DMG 文件名、升级身份 | PhotoMinder | `productName` / `appId` |
+| 数据目录 | PhotoMinder（钉死） | `electron/main.js` 的 `app.setPath('userData', ...)` |
+| 导出格式标识 | PhotoMinder | `payload.app` |
 
-**守卫**：`tests/unit/branding.test.ts` 静态断言两处边界。
+**理由**：`CFBundleDisplayName` 一改，Electron 的 `app.name` 就跟着变中文，`userData`
+默认会迁到 `Application Support/时光画框/`，现有收藏 / 标签 / 相簿全部失联。
+把 `userData` 显式钉死之后，「显示什么名字」与「数据存哪里」不再耦合，
+这才敢把 Finder 与菜单栏也换成中文。改 `payload.app` 则会切断旧备份的导入链路。
+
+**后果**：`.app` 文件名与 DMG 文件名仍是英文（`PhotoMinder.app`、`PhotoMinder-x.y.z-arm64.dmg`），
+这是受控例外 —— 终端路径与更新清单都依赖它稳定。
+
+**守卫**：`tests/unit/branding.test.ts` 断言显示名、`productName` / `appId`、
+`userData` 钉死位置、以及图标单一源。
 
 ---
 

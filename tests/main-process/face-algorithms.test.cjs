@@ -145,9 +145,13 @@ section('缩略图引用');
   const thumbDir = '/tmp/pm-thumbs';
   check(
     'pm:// 缩略图 URL 还原为磁盘路径',
-    __test.resolveThumbRef('pm://local/thumb/abc.jpg', thumbDir) === path.join(thumbDir, 'abc.jpg')
+    __test.resolveThumbRef('pm://local/thumb/abc.jpg', thumbDir) ===
+      path.join(thumbDir, 'abc.jpg')
   );
-  check('已是磁盘路径时原样返回', __test.resolveThumbRef('/tmp/a.jpg', thumbDir) === '/tmp/a.jpg');
+  check(
+    '已是磁盘路径时原样返回',
+    __test.resolveThumbRef('/tmp/a.jpg', thumbDir) === '/tmp/a.jpg'
+  );
   check(
     '空引用直接报错，避免把 undefined 传给解码器',
     (() => {
