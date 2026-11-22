@@ -48,21 +48,28 @@
 | 面向 | 取值 | 落点 |
 | --- | --- | --- |
 | 界面文案、窗口标题、导出对话框 | 时光画框 | `index.html`、`Sidebar.tsx`、`data-assets.cjs` |
-| Finder / Dock / 应用菜单 | 时光画框 | `mac.extendInfo.CFBundleDisplayName` / `CFBundleName` |
+| Finder / Dock 下的名字 | 时光画框 | `mac.extendInfo.CFBundleDisplayName`（**只这一处**） |
 | `.app` 文件名、DMG 文件名、升级身份 | PhotoMinder | `productName` / `appId` |
+| Helper 进程名 | PhotoMinder | `CFBundleName`（**不要覆盖**） |
 | 数据目录 | PhotoMinder（钉死） | `electron/main.js` 的 `app.setPath('userData', ...)` |
 | 导出格式标识 | PhotoMinder | `payload.app` |
 
 **理由**：`CFBundleDisplayName` 一改，Electron 的 `app.name` 就跟着变中文，`userData`
 默认会迁到 `Application Support/时光画框/`，现有收藏 / 标签 / 相簿全部失联。
 把 `userData` 显式钉死之后，「显示什么名字」与「数据存哪里」不再耦合，
-这才敢把 Finder 与菜单栏也换成中文。改 `payload.app` 则会切断旧备份的导入链路。
+这才敢把 Finder 里的名字也换成中文。改 `payload.app` 则会切断旧备份的导入链路。
+
+**`CFBundleName` 是雷区**：Electron 用它拼 Helper 进程名（`<CFBundleName> Helper.app`）。
+2026-11-21 实测把它也改成「时光画框」后，应用启动直接
+`FATAL: electron_main_delegate_mac.mm:66 Unable to find helper app` 崩溃 ——
+磁盘上只有 `PhotoMinder Helper.app`。所以中文名只写 `CFBundleDisplayName`，
+系统菜单栏的应用名仍沿用英文，属受控例外。
 
 **后果**：`.app` 文件名与 DMG 文件名仍是英文（`PhotoMinder.app`、`PhotoMinder-x.y.z-arm64.dmg`），
 这是受控例外 —— 终端路径与更新清单都依赖它稳定。
 
 **守卫**：`tests/unit/branding.test.ts` 断言显示名、`productName` / `appId`、
-`userData` 钉死位置、以及图标单一源。
+`userData` 钉死位置、`CFBundleName` 未被覆盖、以及图标单一源。
 
 ---
 

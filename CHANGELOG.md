@@ -2,7 +2,7 @@
 
 本文件记录**用户可感知的变化**（功能、行为、修复、安全），格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-> **发布状态**：**v0.6.6 已于 2026-11-21 开发完成（待发版）** —— `package.json` 已 bump 到 `0.6.6`。**v0.6.5 已于 2026-11-20 正式发布** —— `package.json` `0.6.5`、git tag `v0.6.5`、GitHub Release 资产 `PhotoMinder-0.6.5-arm64.dmg`（80.3MB，SHA256 与本地一致），`/releases/latest` 已指向该版本。**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
+> **发布状态**：**v0.6.6 已于 2026-11-22 正式发布** —— `package.json` `0.6.6`、git tag `v0.6.6`、GitHub Release 资产 `PhotoMinder-0.6.6-arm64.dmg`（88.5MB，SHA256 `211490d5…c093a64efdf2f2`），`/releases/latest` 已指向该版本。**v0.6.5 已于 2026-11-20 正式发布** —— `package.json` `0.6.5`、git tag `v0.6.5`、GitHub Release 资产 `PhotoMinder-0.6.5-arm64.dmg`（80.3MB，SHA256 与本地一致），`/releases/latest` 曾指向该版本。**v0.6.4 已于 2026-11-20 正式发布** —— `package.json` `0.6.4`、git tag `v0.6.4`、GitHub Release 资产 `PhotoMinder-0.6.4-arm64.dmg`。**v0.6.3 已于 2026-11-20 正式发布** —— `package.json` `0.6.3`、git tag `v0.6.3`、GitHub Release 资产 `PhotoMinder-0.6.3-arm64.dmg`（81.4MB）。**v0.6.2 已于 2026-11-11 正式发布** —— `package.json` `0.6.2`、git tag `v0.6.2`、DMG `PhotoMinder-0.6.2-arm64.dmg`。
 > v0.6.1 于 2026-11-06 发布（tag `v0.6.1`）。工作区另有 v0.8.0 / v1.0.0 的提前交付，尚未发版，见下方 `[Unreleased]`。
 > 历史版本的日期为开发完成日期，不一定等于发布日；本文件只记录已交付事实。
 >
@@ -10,9 +10,9 @@
 
 ---
 
-## [0.6.6] — 2026-11-21（开发完成，待发版）
+## [0.6.6] — 2026-11-22（已发布，tag `v0.6.6`）
 
-主题：**本地人像**。回顾从「某一天」走到「某一个人」。
+主题：**本地人像**。回顾从「某一天」走到「某一个人」。2026-11-21 开发完成，2026-11-22 发布。
 
 ### Added
 
@@ -25,39 +25,38 @@
 
 - **左栏信息架构微调**：顶带不再放品牌图标与副标题（副标题只留在「关于与更新」概览区），标题下移到导航区顶部；「键盘快捷键」从底部图标带上收到「帮助」组；「清空列表」从底部纯图标改为「整理 · 文件夹」末尾带文字与数量的一行（仍走二次确认，磁盘文件不动）；底部只剩外观切换（三个图标拉满整宽，不再配文字标签）。
 - **收起左栏后顶栏接住方位**：开关右侧显示当前视图名与数量（相簿视图用相簿名，其它按「分类 · 媒体类型」组合），口径与侧栏行文案一致；导航区内容超出一屏时上下两端渐隐，行支持 `focus-visible` 焦点环，侧栏分割线在浅色主题下略微加深。
+- **应用图标重绘**：换成「宝丽来 · 黄昏」——暖石墨圆角底、相纸白边框，框内一枚压在地平线上的落日；配色全部取自应用自己的暗房色板（ink / paper / safelight），不再是外观来源不明的旧图。图标改为矢量单一源 `build/icon-source.svg`，`npm run icon:build` 一次生成 10 个尺寸的 `build/icon.icns`，不再手改二进制。
+- **Finder / Dock 显示中文名**：`mac.extendInfo` 写入 `CFBundleDisplayName` =「时光画框」，装好后图标下方显示中文，不再是 `PhotoMinder`。`.app` 文件名与 DMG 文件名仍保持英文（更新清单与终端路径依赖它稳定），系统菜单栏沿用英文（见下方 Fixed）。
+- **浏览设置改为浮动半透明胶囊**：缩放与排序不再占一整条通栏，改为浮在图片列表右上角、右对齐、半透明毛玻璃（`--bg-elevated` 压到 72% 再叠 backdrop-blur），鼠标悬停时描边高亮；「浏览设置」四个字的占位标签去掉，控件本身已经说明了用途。外层 `pointer-events-none`，只有胶囊内部接管事件，空白处点击取消选中、右键菜单和右侧滚动条都不受影响。
 - 打包增加 `onnxruntime-node` 原生运行库并写入 `asarUnpack`；`build.files` 排除非 macOS 二进制与版本化 dylib，安装包只多带运行时。
 - 模型下载线路改为**镜像优先、官方回落**：单条线路连接失败或 SHA256 不匹配时自动换下一条；网络错误统一翻译为「无法连接下载服务器，请检查网络后重试」，不再把 `ECONNREFUSED` 原样显示在界面上。
+
+### Fixed
+
+- **`CFBundleName` 保持英文，修复启动崩溃**：第一次把 `CFBundleName` 也改成中文后，应用启动即 `FATAL: Unable to find helper app` 崩溃——Electron 用 `CFBundleName` 拼自己的 Helper 进程名（`<CFBundleName> Helper.app`），中文名去找「时光画框 Helper.app」而磁盘上是「PhotoMinder Helper.app」。现在只覆盖 `CFBundleDisplayName`，并在 `branding.test.ts` 里断言 `CFBundleName` 不得被覆盖。
+- **数据目录与显示名解耦**：`CFBundleDisplayName` 变中文会让 Electron 的 `app.name` 跟着变，`userData` 默认迁到 `Application Support/时光画框/`，既有 config / 收藏 / 标签 / 人像索引会全部失联。主进程现在在第一次 `getPath('userData')` 之前显式钉死为 `Application Support/PhotoMinder`，老数据原地可用。
+- **选中图片时不再多出一条工具栏**：此前选任意一张照片，顶部都会临时插入一行浏览设置，列表整体下移、正在看的照片被顶走。浮层改为绝对定位、与选中态无关，位置恒定，也顺带解决了「只有滚到列表顶部才看得见排序 / 缩放」的问题。
 
 ### 说明
 
 - 聚类阈值为余弦相似度 `0.36`，在测试人像上同人约 `0.35`、异人低于 `0.14`；阈值偏保守，宁可多分一组（可合并）也不把两个人并到一起。
 - 人脸检测复用已按 EXIF 摆正的缩略图，避免直接读原图时的方向问题；视频不参与识别。
 
-### 发布验证（2026-11-21）
+### 发布验证（2026-11-21 开发 / 2026-11-22 发版）
 
-- `npm run verify` 全绿：单测 28 文件 422 项、主进程 13 文件、人像算法 17 项断言。
+- `npm run verify:release` 全绿：单测 28 文件 431 项、主进程 13 文件、人像算法 17 项断言；`build` 通过；Electron 冒烟 CSP 违规 0、控制台错误 0（本机受限，冒烟走 `no-sandbox` 并清掉沙箱注入的 `ELECTRON_RUN_AS_NODE`）。
+- 补跑上一版漏掉的格式检查：`tests/main-process/face-algorithms.test.cjs` 由 prettier 收成单行，`format:check` 恢复全绿。
 - 打包产物验证：`app.asar.unpacked` 只包含 `darwin/arm64` 的 `libonnxruntime.1.dylib` 与 `onnxruntime_binding.node`（非 macOS 二进制与版本化 dylib 已裁掉）；从打包后的 `app.asar` 加载 onnxruntime 成功。
 - 服务端到端（真实 Electron + 真实模型）：模型下载 → SHA256 → 解压 → `ensureReady` 通过；扫描产生 `preparing / detecting / grouping / done` 进度与 `face-scan-done`；未授权路径计入 `failed` 并写日志；新实例重启后能读回索引。
-- DMG `PhotoMinder-0.6.6-arm64.dmg` 重压后 **88.1MB**（v0.6.5 为 84.2MB，增量约 3.9MB）。
+- 打包产物 `Info.plist` 复核：`CFBundleDisplayName` =「时光画框」、`CFBundleName` = `PhotoMinder`、`CFBundleShortVersionString` = `0.6.6`、`CFBundleIdentifier` = `com.photominder.app`。
+- DMG `PhotoMinder-0.6.6-arm64.dmg` 重压后 **88.5MB**（实测 92,828,691 字节，SHA256 `211490d5e6b1b8c724316d72a5a65a5080006f0e6f42264b13c093a64efdf2f2`；v0.6.5 为 84.2MB）。
 
 ---
 
 ## [Unreleased]
 
-> **v0.6.5 已于 2026-11-20 发布**；下面几条版本线的能力**已入库但未发版**，不计入任何已发布版本。
+> **v0.6.6 已于 2026-11-22 发布**；下面几条版本线的能力**已入库但未发版**，不计入任何已发布版本。
 > 主题与退出标准见 `ROADMAP.md`。
-
-### 界面与品牌（2026-11-21）
-
-- **应用图标重绘（Changed）**：换成「宝丽来 · 黄昏」——暖石墨圆角底、相纸白边框，框内一枚压在地平线上的落日；配色全部取自应用自己的暗房色板（ink / paper / safelight），不再是外观来源不明的旧图。图标改为矢量单一源 `build/icon-source.svg`，`npm run icon:build` 一次生成 10 个尺寸的 `build/icon.icns`，不再手改二进制。
-- **Finder / Dock / 菜单栏显示中文名（Changed）**：`mac.extendInfo` 写入 `CFBundleDisplayName` / `CFBundleName` =「时光画框」，装好后图标下方显示中文，不再是 `PhotoMinder`。`.app` 文件名与 DMG 文件名仍保持英文（更新清单与终端路径依赖它稳定）。
-- **数据目录与显示名解耦（Fixed）**：`CFBundleDisplayName` 变中文会让 Electron 的 `app.name` 跟着变，`userData` 默认迁到 `Application Support/时光画框/`，既有 config / 收藏 / 标签 / 人像索引会全部失联。主进程现在在第一次 `getPath('userData')` 之前显式钉死为 `Application Support/PhotoMinder`，老数据原地可用。
-
-### 图库浏览条（2026-11-21）
-
-- **浏览设置改为浮动半透明胶囊（Changed）**：缩放与排序不再占一整条通栏，改为浮在图片列表右上角、右对齐、半透明毛玻璃（`--bg-elevated` 压到 72% 再叠 backdrop-blur），鼠标悬停时描边高亮；「浏览设置」四个字的占位标签去掉，控件本身已经说明了用途。
-- **选中后不再多出一条工具栏（Fixed）**：此前选任意一张照片，顶部都会临时插入一行「浏览设置」，列表整体下移、正在看的照片被顶走。浮层是绝对定位、与选中态无关，位置恒定，也顺带解决了「只有滚到列表顶部才看得见排序 / 缩放」的问题。
-- **浮层不吃点击**：外层 `pointer-events-none`，只有胶囊内部接管事件，空白处点击取消选中、右键菜单和右侧滚动条都不受影响。
 
 ### 审查修复（2026-11-20）
 

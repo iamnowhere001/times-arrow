@@ -18,7 +18,7 @@
 | 主进程 | Node.js / CommonJS（`electron/**/*.cjs`、`electron/main.js`、`electron/preload.js`） |
 | 渲染进程 | React + TypeScript ESM（`src/`） |
 | 数据目录 | macOS：`~/Library/Application Support/PhotoMinder/` |
-| 当前版本 | `0.6.6`（2026-11-21 开发完成，待发版：左栏「人像」本地人脸识别） |
+| 当前版本 | `0.6.6`（2026-11-22 已发布，tag `v0.6.6`：左栏「人像」本地人脸识别） |
 | 质量基线 | `npm run verify` 全绿（typecheck / lint / format / test）；测试数量以命令输出为准，不写死 |
 
 **产品判断与优先级以 `ROADMAP.md` 为准；任务级状态以 `TODO.md` 为准；行为描述以 `README.md` 为准；历史技术结论以 `CODE_REVIEW.md` 为准。**
@@ -78,7 +78,8 @@ build/      # electron-builder 资源与打包钩子
 
 ### 4.3 身份与持久化
 
-- **品牌口径（2026-11-06 拍板，2026-11-21 扩展）**：用户看得见的名字统一为「时光画框」（副标题「本地照片整理工作台」），包括 Finder / Dock / 应用菜单 —— 这三个由 `package.json` 的 `mac.extendInfo.CFBundleDisplayName` / `CFBundleName` 提供。`productName` / `appId` / `.app` 文件名 / DMG 文件名 / 导出文件的 `payload.app` 一律保持 `PhotoMinder`。
+- **品牌口径（2026-11-06 拍板，2026-11-21 扩展）**：用户看得见的名字统一为「时光画框」（副标题「本地照片整理工作台」），Finder / Dock 下的名字由 `package.json` 的 `mac.extendInfo.CFBundleDisplayName` 提供。`productName` / `appId` / `.app` 文件名 / DMG 文件名 / 导出文件的 `payload.app` 一律保持 `PhotoMinder`。
+- **`CFBundleName` 不要覆盖**：Electron 用它拼 Helper 进程名（`<CFBundleName> Helper.app`）。2026-11-21 实测把它改成中文会让应用启动即 `FATAL: Unable to find helper app`。中文名只写 `CFBundleDisplayName`，`branding.test.ts` 里有断言守着。
 - **`userData` 必须显式钉死**：`electron/main.js` 里 `app.setPath('userData', path.join(app.getPath('appData'), 'PhotoMinder'))`，且必须在第一次 `getPath('userData')` 之前执行。原因是 `CFBundleDisplayName` 为中文时 `app.name` 会变，`userData` 默认会跟着迁到中文目录 —— 不钉死就等于丢数据。**不要删除或后移这一行。**
 - **图标单一源**：`build/icon-source.svg`（1024×1024，macOS 大圆角规格）→ `npm run icon:build` → `build/icon.icns`。不要手改 icns，也不要在别处复制一份 SVG。
 以上四条由 `tests/unit/branding.test.ts` 静态断言守住。
